@@ -59,6 +59,6 @@
 - [x] Responsive design (mobile + desktop)
 - [x] Loading states, empty states, error handling throughout
 - [x] Vitest unit tests — 16 tests passing (2 test files)
-- [ ] GitHub repository creation and push
-- [ ] Vercel deployment configuration
+- [x] GitHub repository creation and push — https://github.com/kingtmc314/bodyfit-ai-hub
+- [x] Vercel deployment configuration — vercel.json + DEPLOYMENT.md created
 - [x] Checkpoint save
