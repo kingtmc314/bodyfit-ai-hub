@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Moon, Trash2, Edit2, Loader2, RefreshCw, Star } from "lucide-react";
+import { Plus, Moon, Trash2, Edit2, Loader2, Star } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, LineChart, Line
@@ -49,7 +49,6 @@ export default function Sleep() {
   const [showDialog, setShowDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
-  const [syncing, setSyncing] = useState(false);
 
   const utils = trpc.useUtils();
   const { data: records = [], isLoading } = trpc.sleep.getAll.useQuery({ limit: 60 });
@@ -63,14 +62,7 @@ export default function Sleep() {
   const deleteMutation = trpc.sleep.delete.useMutation({
     onSuccess: () => { utils.sleep.getAll.invalidate(); toast.success("Deleted"); },
   });
-  const syncMutation = trpc.sheets.pullFromSheets.useMutation({
-    onSuccess: (data: { count: number; rows: number }) => { utils.sleep.getAll.invalidate(); setSyncing(false); toast.success(`Pulled ${data.count} records from Google Sheets`); },
-    onError: (err) => { setSyncing(false); toast.error("Sync failed: " + err.message); },
-  });
 
-  const pushToSheetsMutation = trpc.sheets.pushToSheets.useMutation({
-    onError: (err) => console.warn("Sheets write-back failed:", err.message)
-  });
 
   const chartData = [...records].reverse().map(r => ({
     date: r.date.slice(5),
@@ -108,9 +100,7 @@ export default function Sleep() {
     if (editEntry) {
       updateMutation.mutate({ id: editEntry.id, ...payload });
     } else {
-      addMutation.mutate(payload, {
-        onSuccess: () => pushToSheetsMutation.mutate({ type: "sleep", data: payload })
-      });
+      addMutation.mutate(payload);
     }
   };
 
@@ -124,10 +114,6 @@ export default function Sleep() {
             <p className="text-white/70 text-sm mt-0.5">{t('sleep.subtitle')}</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="gap-2 bg-white/20 hover:bg-white/30 text-white border-0" disabled={syncing}
-              onClick={() => { setSyncing(true); syncMutation.mutate({ type: "sleep" }); }}>
-              <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} /> {t('body.sync_sheets')}
-            </Button>
             <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
               <Plus className="w-4 h-4" /> {t('sleep.add_record')}
             </Button>

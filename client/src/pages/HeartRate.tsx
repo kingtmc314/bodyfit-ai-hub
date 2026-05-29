@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Heart, Trash2, Edit2, Loader2, RefreshCw, Activity } from "lucide-react";
+import { Heart, Plus, Trash2, Edit2, Loader2, Activity } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area, Legend, ReferenceLine
@@ -35,7 +35,6 @@ export default function HeartRate() {
   const [showDialog, setShowDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
-  const [syncing, setSyncing] = useState(false);
 
   const utils = trpc.useUtils();
   const { data: records = [], isLoading } = trpc.heartRate.getAll.useQuery({ limit: 60 });
@@ -49,14 +48,7 @@ export default function HeartRate() {
   const deleteMutation = trpc.heartRate.delete.useMutation({
     onSuccess: () => { utils.heartRate.getAll.invalidate(); toast.success("Deleted"); },
   });
-  const syncMutation = trpc.sheets.pullFromSheets.useMutation({
-    onSuccess: (data: { count: number; rows: number }) => { utils.heartRate.getAll.invalidate(); setSyncing(false); toast.success(`Pulled ${data.count} records from Google Sheets`); },
-    onError: (err) => { setSyncing(false); toast.error("Sync failed: " + err.message); },
-  });
 
-  const pushToSheetsMutation = trpc.sheets.pushToSheets.useMutation({
-    onError: (err) => console.warn("Sheets write-back failed:", err.message)
-  });
 
   const chartData = [...records].reverse().map(r => ({
     date: r.date.slice(5),
@@ -89,9 +81,7 @@ export default function HeartRate() {
     if (editEntry) {
       updateMutation.mutate({ id: editEntry.id, ...payload });
     } else {
-      addMutation.mutate(payload, {
-        onSuccess: () => pushToSheetsMutation.mutate({ type: "heartrate", data: payload })
-      });
+      addMutation.mutate(payload);
     }
   };
 
@@ -105,10 +95,6 @@ export default function HeartRate() {
             <p className="text-white/70 text-sm mt-0.5">{t('heartrate.subtitle')}</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="gap-2 bg-white/20 hover:bg-white/30 text-white border-0" disabled={syncing}
-              onClick={() => { setSyncing(true); syncMutation.mutate({ type: "heartrate" }); }}>
-              <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} /> {t('body.sync_sheets')}
-            </Button>
             <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
               <Plus className="w-4 h-4" /> {t('heartrate.add_record')}
             </Button>

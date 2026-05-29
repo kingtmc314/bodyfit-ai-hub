@@ -118,3 +118,9 @@
 - [x] Health check verified: GET /api/health → {"ok":true,"version":"1.0.0"}
 - [x] Frontend verified: / returns HTML
 - [x] Auto-deploy enabled: every push to main branch triggers redeploy
+
+## Phase 17: Disable Google Sheets Import
+- [x] Remove sheetsRouter from server/routers.ts (pullFromSheets, pushToSheets, syncFromSheets)
+- [x] Remove trpc.sheets references from Sleep.tsx, HeartRate.tsx, BodyComposition.tsx
+- [x] Remove unused syncing state and RefreshCw imports from all three pages
+- [x] All data now flows exclusively through Supabase (write → Supabase → read from Supabase)

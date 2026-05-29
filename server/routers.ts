@@ -12,7 +12,6 @@ import { eq, and, desc, gte, lte, like, or, sql } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
-import { readSheetData, writeRowToSheet, ensureSheetHeaders } from "./sheetsService";
 
 // ─── Nutrition Router ─────────────────────────────────────────────────────────
 const nutritionRouter = router({
@@ -739,128 +738,6 @@ const dashboardRouter = router({
   }),
 });
 
-// ─── Google Sheets Sync Router ────────────────────────────────────────────────
-const sheetsRouter = router({
-  // Pull data FROM Google Sheets → local DB
-  pullFromSheets: protectedProcedure
-    .input(z.object({ type: z.enum(["body", "sleep", "heartrate"]) }))
-    .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
-
-      const rows = await readSheetData(input.type);
-      let count = 0;
-
-      if (input.type === "body") {
-        for (const row of rows) {
-          const dateVal = String(row.date ?? "");
-          if (!dateVal) continue;
-          await db.insert(bodyComposition).values({
-            userId: ctx.user.id,
-            date: dateVal,
-            weight: row.weight !== undefined ? Number(row.weight) : undefined,
-            bmi: row.bmi !== undefined ? Number(row.bmi) : undefined,
-            bodyFatPct: row.bodyFatPct !== undefined ? Number(row.bodyFatPct) : undefined,
-            fatMass: row.fatMass !== undefined ? Number(row.fatMass) : undefined,
-            muscleMass: row.muscleMass !== undefined ? Number(row.muscleMass) : undefined,
-            bmr: row.bmr !== undefined ? Number(row.bmr) : undefined,
-            visceralFat: row.visceralFat !== undefined ? Number(row.visceralFat) : undefined,
-            source: "sheets",
-          }).catch(() => {});
-          count++;
-        }
-      } else if (input.type === "sleep") {
-        for (const row of rows) {
-          const dateVal = String(row.date ?? "");
-          if (!dateVal) continue;
-          const qualityVal = String(row.quality ?? "") as "Poor" | "Fair" | "Good" | "Excellent" | undefined;
-          await db.insert(sleepLogs).values({
-            userId: ctx.user.id,
-            date: dateVal,
-            sleepScore: row.score !== undefined ? Number(row.score) : undefined,
-            bodyBattery: row.bodyBattery !== undefined ? Number(row.bodyBattery) : undefined,
-            pulseOx: row.pulseOx !== undefined ? Number(row.pulseOx) : undefined,
-            respiration: row.respiration !== undefined ? Number(row.respiration) : undefined,
-            sleepQuality: ["Poor","Fair","Good","Excellent"].includes(qualityVal ?? "") ? qualityVal : undefined,
-            source: "sheets",
-          }).catch(() => {});
-          count++;
-        }
-      } else if (input.type === "heartrate") {
-        for (const row of rows) {
-          const dateVal = String(row.date ?? "");
-          if (!dateVal) continue;
-          await db.insert(heartRateLogs).values({
-            userId: ctx.user.id,
-            date: dateVal,
-            highHr: row.highHr !== undefined ? Number(row.highHr) : undefined,
-            hrv: row.hrv !== undefined ? Number(row.hrv) : undefined,
-            source: "sheets",
-          }).catch(() => {});
-          count++;
-        }
-      }
-
-      return { success: true, count, rows: rows.length };
-    }),
-
-  // Push data FROM local DB → Google Sheets (write-back)
-  pushToSheets: protectedProcedure
-    .input(z.object({
-      type: z.enum(["body", "sleep", "heartrate"]),
-      data: z.record(z.string(), z.unknown())
-    }))
-    .mutation(async ({ input }) => {
-      await ensureSheetHeaders(input.type);
-      await writeRowToSheet(input.type, input.data);
-      return { success: true };
-    }),
-
-  // Legacy: accept manually pasted data array (for users without API access)
-  syncFromSheets: protectedProcedure
-    .input(z.object({
-      type: z.enum(["body", "sleep", "heartrate"]),
-      data: z.array(z.record(z.string(), z.unknown()))
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
-      let count = 0;
-      for (const row of input.data) {
-        const dateVal = String(row.date ?? "");
-        if (!dateVal) continue;
-        if (input.type === "body") {
-          await db.insert(bodyComposition).values({ userId: ctx.user.id, date: dateVal,
-            weight: row.weight !== undefined ? Number(row.weight) : undefined,
-            bmi: row.bmi !== undefined ? Number(row.bmi) : undefined,
-            bodyFatPct: row.bodyFatPct !== undefined ? Number(row.bodyFatPct) : undefined,
-            fatMass: row.fatMass !== undefined ? Number(row.fatMass) : undefined,
-            muscleMass: row.muscleMass !== undefined ? Number(row.muscleMass) : undefined,
-            bmr: row.bmr !== undefined ? Number(row.bmr) : undefined,
-            visceralFat: row.visceralFat !== undefined ? Number(row.visceralFat) : undefined,
-            source: "sheets",
-          }).catch(() => {});
-        } else if (input.type === "sleep") {
-          const qualityVal = String(row.quality ?? "") as "Poor" | "Fair" | "Good" | "Excellent" | undefined;
-          await db.insert(sleepLogs).values({ userId: ctx.user.id, date: dateVal,
-            sleepScore: row.score !== undefined ? Number(row.score) : undefined,
-            bodyBattery: row.bodyBattery !== undefined ? Number(row.bodyBattery) : undefined,
-            pulseOx: row.pulseOx !== undefined ? Number(row.pulseOx) : undefined,
-            respiration: row.respiration !== undefined ? Number(row.respiration) : undefined,
-            sleepQuality: ["Poor","Fair","Good","Excellent"].includes(qualityVal ?? "") ? qualityVal : undefined,
-            source: "sheets",
-          }).catch(() => {});
-        } else if (input.type === "heartrate") {
-          await db.insert(heartRateLogs).values({ userId: ctx.user.id, date: dateVal,
-            highHr: row.highHr !== undefined ? Number(row.highHr) : undefined,
-            source: "sheets",
-          }).catch(() => {});
-        }
-        count++;
-      }
-      return { success: true, count };
-    }),
-});
 
 // ─── App Router ───────────────────────────────────────────────────────────────
 export const appRouter = router({
@@ -881,7 +758,6 @@ export const appRouter = router({
   photos: photosRouter,
   insights: insightsRouter,
   dashboard: dashboardRouter,
-  sheets: sheetsRouter,
 });
 
 export type AppRouter = typeof appRouter;
