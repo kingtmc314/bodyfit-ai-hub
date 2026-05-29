@@ -89,6 +89,11 @@
 - [x] Render deployment step-by-step guide (render.yaml + RENDER_DEPLOY.md)
 - [x] Final checkpoint and GitHub push
 
+## Phase 15: Render Auto-Deploy Setup
+- [x] Add /api/health endpoint to Express server for Render health checks
+- [x] Update RENDER_DEPLOY.md with accurate Supabase-based deployment guide (Chinese)
+- [x] Push to GitHub for auto-deploy trigger
+
 ## Phase 14: Critical Bug Fixes
 - [x] Fix OAuth login: Supabase users table missing "openId" column (camelCase) — added column and UNIQUE constraint
 - [x] Fix open_id NOT NULL constraint — made nullable, added trigger to sync openId → open_id

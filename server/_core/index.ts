@@ -37,6 +37,8 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  // Health check for Render/uptime monitoring
+  app.get("/api/health", (_req, res) => res.json({ ok: true, version: "1.0.0" }));
   // Scheduled cron handlers — must be before Vite/static fallthrough
   app.post("/api/scheduled/daily-reminder", dailyReminderHandler);
 

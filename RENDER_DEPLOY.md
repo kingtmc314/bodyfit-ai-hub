@@ -1,124 +1,114 @@
-# BodyFit AI Hub — Render Deployment Guide
+# BodyFit AI Hub — Render 部署指南 (Auto-Deploy via GitHub)
 
-## Prerequisites
-- GitHub account with this repo: `kingtmc314/bodyfit-ai-hub`
-- Render account: https://render.com (free tier available)
-- MySQL database (PlanetScale, Railway MySQL, or Render MySQL)
+> **自動部署：** 每次推送至 `main` 分支，Render 會在約 2 分鐘內自動重新部署。
 
 ---
 
-## Step 1 — Create a MySQL Database
+## 前置條件
 
-### Option A: PlanetScale (Recommended, free tier)
-1. Go to https://planetscale.com and create an account
-2. Create a new database named `bodyfit`
-3. Go to **Connect** → select **Node.js** → copy the connection string
-4. Format: `mysql://user:pass@host/bodyfit?ssl={"rejectUnauthorized":true}`
-
-### Option B: Railway MySQL
-1. Go to https://railway.app → New Project → MySQL
-2. Copy the `DATABASE_URL` from the Variables tab
+- GitHub 帳號，已有此 repo：`kingtmc314/bodyfit-ai-hub`
+- Render 帳號：https://render.com（免費方案可用）
+- Supabase 資料庫（已設置：life-OS project）
 
 ---
 
-## Step 2 — Deploy to Render
+## Step 1 — 在 Render 建立 Web Service
 
-1. Go to https://render.com and sign in with GitHub
-2. Click **New** → **Web Service**
-3. Connect your GitHub account and select: `kingtmc314/bodyfit-ai-hub`
-4. Configure:
-   - **Name:** `bodyfit-ai-hub`
-   - **Region:** Singapore (closest to HK)
-   - **Branch:** `main`
-   - **Runtime:** Node
-   - **Build Command:** `pnpm install && pnpm build`
-   - **Start Command:** `node dist/index.js`
-   - **Plan:** Free (or Starter for better performance)
+1. 前往 https://render.com，以 GitHub 帳號登入
+2. 點擊 **New** → **Web Service**
+3. 連接 GitHub，選擇 repo：`kingtmc314/bodyfit-ai-hub`
+4. 填寫以下設定：
 
-5. Click **Advanced** → **Add Environment Variable** and add:
+| 設定 | 值 |
+|------|-----|
+| **Name** | `bodyfit-ai-hub` |
+| **Region** | Singapore（離香港最近） |
+| **Branch** | `main` |
+| **Runtime** | Node |
+| **Build Command** | `pnpm install && pnpm build` |
+| **Start Command** | `node dist/index.js` |
+| **Plan** | Free（或 Starter 以獲得更好效能） |
 
-| Key | Value |
-|-----|-------|
-| `NODE_ENV` | `production` |
-| `DATABASE_URL` | Your MySQL connection string |
-| `JWT_SECRET` | Any random 32+ char string |
-| `VITE_APP_ID` | Your Manus App ID |
-| `OAUTH_SERVER_URL` | `https://api.manus.im` |
-| `VITE_OAUTH_PORTAL_URL` | `https://manus.im` |
-| `OWNER_OPEN_ID` | Your Manus OpenID |
-| `OWNER_NAME` | Your name |
-| `BUILT_IN_FORGE_API_URL` | Manus Forge API URL |
-| `BUILT_IN_FORGE_API_KEY` | Manus Forge API Key |
-| `VITE_FRONTEND_FORGE_API_KEY` | Manus Frontend Forge Key |
-| `VITE_FRONTEND_FORGE_API_URL` | Manus Frontend Forge URL |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | Your Google Service Account JSON (minified) |
-
-6. Click **Create Web Service**
+5. 點擊 **Advanced** → **Add Environment Variable**，依下表新增所有環境變數：
 
 ---
 
-## Step 3 — Run Database Migrations
+## Step 2 — 設置環境變數
 
-After the first deploy succeeds:
+| Key | 說明 | 如何取得 |
+|-----|------|---------|
+| `NODE_ENV` | `production` | 直接填入 |
+| `SUPABASE_DATABASE_URL` | Supabase Session Pooler 連線字串 | Supabase → Settings → Database → Session Pooler |
+| `JWT_SECRET` | 任意 32 位以上隨機字串 | 可用 `openssl rand -hex 32` 生成 |
+| `VITE_APP_ID` | Manus OAuth App ID | Manus 開發者設定 |
+| `OAUTH_SERVER_URL` | `https://api.manus.im` | 直接填入 |
+| `VITE_OAUTH_PORTAL_URL` | `https://manus.im` | 直接填入 |
+| `OWNER_OPEN_ID` | 你的 Manus OpenID | Manus 帳戶設定 |
+| `OWNER_NAME` | 你的名字 | 直接填入 |
+| `BUILT_IN_FORGE_API_URL` | Manus Forge API URL | Manus 開發者設定 |
+| `BUILT_IN_FORGE_API_KEY` | Manus Forge API Key（伺服器端） | Manus 開發者設定 |
+| `VITE_FRONTEND_FORGE_API_KEY` | Manus Forge Key（前端） | Manus 開發者設定 |
+| `VITE_FRONTEND_FORGE_API_URL` | Manus Forge URL（前端） | Manus 開發者設定 |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Google 服務帳號 JSON（壓縮成一行） | Google Cloud Console |
 
-1. In Render dashboard → your service → **Shell** tab
-2. Run: `node -e "import('./server/db.ts').then(m => console.log('DB connected'))"`
-3. Or use the Render shell to run migrations manually
-
-Alternatively, set up the database tables by running the SQL from `drizzle/migrations/` in your MySQL dashboard.
-
----
-
-## Step 4 — Configure Manus OAuth
-
-1. In your Manus developer settings, add the Render URL as an allowed redirect:
-   `https://bodyfit-ai-hub.onrender.com/api/oauth/callback`
-2. Update `VITE_APP_ID` with your Manus application ID
-
----
-
-## Step 5 — Google Sheets Integration
-
-1. Share your Google Spreadsheet with the service account email from `GOOGLE_SERVICE_ACCOUNT_JSON`
-2. The email looks like: `xxx@your-project.iam.gserviceaccount.com`
-3. Give it **Editor** access to the spreadsheet
+> **注意：** `STORAGE_*` 變數（S3）如需進度照片上傳功能才需設置。
 
 ---
 
-## Automatic Deployments
+## Step 3 — 設置 Manus OAuth 回調 URL
 
-Render automatically redeploys when you push to the `main` branch on GitHub.
+部署完成後，Render 會提供一個 URL，格式為：
+`https://bodyfit-ai-hub.onrender.com`
 
-```bash
-git add .
-git commit -m "Update feature"
-git push origin main
-# Render auto-deploys within ~2 minutes
+在 Manus 開發者設定中，將以下 URL 加入允許的 redirect：
+```
+https://bodyfit-ai-hub.onrender.com/api/oauth/callback
 ```
 
 ---
 
-## Custom Domain
+## Step 4 — Google Sheets 整合（可選）
 
-1. In Render → Settings → Custom Domains
-2. Add your domain (e.g., `fitness.yourdomain.com`)
-3. Add the CNAME record in your DNS provider
-
----
-
-## Health Check
-
-The app exposes `/api/health` for Render's health checks.
-If the service shows "unhealthy", check the logs in Render dashboard.
+1. 將你的 Google 試算表分享給 `GOOGLE_SERVICE_ACCOUNT_JSON` 中的服務帳號 email
+2. Email 格式：`xxx@your-project.iam.gserviceaccount.com`
+3. 給予 **Editor** 權限
 
 ---
 
-## Estimated Costs
+## 自動部署流程
 
-| Plan | Cost | RAM | CPU |
-|------|------|-----|-----|
-| Free | $0/mo | 512 MB | 0.1 CPU (spins down after 15min) |
-| Starter | $7/mo | 512 MB | 0.5 CPU (always on) |
-| Standard | $25/mo | 2 GB | 1 CPU |
+```bash
+# 本地修改後，推送至 GitHub
+git add .
+git commit -m "Update feature"
+git push origin main
+# Render 自動在約 2 分鐘內重新部署 ✅
+```
 
-**Recommendation:** Start with Free, upgrade to Starter when you need always-on availability.
+每次推送至 `main` 分支，Render 會自動：
+1. 拉取最新代碼
+2. 執行 `pnpm install && pnpm build`
+3. 重啟服務
+4. 健康檢查通過後上線（`GET /api/health`）
+
+---
+
+## 健康檢查
+
+服務啟動後可訪問：
+```
+GET https://bodyfit-ai-hub.onrender.com/api/health
+→ { "ok": true, "version": "1.0.0" }
+```
+
+---
+
+## 費用參考
+
+| 方案 | 費用 | RAM | CPU | 備注 |
+|------|------|-----|-----|------|
+| Free | $0/月 | 512 MB | 0.1 CPU | 閒置 15 分鐘後休眠，首次請求需等待 ~30 秒 |
+| Starter | $7/月 | 512 MB | 0.5 CPU | 永遠在線，推薦正式使用 |
+| Standard | $25/月 | 2 GB | 1 CPU | 高流量使用 |
+
+**建議：** 先用 Free 方案測試，確認一切正常後升級至 Starter。
