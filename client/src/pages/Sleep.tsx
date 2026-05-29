@@ -74,11 +74,11 @@ export default function Sleep() {
 
   const chartData = [...records].reverse().map(r => ({
     date: r.date.slice(5),
-    score: r.score,
-    duration: r.duration,
+    score: r.sleepScore,
+    duration: r.sleepDuration,
     deep: r.deepSleep,
     rem: r.remSleep,
-    hr: r.restingHr,
+    hr: null, // restingHr not in sleep table
     battery: r.bodyBattery,
     stress: r.stress,
   }));
@@ -139,10 +139,10 @@ export default function Sleep() {
       {latest && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { labelKey: "sleep.score", value: latest.score, unit: "/100", badgeClass: "icon-badge-blue" },
-            { labelKey: "sleep.duration", value: latest.duration != null ? `${Number(latest.duration).toFixed(1)}` : null, unit: "hrs", badgeClass: "icon-badge-purple" },
+            { labelKey: "sleep.score", value: latest.sleepScore, unit: "/100", badgeClass: "icon-badge-blue" },
+            { labelKey: "sleep.duration", value: latest.sleepDuration != null ? `${Number(latest.sleepDuration).toFixed(1)}` : null, unit: "hrs", badgeClass: "icon-badge-purple" },
             { labelKey: "sleep.body_battery", value: latest.bodyBattery, unit: "/100", badgeClass: "icon-badge-green" },
-            { labelKey: "heartrate.resting_hr", value: latest.restingHr, unit: "bpm", badgeClass: "icon-badge-red" },
+            { labelKey: "sleep.pulse_ox", value: latest.pulseOx, unit: "%", badgeClass: "icon-badge-red" },
           ].map(m => (
             <div key={m.labelKey} className="stat-card rounded-2xl p-4">
               <div className={`icon-badge ${m.badgeClass} mb-2`}>
@@ -152,7 +152,7 @@ export default function Sleep() {
               <p className="metric-value text-2xl text-foreground mt-0.5">
                 {m.value ?? "—"} <span className="text-sm font-normal text-muted-foreground">{m.unit}</span>
               </p>
-              {m.labelKey === "sleep.score" && getQualityBadge(latest.quality)}
+              {m.labelKey === "sleep.score" && getQualityBadge(latest.sleepQuality)}
             </div>
           ))}
         </div>
@@ -242,19 +242,19 @@ export default function Sleep() {
                   {records.map(r => (
                     <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/20">
                       <td className="px-4 py-3 font-medium whitespace-nowrap">{r.date}</td>
-                      <td className="px-4 py-3">{r.score ?? "—"}</td>
-                      <td className="px-4 py-3">{getQualityBadge(r.quality)}</td>
-                      <td className="px-4 py-3">{r.duration != null ? `${Number(r.duration).toFixed(1)}h` : "—"}</td>
+                      <td className="px-4 py-3">{r.sleepScore ?? "—"}</td>
+                      <td className="px-4 py-3">{getQualityBadge(r.sleepQuality)}</td>
+                      <td className="px-4 py-3">{r.sleepDuration != null ? `${Number(r.sleepDuration).toFixed(1)}h` : "—"}</td>
                       <td className="px-4 py-3">{r.deepSleep != null ? `${Number(r.deepSleep).toFixed(1)}h` : "—"}</td>
                       <td className="px-4 py-3">{r.remSleep != null ? `${Number(r.remSleep).toFixed(1)}h` : "—"}</td>
-                      <td className="px-4 py-3">{r.restingHr ? `${r.restingHr} bpm` : "—"}</td>
+                      <td className="px-4 py-3">{r.pulseOx ? `${r.pulseOx}%` : "—"}</td>
                       <td className="px-4 py-3">{r.bodyBattery ?? "—"}</td>
                       <td className="px-4 py-3">{r.stress != null ? Number(r.stress).toFixed(0) : "—"}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => {
                             setEditEntry(r);
-                            setForm({ date: r.date, score: r.score ?? "", restingHr: r.restingHr ?? "", bodyBattery: r.bodyBattery ?? "", pulseOx: r.pulseOx ?? "", respiration: r.respiration ?? "", stress: r.stress ?? "", quality: r.quality ?? "Good", duration: r.duration ?? "", deepSleep: r.deepSleep ?? "", remSleep: r.remSleep ?? "", notes: r.notes ?? "" });
+                            setForm({ date: r.date, score: r.sleepScore ?? "", restingHr: "", bodyBattery: r.bodyBattery ?? "", pulseOx: r.pulseOx ?? "", respiration: r.respiration ?? "", stress: r.stress ?? "", quality: r.sleepQuality ?? "Good", duration: r.sleepDuration ?? "", deepSleep: r.deepSleep ?? "", remSleep: r.remSleep ?? "", notes: r.notes ?? "" });
                             setShowDialog(true);
                           }}><Edit2 className="w-3.5 h-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: r.id })}><Trash2 className="w-3.5 h-3.5" /></Button>

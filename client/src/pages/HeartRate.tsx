@@ -122,7 +122,7 @@ export default function HeartRate() {
           {[
             { labelKey: "heartrate.resting_hr", value: latest.restingHr, unit: "bpm", badgeClass: "icon-badge-red" },
             { labelKey: "heartrate.high_hr", value: latest.highHr, unit: "bpm", badgeClass: "icon-badge-orange" },
-            { labelKey: "heartrate.max_hr", value: latest.maxHr, unit: "bpm", badgeClass: "icon-badge-red" },
+            { labelKey: "heartrate.avg_hr", value: latest.avgHr, unit: "bpm", badgeClass: "icon-badge-red" },
             { labelKey: "heartrate.hrv", value: latest.hrv != null ? Number(latest.hrv).toFixed(0) : null, unit: "ms", badgeClass: "icon-badge-blue" },
           ].map(m => (
             <div key={m.labelKey} className="stat-card rounded-2xl p-4">
@@ -208,14 +208,14 @@ export default function HeartRate() {
                       <td className="px-4 py-3 font-medium">{r.date}</td>
                       <td className="px-4 py-3">{r.restingHr ? `${r.restingHr} bpm` : "—"}</td>
                       <td className="px-4 py-3">{r.highHr ? `${r.highHr} bpm` : "—"}</td>
-                      <td className="px-4 py-3">{r.maxHr ? `${r.maxHr} bpm` : "—"}</td>
+                      <td className="px-4 py-3">{r.avgHr ? `${r.avgHr} bpm` : "—"}</td>
                       <td className="px-4 py-3">{r.hrv != null ? `${Number(r.hrv).toFixed(0)} ms` : "—"}</td>
                       <td className="px-4 py-3 max-w-32 truncate text-muted-foreground">{r.notes || "—"}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => {
                             setEditEntry(r);
-                            setForm({ date: r.date, restingHr: r.restingHr ?? "", highHr: r.highHr ?? "", maxHr: r.maxHr ?? "", hrv: r.hrv ?? "", notes: r.notes ?? "" });
+                            setForm({ date: r.date, restingHr: r.restingHr ?? "", highHr: r.highHr ?? "", avgHr: r.avgHr ?? "", hrv: r.hrv ?? "", notes: r.notes ?? "" });
                             setShowDialog(true);
                           }}><Edit2 className="w-3.5 h-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: r.id })}><Trash2 className="w-3.5 h-3.5" /></Button>

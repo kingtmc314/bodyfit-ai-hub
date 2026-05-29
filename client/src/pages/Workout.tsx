@@ -180,7 +180,8 @@ export default function Workout() {
     const map: Record<string, number> = {};
     sessionDetail.sets.forEach(s => {
       const vol = (s.reps || 0) * (s.weight || 0);
-      map[s.exerciseName] = (map[s.exerciseName] || 0) + vol;
+      const exName = s.exerciseName || 'Unknown';
+      map[exName] = (map[exName] || 0) + vol;
     });
     return Object.entries(map).map(([name, vol]) => ({ name: name.split(" ").slice(0, 2).join(" "), vol: Math.round(vol) }));
   }, [sessionDetail]);
@@ -188,7 +189,7 @@ export default function Workout() {
   const weeklyVolume = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
       const d = format(new Date(Date.now() - (6 - i) * 86400000), "yyyy-MM-dd");
-      const daySessions = sessions.filter(s => s.date === d);
+      const daySessions = sessions.filter(s => format(new Date(s.startTime), 'yyyy-MM-dd') === d);
       return {
         date: format(new Date(Date.now() - (6 - i) * 86400000), "EEE"),
         volume: Math.round(daySessions.reduce((s, sess) => s + (sess.totalVolume || 0), 0)),
@@ -223,8 +224,9 @@ export default function Workout() {
     if (!sessionDetail?.sets) return {};
     const groups: Record<string, typeof sessionDetail.sets> = {};
     sessionDetail.sets.forEach(s => {
-      if (!groups[s.exerciseName]) groups[s.exerciseName] = [];
-      groups[s.exerciseName].push(s);
+      const exName = s.exerciseName || 'Unknown';
+      if (!groups[exName]) groups[exName] = [];
+      groups[exName].push(s);
     });
     return groups;
   }, [sessionDetail]);
@@ -468,7 +470,7 @@ export default function Workout() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">{s.name || "Workout"}</p>
-                      <p className="text-xs text-muted-foreground">{s.date}{s.duration ? ` · ${s.duration} min` : ""}</p>
+                      <p className="text-xs text-muted-foreground">{format(new Date(s.startTime), 'yyyy-MM-dd')}{s.duration ? ` · ${s.duration} min` : ""}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       {s.totalVolume && <span className="text-xs font-semibold text-primary">{Math.round(s.totalVolume)} kg</span>}

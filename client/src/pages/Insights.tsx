@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useState } from "react";
+import { format } from "date-fns";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -56,7 +57,7 @@ export default function Insights() {
   const latestHr = hrData[0];
 
   const radarData = [
-    { subject: "Sleep", value: latestSleep?.score ? Math.min(100, latestSleep.score) : 0 },
+    { subject: "Sleep", value: latestSleep?.sleepScore ? Math.min(100, latestSleep.sleepScore) : 0 },
     { subject: "Recovery", value: latestSleep?.bodyBattery ?? 0 },
     { subject: "Heart", value: latestHr?.restingHr ? Math.max(0, 100 - (latestHr.restingHr - 40) * 2) : 0 },
     { subject: "Body Fat", value: latestBody?.bodyFatPct ? Math.max(0, 100 - latestBody.bodyFatPct * 2) : 0 },
@@ -66,7 +67,7 @@ export default function Insights() {
 
   // Weekly workout volume chart
   const weeklyVolume = workoutData.slice(0, 12).reverse().map(s => ({
-    date: s.date.slice(5),
+    date: format(new Date(s.startTime), 'MM-dd'),
     volume: s.totalVolume ? Number(s.totalVolume).toFixed(0) : 0,
     duration: s.duration ?? 0,
   }));
@@ -148,7 +149,7 @@ export default function Insights() {
               <div className="space-y-3">
                 {[
                   { label: "Workouts Logged", value: workoutData.length, unit: "sessions", color: "text-emerald-400" },
-                  { label: "Avg Sleep Score", value: sleepData.length > 0 ? Math.round(sleepData.reduce((s, r) => s + (r.score ?? 0), 0) / sleepData.filter(r => r.score).length) : null, unit: "/100", color: "text-blue-400" },
+                  { label: "Avg Sleep Score", value: sleepData.length > 0 ? Math.round(sleepData.reduce((s, r) => s + (r.sleepScore ?? 0), 0) / sleepData.filter(r => r.sleepScore).length) : null, unit: "/100", color: "text-blue-400" },
                   { label: "Avg Resting HR", value: hrData.length > 0 ? Math.round(hrData.reduce((s, r) => s + (r.restingHr ?? 0), 0) / hrData.filter(r => r.restingHr).length) : null, unit: "bpm", color: "text-rose-400" },
                   { label: "Weight Change", value: bodyData.length >= 2 ? (Number(bodyData[0]?.weight ?? 0) - Number(bodyData[bodyData.length - 1]?.weight ?? 0)).toFixed(1) : null, unit: "kg", color: "text-amber-400" },
                 ].map(s => (
@@ -189,7 +190,7 @@ export default function Insights() {
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={sleepData.slice(0, 14).reverse().map((s, i) => ({
                   date: s.date.slice(5),
-                  sleep: s.score,
+                  sleep: s.sleepScore,
                   hr: hrData[i]?.restingHr,
                 }))}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.24 0.018 240)" vertical={false} />

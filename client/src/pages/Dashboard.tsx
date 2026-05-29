@@ -132,8 +132,8 @@ export default function Dashboard() {
     if (!sleepData) return [];
     return [...sleepData].reverse().map(d => ({
       date: d.date.slice(5),
-      score: d.score,
-      hr: d.restingHr,
+      score: d.sleepScore,
+      hr: d.pulseOx,
     }));
   }, [sleepData]);
 
@@ -141,7 +141,8 @@ export default function Dashboard() {
     if (!summary?.weekMeals) return [];
     const map: Record<string, number> = {};
     summary.weekMeals.forEach(m => {
-      map[m.date] = (map[m.date] || 0) + m.calories;
+      const dateKey = format(new Date(m.loggedAt), 'yyyy-MM-dd');
+      map[dateKey] = (map[dateKey] || 0) + (m.calories ?? 0);
     });
     return Array.from({ length: 7 }, (_, i) => {
       const d = format(subDays(new Date(), 6 - i), "yyyy-MM-dd");
@@ -257,8 +258,8 @@ export default function Dashboard() {
         />
         <StatCard
           title={t('dashboard.sleep_score')}
-          value={latestSleep?.score} unit="/100"
-          subtitle={latestSleep?.quality || "—"}
+          value={latestSleep?.sleepScore} unit="/100"
+          subtitle={latestSleep?.sleepQuality || "—"}
           icon={Moon} badgeClass="icon-badge-purple" trend={0} href="/sleep"
         />
         <StatCard
@@ -364,7 +365,7 @@ export default function Dashboard() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate">{s.name || "Workout Session"}</p>
-                  <p className="text-xs text-muted-foreground">{s.date}{s.duration ? ` · ${s.duration} min` : ""}</p>
+                  <p className="text-xs text-muted-foreground">{format(new Date(s.startTime), 'yyyy-MM-dd')}{s.duration ? ` · ${s.duration} min` : ""}</p>
                 </div>
                 {s.totalVolume && (
                   <span className="tag-pill tag-orange">{Math.round(s.totalVolume)} kg</span>

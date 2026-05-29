@@ -95,10 +95,10 @@ export default function Nutrition() {
   const resetForm = () => setForm({ name: "", quantity: 100, calories: 0, protein: 0, carbs: 0, fat: 0 });
 
   const totals = meals.reduce((acc, m) => ({
-    calories: acc.calories + m.calories,
-    protein: acc.protein + m.protein,
-    carbs: acc.carbs + m.carbs,
-    fat: acc.fat + m.fat,
+    calories: acc.calories + (m.calories ?? 0),
+    protein: acc.protein + (m.protein ?? 0),
+    carbs: acc.carbs + (m.carbs ?? 0),
+    fat: acc.fat + (m.fat ?? 0),
   }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
 
   const mealGroups = MEAL_TYPES.reduce((acc, t) => {
@@ -109,11 +109,12 @@ export default function Nutrition() {
   const weekChartData = (() => {
     const map: Record<string, { cal: number; protein: number; carbs: number; fat: number }> = {};
     weekMeals.forEach(m => {
-      if (!map[m.date]) map[m.date] = { cal: 0, protein: 0, carbs: 0, fat: 0 };
-      map[m.date].cal += m.calories;
-      map[m.date].protein += m.protein;
-      map[m.date].carbs += m.carbs;
-      map[m.date].fat += m.fat;
+      const dateKey = format(new Date(m.loggedAt), 'yyyy-MM-dd');
+      if (!map[dateKey]) map[dateKey] = { cal: 0, protein: 0, carbs: 0, fat: 0 };
+      map[dateKey].cal += (m.calories ?? 0);
+      map[dateKey].protein += (m.protein ?? 0);
+      map[dateKey].carbs += (m.carbs ?? 0);
+      map[dateKey].fat += (m.fat ?? 0);
     });
     return Array.from({ length: 7 }, (_, i) => {
       const d = format(new Date(Date.now() - (6 - i) * 86400000), "yyyy-MM-dd");
@@ -221,7 +222,7 @@ export default function Nutrition() {
                   <div className="w-2.5 h-2.5 rounded-full" style={{ background: MEAL_COLORS[type] }} />
                   <h3 className="font-semibold text-foreground capitalize">{type}</h3>
                   <Badge variant="secondary" className="text-xs">
-                    {Math.round(mealGroups[type].reduce((s, m) => s + m.calories, 0))} kcal
+                    {Math.round(mealGroups[type].reduce((s, m) => s + (m.calories ?? 0), 0))} kcal
                   </Badge>
                 </div>
                 <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs"
@@ -237,12 +238,12 @@ export default function Nutrition() {
                     <div key={m.id} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">{m.foodName}</p>
-                        <p className="text-xs text-muted-foreground">{m.quantity}g · P:{Math.round(m.protein)}g C:{Math.round(m.carbs)}g F:{Math.round(m.fat)}g</p>
+                        <p className="text-xs text-muted-foreground">{m.servings * 100}g · P:{Math.round(m.protein ?? 0)}g C:{Math.round(m.carbs ?? 0)}g F:{Math.round(m.fat ?? 0)}g</p>
                       </div>
-                      {m.aiAnalyzed && <Badge variant="outline" className="text-xs gap-1 shrink-0"><Sparkles className="w-2.5 h-2.5" />AI</Badge>}
-                      <span className="text-sm font-semibold text-foreground shrink-0">{Math.round(m.calories)} kcal</span>
+
+                      <span className="text-sm font-semibold text-foreground shrink-0">{Math.round(m.calories ?? 0)} kcal</span>
                       <div className="flex gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditEntry(m); setForm({ name: m.foodName, quantity: m.quantity, calories: m.calories, protein: m.protein, carbs: m.carbs, fat: m.fat }); setMealType(m.mealType as MealType); setShowAddDialog(true); }}>
+                        <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditEntry(m); setForm({ name: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0 }); setMealType(m.mealType as MealType); setShowAddDialog(true); }}>
                           <Edit2 className="w-3.5 h-3.5" />
                         </Button>
                         <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: m.id })}>

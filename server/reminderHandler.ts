@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { sdk } from "./_core/sdk";
 import { getDb } from "./db";
 import { mealLogs, workoutSessions, bodyComposition, sleepLogs } from "../drizzle/schema";
-import { gte } from "drizzle-orm";
+import { gte, sql } from "drizzle-orm";
 import { notifyOwner } from "./_core/notification";
 
 /**
@@ -27,8 +27,8 @@ export async function dailyReminderHandler(req: Request, res: Response) {
 
     // Check what has been logged today
     const [todayMeals, todayWorkouts, todayBody, todaySleepLogs] = await Promise.all([
-      db.select().from(mealLogs).where(gte(mealLogs.loggedAt, today)).limit(1),
-      db.select().from(workoutSessions).where(gte(workoutSessions.startTime, todayStart)).limit(1),
+      db.select().from(mealLogs).where(sql`${mealLogs.loggedAt} >= ${today}`).limit(1),
+      db.select().from(workoutSessions).where(sql`${workoutSessions.startTime} >= ${todayStart}`).limit(1),
       db.select().from(bodyComposition).where(gte(bodyComposition.date, today)).limit(1),
       db.select().from(sleepLogs).where(gte(sleepLogs.date, today)).limit(1),
     ]);

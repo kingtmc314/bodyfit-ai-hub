@@ -78,13 +78,27 @@
 - [x] Apply translations across Dashboard, Nutrition, Workout, Body, HeartRate, Sleep, Photos, Insights
 
 ## Phase 12: Supabase Migration
-- [ ] Obtain Supabase PostgreSQL connection string (user login)
-- [ ] Update DATABASE_URL secret to Supabase connection string
-- [ ] Update Drizzle config to use PostgreSQL dialect
-- [ ] Update schema.ts to use PostgreSQL types (pgTable, pgEnum)
-- [ ] Generate and apply migrations to Supabase
-- [ ] Verify all queries work with PostgreSQL
+- [x] Obtain Supabase PostgreSQL connection string (user login — life-OS project awvpavxgsikzmmrwspqp)
+- [x] Update SUPABASE_DATABASE_URL secret to Session Pooler connection string
+- [x] Update Drizzle config to use PostgreSQL dialect
+- [x] Update schema.ts to use PostgreSQL types (pgTable, pgEnum)
+- [x] Generate and apply migrations to Supabase (11 tables created)
+- [x] Verify all queries work with PostgreSQL (16 tests passing, server connected)
 
 ## Phase 13: Deployment
 - [x] Render deployment step-by-step guide (render.yaml + RENDER_DEPLOY.md)
 - [x] Final checkpoint and GitHub push
+
+## Phase 14: Critical Bug Fixes
+- [x] Fix OAuth login: Supabase users table missing "openId" column (camelCase) — added column and UNIQUE constraint
+- [x] Fix open_id NOT NULL constraint — made nullable, added trigger to sync openId → open_id
+- [x] Fix Drizzle schema: users table role column uses pgEnum (user_role) not varchar
+- [x] Fix 46 TypeScript errors in frontend pages (Nutrition, Sleep, Workout, Dashboard, HeartRate, Insights)
+  - Nutrition.tsx: use servings/loggedAt instead of quantity/date, null coalescing for nullable fields
+  - Sleep.tsx: use sleepScore/sleepQuality/sleepDuration instead of score/quality/duration
+  - Workout.tsx: use startTime instead of date, handle null exerciseName
+  - Dashboard.tsx: use sleepScore/sleepQuality, fix meal date reference
+  - HeartRate.tsx: use avgHr instead of maxHr
+  - Insights.tsx: use sleepScore, add format import, use startTime for workout date
+- [x] Fix server/reminderHandler.ts: use sql template literal for timestamp comparison (gte on PgTimestamp)
+- [x] All 16 tests passing after fixes
