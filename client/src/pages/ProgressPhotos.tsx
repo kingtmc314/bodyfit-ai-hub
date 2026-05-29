@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -12,6 +13,7 @@ import { Plus, Camera, Upload, Trash2, X, Loader2, Image as ImageIcon, ChevronLe
 const POSE_OPTIONS = ["front", "back", "side_left", "side_right", "other"];
 
 export default function ProgressPhotos() {
+  const { t } = useTranslation();
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<any>(null);
@@ -71,18 +73,21 @@ export default function ProgressPhotos() {
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Progress Photos</h1>
-          <p className="text-muted-foreground text-sm">Visual body composition timeline</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-2" onClick={() => { cameraInputRef.current?.click(); setShowUploadDialog(true); }}>
-            <Camera className="w-4 h-4" /> Camera
-          </Button>
-          <Button size="sm" className="gap-2" onClick={() => { resetForm(); setShowUploadDialog(true); }}>
-            <Plus className="w-4 h-4" /> Upload Photo
-          </Button>
+      {/* Sunny Page Header */}
+      <div className="rounded-2xl p-5 text-white" style={{background: 'linear-gradient(135deg, oklch(0.62 0.18 145) 0%, oklch(0.62 0.18 200) 100%)'}}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl font-extrabold text-white">{t('photos.title')}</h1>
+            <p className="text-white/70 text-sm mt-0.5">{t('photos.subtitle')}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" className="gap-2 bg-white/20 hover:bg-white/30 text-white border-0" onClick={() => { cameraInputRef.current?.click(); setShowUploadDialog(true); }}>
+              <Camera className="w-4 h-4" /> {t('photos.camera')}
+            </Button>
+            <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { resetForm(); setShowUploadDialog(true); }}>
+              <Plus className="w-4 h-4" /> {t('photos.upload')}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -96,10 +101,10 @@ export default function ProgressPhotos() {
       ) : photos.length === 0 ? (
         <div className="bg-card border border-border rounded-2xl p-12 text-center">
           <ImageIcon className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground">No progress photos yet</p>
-          <p className="text-muted-foreground text-sm mt-1">Upload your first photo to start tracking visual progress</p>
+          <p className="text-muted-foreground">{t('photos.empty')}</p>
+          <p className="text-muted-foreground text-sm mt-1">{t('photos.empty_sub')}</p>
           <Button className="mt-4 gap-2" onClick={() => setShowUploadDialog(true)}>
-            <Upload className="w-4 h-4" /> Upload Photo
+            <Upload className="w-4 h-4" /> {t('photos.upload')}
           </Button>
         </div>
       ) : (

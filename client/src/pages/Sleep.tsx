@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -44,6 +45,7 @@ const defaultForm = {
 };
 
 export default function Sleep() {
+  const { t } = useTranslation();
   const [showDialog, setShowDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
@@ -114,19 +116,22 @@ export default function Sleep() {
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Sleep</h1>
-          <p className="text-muted-foreground text-sm">Track sleep quality, duration, and recovery</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-2" disabled={syncing}
-            onClick={() => { setSyncing(true); syncMutation.mutate({ type: "sleep" }); }}>
-            <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} /> Sync Sheets
-          </Button>
-          <Button size="sm" className="gap-2" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
-            <Plus className="w-4 h-4" /> Log Sleep
-          </Button>
+      {/* Sunny Page Header */}
+      <div className="rounded-2xl p-5 text-white" style={{background: 'linear-gradient(135deg, oklch(0.62 0.18 270) 0%, oklch(0.62 0.18 230) 100%)'}}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl font-extrabold text-white">{t('sleep.title')}</h1>
+            <p className="text-white/70 text-sm mt-0.5">{t('sleep.subtitle')}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" className="gap-2 bg-white/20 hover:bg-white/30 text-white border-0" disabled={syncing}
+              onClick={() => { setSyncing(true); syncMutation.mutate({ type: "sleep" }); }}>
+              <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} /> {t('body.sync_sheets')}
+            </Button>
+            <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
+              <Plus className="w-4 h-4" /> {t('sleep.add_record')}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -134,20 +139,20 @@ export default function Sleep() {
       {latest && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: "Sleep Score", value: latest.score, unit: "/100", color: "text-blue-400", bg: "bg-blue-500/20" },
-            { label: "Duration", value: latest.duration != null ? `${Number(latest.duration).toFixed(1)}` : null, unit: "hrs", color: "text-indigo-400", bg: "bg-indigo-500/20" },
-            { label: "Body Battery", value: latest.bodyBattery, unit: "/100", color: "text-emerald-400", bg: "bg-emerald-500/20" },
-            { label: "Resting HR", value: latest.restingHr, unit: "bpm", color: "text-rose-400", bg: "bg-rose-500/20" },
+            { labelKey: "sleep.score", value: latest.score, unit: "/100", badgeClass: "icon-badge-blue" },
+            { labelKey: "sleep.duration", value: latest.duration != null ? `${Number(latest.duration).toFixed(1)}` : null, unit: "hrs", badgeClass: "icon-badge-purple" },
+            { labelKey: "sleep.body_battery", value: latest.bodyBattery, unit: "/100", badgeClass: "icon-badge-green" },
+            { labelKey: "heartrate.resting_hr", value: latest.restingHr, unit: "bpm", badgeClass: "icon-badge-red" },
           ].map(m => (
-            <div key={m.label} className="bg-card border border-border rounded-2xl p-4">
-              <div className={`w-8 h-8 rounded-lg ${m.bg} flex items-center justify-center mb-2`}>
-                <Moon className={`w-4 h-4 ${m.color}`} />
+            <div key={m.labelKey} className="stat-card rounded-2xl p-4">
+              <div className={`icon-badge ${m.badgeClass} mb-2`}>
+                <Moon className="w-4 h-4" />
               </div>
-              <p className="text-xs text-muted-foreground">{m.label}</p>
+              <p className="text-xs text-muted-foreground font-semibold">{t(m.labelKey)}</p>
               <p className="metric-value text-2xl text-foreground mt-0.5">
                 {m.value ?? "—"} <span className="text-sm font-normal text-muted-foreground">{m.unit}</span>
               </p>
-              {m.label === "Sleep Score" && getQualityBadge(latest.quality)}
+              {m.labelKey === "sleep.score" && getQualityBadge(latest.quality)}
             </div>
           ))}
         </div>
@@ -155,8 +160,8 @@ export default function Sleep() {
 
       <Tabs defaultValue="charts">
         <TabsList className="bg-muted/50">
-          <TabsTrigger value="charts">Charts</TabsTrigger>
-          <TabsTrigger value="log">Log</TabsTrigger>
+          <TabsTrigger value="charts">{t('body.trend')}</TabsTrigger>
+          <TabsTrigger value="log">{t('common.view_all')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="charts" className="mt-4 space-y-4">

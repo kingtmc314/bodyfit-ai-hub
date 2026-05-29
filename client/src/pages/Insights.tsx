@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -26,6 +27,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function Insights() {
+  const { t } = useTranslation();
   const [generating, setGenerating] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
@@ -73,22 +75,25 @@ export default function Insights() {
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">AI Insights</h1>
-          <p className="text-muted-foreground text-sm">Personalized health analysis and performance review</p>
+      {/* Sunny Page Header */}
+      <div className="rounded-2xl p-5 text-white" style={{background: 'linear-gradient(135deg, oklch(0.58 0.22 300) 0%, oklch(0.62 0.20 260) 100%)'}}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl font-extrabold text-white">{t('insights.title')}</h1>
+            <p className="text-white/70 text-sm mt-0.5">{t('insights.subtitle')}</p>
+          </div>
+          <Button className="gap-2 bg-white text-primary hover:bg-white/90" onClick={handleGenerate} disabled={generating}>
+            {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {t('insights.generate')}
+          </Button>
         </div>
-        <Button className="gap-2" onClick={handleGenerate} disabled={generating}>
-          {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-          Generate AI Insights
-        </Button>
       </div>
 
       <Tabs defaultValue="overview">
         <TabsList className="bg-muted/50">
-          <TabsTrigger value="overview">Health Overview</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="history">Insight History</TabsTrigger>
+          <TabsTrigger value="overview">{t('insights.health_overview')}</TabsTrigger>
+          <TabsTrigger value="analytics">{t('insights.analytics')}</TabsTrigger>
+          <TabsTrigger value="history">{t('insights.history')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-4">
@@ -101,7 +106,7 @@ export default function Insights() {
                     <Brain className="w-4 h-4 text-violet-400" />
                   </div>
                   <div>
-                    <p className="font-semibold text-foreground">Latest AI Analysis</p>
+                    <p className="font-semibold text-foreground">{t('insights.latest_analysis')}</p>
                     <p className="text-xs text-muted-foreground">{latestInsight.createdAt ? new Date(latestInsight.createdAt).toLocaleDateString() : ""}</p>
                   </div>
                 </div>
@@ -114,8 +119,8 @@ export default function Insights() {
           ) : (
             <div className="bg-card border border-border rounded-2xl p-8 text-center">
               <Brain className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-foreground font-medium">No insights yet</p>
-              <p className="text-muted-foreground text-sm mt-1">Generate your first AI health analysis to get personalized recommendations</p>
+              <p className="text-foreground font-medium">{t('insights.empty')}</p>
+              <p className="text-muted-foreground text-sm mt-1">{t('insights.empty_sub')}</p>
               <Button className="mt-4 gap-2" onClick={handleGenerate} disabled={generating}>
                 {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                 Generate Insights

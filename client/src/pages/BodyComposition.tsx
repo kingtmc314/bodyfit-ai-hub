@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -30,6 +31,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 const defaultForm = { date: format(new Date(), "yyyy-MM-dd"), weight: "", bodyFatPct: "", muscleMass: "", bmi: "", fatMass: "", visceralFat: "", bmr: "", notes: "" };
 
 export default function BodyComposition() {
+  const { t } = useTranslation();
   const [showDialog, setShowDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
@@ -107,19 +109,22 @@ export default function BodyComposition() {
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Body Composition</h1>
-          <p className="text-muted-foreground text-sm">Track weight, body fat, muscle mass and more</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-2" disabled={syncing}
-            onClick={() => { setSyncing(true); syncMutation.mutate({ type: "body" }); }}>
-            <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} /> Sync Sheets
-          </Button>
-          <Button size="sm" className="gap-2" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
-            <Plus className="w-4 h-4" /> Log Metrics
-          </Button>
+      {/* Page Header */}
+      <div className="hero-gradient rounded-2xl p-5 text-white">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl font-extrabold text-white">{t('body.title')}</h1>
+            <p className="text-white/70 text-sm mt-0.5">{t('body.subtitle')}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" className="gap-2 bg-white/20 hover:bg-white/30 text-white border-0" disabled={syncing}
+              onClick={() => { setSyncing(true); syncMutation.mutate({ type: "body" }); }}>
+              <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} /> {t('body.sync_sheets')}
+            </Button>
+            <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
+              <Plus className="w-4 h-4" /> {t('body.add_record')}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -127,21 +132,21 @@ export default function BodyComposition() {
       {latest && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-    { label: "Weight", value: latest.weight, unit: "kg", key: "weight", color: "text-emerald-400", bg: "bg-emerald-500/20" },
-          { label: "Body Fat", value: latest.bodyFatPct, unit: "%", key: "bodyFatPct", color: "text-amber-400", bg: "bg-amber-500/20" },
-          { label: "Muscle Mass", value: latest.muscleMass, unit: "kg", key: "muscleMass", color: "text-blue-400", bg: "bg-blue-500/20" },
-          { label: "BMI", value: latest.bmi, unit: "", key: "bmi", color: "text-purple-400", bg: "bg-purple-500/20" },
-          { label: "Fat Mass", value: latest.fatMass, unit: "kg", key: "fatMass", color: "text-rose-400", bg: "bg-rose-500/20" },
-          { label: "Visceral Fat", value: latest.visceralFat, unit: "", key: "visceralFat", color: "text-orange-400", bg: "bg-orange-500/20" },
-          { label: "BMR", value: latest.bmr, unit: "kcal", key: "bmr", color: "text-cyan-400", bg: "bg-cyan-500/20" },
-          { label: "Source", value: latest.source, unit: "", key: "source", color: "text-muted-foreground", bg: "bg-muted/50" },
+            { labelKey: "body.weight", value: latest.weight, unit: "kg", key: "weight", badgeClass: "icon-badge-green" },
+            { labelKey: "body.body_fat", value: latest.bodyFatPct, unit: "%", key: "bodyFatPct", badgeClass: "icon-badge-yellow" },
+            { labelKey: "body.muscle_mass", value: latest.muscleMass, unit: "kg", key: "muscleMass", badgeClass: "icon-badge-blue" },
+            { labelKey: "body.bmi", value: latest.bmi, unit: "", key: "bmi", badgeClass: "icon-badge-purple" },
+            { labelKey: "body.fat_mass", value: latest.fatMass, unit: "kg", key: "fatMass", badgeClass: "icon-badge-red" },
+            { labelKey: "body.visceral_fat", value: latest.visceralFat, unit: "", key: "visceralFat", badgeClass: "icon-badge-orange" },
+            { labelKey: "body.bmr", value: latest.bmr, unit: "kcal", key: "bmr", badgeClass: "icon-badge-blue" },
+            { labelKey: "body.notes", value: latest.source, unit: "", key: "source", badgeClass: "icon-badge-green" },
           ].map(m => (
-            <div key={m.label} className="bg-card border border-border rounded-2xl p-4">
-              <div className={`w-8 h-8 rounded-lg ${m.bg} flex items-center justify-center mb-2`}>
-                <Scale className={`w-4 h-4 ${m.color}`} />
+            <div key={m.labelKey} className="stat-card rounded-2xl p-4">
+              <div className={`icon-badge ${m.badgeClass} mb-2`}>
+                <Scale className="w-4 h-4" />
               </div>
-              <p className="text-xs text-muted-foreground">{m.label}</p>
-              <p className={`metric-value text-2xl text-foreground mt-0.5`}>{m.value != null ? Number(m.value).toFixed(1) : "—"} <span className="text-sm font-normal text-muted-foreground">{m.unit}</span></p>
+              <p className="text-xs text-muted-foreground font-semibold">{t(m.labelKey).replace(/ \(.*\)/, '')}</p>
+              <p className="metric-value text-2xl text-foreground mt-0.5">{m.value != null ? Number(m.value).toFixed(1) : "—"} <span className="text-sm font-normal text-muted-foreground">{m.unit}</span></p>
               <StatBadge val={diff(m.key)} />
             </div>
           ))}
@@ -150,8 +155,8 @@ export default function BodyComposition() {
 
       <Tabs defaultValue="charts">
         <TabsList className="bg-muted/50">
-          <TabsTrigger value="charts">Charts</TabsTrigger>
-          <TabsTrigger value="log">Log</TabsTrigger>
+          <TabsTrigger value="charts">{t('body.trend')}</TabsTrigger>
+          <TabsTrigger value="log">{t('common.view_all')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="charts" className="mt-4 space-y-4">

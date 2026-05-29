@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -50,6 +51,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function Nutrition() {
+  const { t } = useTranslation();
   const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showPhotoDialog, setShowPhotoDialog] = useState(false);

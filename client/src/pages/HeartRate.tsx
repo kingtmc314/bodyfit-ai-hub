@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -30,6 +31,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 const defaultForm = { date: format(new Date(), "yyyy-MM-dd"), restingHr: "", highHr: "", maxHr: "", hrv: "", notes: "" };
 
 export default function HeartRate() {
+  const { t } = useTranslation();
   const [showDialog, setShowDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
@@ -95,19 +97,22 @@ export default function HeartRate() {
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Heart Rate</h1>
-          <p className="text-muted-foreground text-sm">Monitor resting heart rate, HRV, and zones</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-2" disabled={syncing}
-            onClick={() => { setSyncing(true); syncMutation.mutate({ type: "heartrate" }); }}>
-            <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} /> Sync Sheets
-          </Button>
-          <Button size="sm" className="gap-2" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
-            <Plus className="w-4 h-4" /> Log HR
-          </Button>
+      {/* Sunny Page Header */}
+      <div className="rounded-2xl p-5 text-white" style={{background: 'linear-gradient(135deg, oklch(0.62 0.20 25) 0%, oklch(0.68 0.19 45) 100%)'}}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl font-extrabold text-white">{t('heartrate.title')}</h1>
+            <p className="text-white/70 text-sm mt-0.5">{t('heartrate.subtitle')}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" className="gap-2 bg-white/20 hover:bg-white/30 text-white border-0" disabled={syncing}
+              onClick={() => { setSyncing(true); syncMutation.mutate({ type: "heartrate" }); }}>
+              <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} /> {t('body.sync_sheets')}
+            </Button>
+            <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
+              <Plus className="w-4 h-4" /> {t('heartrate.add_record')}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -115,20 +120,20 @@ export default function HeartRate() {
       {latest && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: "Resting HR", value: latest.restingHr, unit: "bpm", color: "text-rose-400", bg: "bg-rose-500/20" },
-            { label: "High HR", value: latest.highHr, unit: "bpm", color: "text-orange-400", bg: "bg-orange-500/20" },
-            { label: "Max HR", value: latest.maxHr, unit: "bpm", color: "text-red-400", bg: "bg-red-500/20" },
-            { label: "HRV", value: latest.hrv != null ? Number(latest.hrv).toFixed(0) : null, unit: "ms", color: "text-blue-400", bg: "bg-blue-500/20" },
+            { labelKey: "heartrate.resting_hr", value: latest.restingHr, unit: "bpm", badgeClass: "icon-badge-red" },
+            { labelKey: "heartrate.high_hr", value: latest.highHr, unit: "bpm", badgeClass: "icon-badge-orange" },
+            { labelKey: "heartrate.max_hr", value: latest.maxHr, unit: "bpm", badgeClass: "icon-badge-red" },
+            { labelKey: "heartrate.hrv", value: latest.hrv != null ? Number(latest.hrv).toFixed(0) : null, unit: "ms", badgeClass: "icon-badge-blue" },
           ].map(m => (
-            <div key={m.label} className="bg-card border border-border rounded-2xl p-4">
-              <div className={`w-8 h-8 rounded-lg ${m.bg} flex items-center justify-center mb-2`}>
-                <Heart className={`w-4 h-4 ${m.color}`} />
+            <div key={m.labelKey} className="stat-card rounded-2xl p-4">
+              <div className={`icon-badge ${m.badgeClass} mb-2`}>
+                <Heart className="w-4 h-4" />
               </div>
-              <p className="text-xs text-muted-foreground">{m.label}</p>
+              <p className="text-xs text-muted-foreground font-semibold">{t(m.labelKey)}</p>
               <p className="metric-value text-2xl text-foreground mt-0.5">
                 {m.value ?? "—"} <span className="text-sm font-normal text-muted-foreground">{m.unit}</span>
               </p>
-              {m.label === "Resting HR" && (
+              {m.labelKey === "heartrate.resting_hr" && (
                 <Badge variant="outline" className={`text-xs mt-1 ${hrZone.color}`}>{hrZone.label}</Badge>
               )}
             </div>
@@ -138,8 +143,8 @@ export default function HeartRate() {
 
       <Tabs defaultValue="charts">
         <TabsList className="bg-muted/50">
-          <TabsTrigger value="charts">Charts</TabsTrigger>
-          <TabsTrigger value="log">Log</TabsTrigger>
+          <TabsTrigger value="charts">{t('body.trend')}</TabsTrigger>
+          <TabsTrigger value="log">{t('common.view_all')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="charts" className="mt-4 space-y-4">

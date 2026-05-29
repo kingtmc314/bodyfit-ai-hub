@@ -62,3 +62,29 @@
 - [x] GitHub repository creation and push — https://github.com/kingtmc314/bodyfit-ai-hub
 - [x] Vercel deployment configuration — vercel.json + DEPLOYMENT.md created
 - [x] Checkpoint save
+
+## Phase 10: UI Redesign — Healthy & Sunny Style
+- [x] New color palette: warm sunrise gradient (amber/orange/green), vibrant accent colors
+- [x] Updated typography: rounded, friendly, energetic font pairing
+- [x] Redesigned sidebar with gradient and health-themed icons
+- [x] Redesigned Dashboard with sunny hero section and colorful metric cards
+- [x] Updated all module pages with new style tokens
+- [x] Light theme as default (health/sunny feel)
+
+## Phase 11: Chinese/English i18n
+- [x] Install react-i18next and i18next
+- [x] Create en.json and zh.json translation files for all 8 modules
+- [x] Add language toggle button in sidebar/header
+- [x] Apply translations across Dashboard, Nutrition, Workout, Body, HeartRate, Sleep, Photos, Insights
+
+## Phase 12: Supabase Migration
+- [ ] Obtain Supabase PostgreSQL connection string (user login)
+- [ ] Update DATABASE_URL secret to Supabase connection string
+- [ ] Update Drizzle config to use PostgreSQL dialect
+- [ ] Update schema.ts to use PostgreSQL types (pgTable, pgEnum)
+- [ ] Generate and apply migrations to Supabase
+- [ ] Verify all queries work with PostgreSQL
+
+## Phase 13: Deployment
+- [x] Render deployment step-by-step guide (render.yaml + RENDER_DEPLOY.md)
+- [x] Final checkpoint and GitHub push

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -111,6 +112,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function Workout() {
+  const { t } = useTranslation();
   const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -229,32 +231,34 @@ export default function Workout() {
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Workout</h1>
-          <p className="text-muted-foreground text-sm">Log exercises and track progress</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="w-40 text-sm" />
-          {!activeSession ? (
-            <Button onClick={() => setShowSessionDialog(true)} size="sm" className="gap-2">
-              <Plus className="w-4 h-4" /> Start Workout
-            </Button>
-          ) : (
-            <Badge variant="outline" className="gap-2 text-primary border-primary">
-              <div className="w-2 h-2 rounded-full bg-primary pulse-dot" />
-              {activeSession.name}
-            </Badge>
-          )}
+      {/* Sunny Page Header */}
+      <div className="hero-gradient rounded-2xl p-5 text-white">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl font-extrabold text-white">{t('workout.title')}</h1>
+            <p className="text-white/70 text-sm mt-0.5">{t('workout.subtitle')}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="w-40 text-sm bg-white/20 border-white/30 text-white placeholder:text-white/50" />
+            {!activeSession ? (
+              <Button onClick={() => setShowSessionDialog(true)} size="sm" className="gap-2 bg-white text-primary hover:bg-white/90">
+                <Plus className="w-4 h-4" /> {t('workout.start_workout')}
+              </Button>
+            ) : (
+              <Badge variant="outline" className="gap-2 bg-white/20 text-white border-white/40">
+                <div className="w-2 h-2 rounded-full bg-white pulse-dot" />
+                {activeSession.name}
+              </Badge>
+            )}
+          </div>
         </div>
       </div>
 
       <Tabs defaultValue="session">
         <TabsList className="bg-muted/50">
-          <TabsTrigger value="session">Active Session</TabsTrigger>
-          <TabsTrigger value="exercises">Exercise Library</TabsTrigger>
-          <TabsTrigger value="history">History & Charts</TabsTrigger>
+          <TabsTrigger value="session">{t('workout.active_session')}</TabsTrigger>
+          <TabsTrigger value="exercises">{t('workout.exercise_library')}</TabsTrigger>
+          <TabsTrigger value="history">{t('workout.history')}</TabsTrigger>
         </TabsList>
 
         {/* Active Session Tab */}
@@ -262,7 +266,7 @@ export default function Workout() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Muscle Map */}
             <div className="bg-card border border-border rounded-2xl p-5">
-              <h3 className="font-semibold text-foreground mb-3 text-sm">Muscle Groups Trained</h3>
+              <h3 className="font-semibold text-foreground mb-3 text-sm">{t('workout.muscle_groups')}</h3>
               <MuscleMap activeMuscles={activeMuscles} selectedMuscle={selectedMuscle}
                 onSelect={m => setSelectedMuscle(prev => prev === m ? null : m)} />
               {activeMuscles.length > 0 && (
