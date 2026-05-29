@@ -6,9 +6,9 @@ import { z } from "zod";
 import { getDb } from "./db";
 import {
   mealLogs, foodItems, workoutSessions, workoutSets, exercises,
-  bodyMetrics, heartRateRecords, sleepRecords, progressPhotos, aiInsights
+  bodyComposition, heartRateLogs, sleepLogs, progressPhotos, aiInsights
 } from "../drizzle/schema";
-import { eq, and, desc, gte, lte, like, or } from "drizzle-orm";
+import { eq, and, desc, gte, lte, like, or, sql } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
@@ -34,7 +34,7 @@ const nutritionRouter = router({
       const db = await getDb();
       if (!db) return [];
       return db.select().from(mealLogs)
-        .where(and(eq(mealLogs.userId, ctx.user.id), eq(mealLogs.date, input.date)))
+        .where(and(eq(mealLogs.userId, ctx.user.id), sql`${mealLogs.loggedAt} >= ${new Date(input.date + "T00:00:00")}`, sql`${mealLogs.loggedAt} <= ${new Date(input.date + "T23:59:59")}`))
         .orderBy(mealLogs.createdAt);
     }),
 
@@ -47,10 +47,10 @@ const nutritionRouter = router({
       return db.select().from(mealLogs)
         .where(and(
           eq(mealLogs.userId, ctx.user.id),
-          gte(mealLogs.date, input.startDate),
-          lte(mealLogs.date, input.endDate)
+          sql`${mealLogs.loggedAt} >= ${new Date(input.startDate)}`,
+          sql`${mealLogs.loggedAt} <= ${new Date(input.endDate)}`
         ))
-        .orderBy(desc(mealLogs.date));
+        .orderBy(desc(mealLogs.loggedAt));
     }),
 
   // Add meal log
@@ -219,9 +219,9 @@ const workoutRouter = router({
       const db = await getDb();
       if (!db) return [];
       const conditions = [eq(workoutSessions.userId, ctx.user.id)];
-      if (input?.startDate) conditions.push(gte(workoutSessions.date, input.startDate));
-      if (input?.endDate) conditions.push(lte(workoutSessions.date, input.endDate));
-      return db.select().from(workoutSessions).where(and(...conditions)).orderBy(desc(workoutSessions.date));
+      if (input?.startDate) conditions.push(sql`${workoutSessions.startTime} >= ${new Date(input.startDate)}`);
+      if (input?.endDate) conditions.push(sql`${workoutSessions.startTime} <= ${new Date(input.endDate)}`);
+      return db.select().from(workoutSessions).where(and(...conditions)).orderBy(desc(workoutSessions.startTime));
     }),
 
   // Get session with sets
@@ -251,8 +251,8 @@ const workoutRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const result = await db.insert(workoutSessions).values({ ...input, userId: ctx.user.id });
-      return { success: true, id: Number((result as any).insertId) };
+      const result = await db.insert(workoutSessions).values({ ...input, userId: ctx.user.id }).returning({ id: workoutSessions.id });
+      return { success: true, id: result[0]?.id ?? 0 };
     }),
 
   // Update session
@@ -338,9 +338,9 @@ const bodyRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      return db.select().from(bodyMetrics)
-        .where(eq(bodyMetrics.userId, ctx.user.id))
-        .orderBy(desc(bodyMetrics.date))
+      return db.select().from(bodyComposition)
+        .where(eq(bodyComposition.userId, ctx.user.id))
+        .orderBy(desc(bodyComposition.date))
         .limit(input?.limit || 100);
     }),
 
@@ -360,7 +360,7 @@ const bodyRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(bodyMetrics).values({ ...input, userId: ctx.user.id });
+      await db.insert(bodyComposition).values({ ...input, userId: ctx.user.id });
       return { success: true };
     }),
 
@@ -381,7 +381,7 @@ const bodyRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const { id, ...data } = input;
-      await db.update(bodyMetrics).set(data).where(and(eq(bodyMetrics.id, id), eq(bodyMetrics.userId, ctx.user.id)));
+      await db.update(bodyComposition).set(data).where(and(eq(bodyComposition.id, id), eq(bodyComposition.userId, ctx.user.id)));
       return { success: true };
     }),
 
@@ -390,7 +390,7 @@ const bodyRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.delete(bodyMetrics).where(and(eq(bodyMetrics.id, input.id), eq(bodyMetrics.userId, ctx.user.id)));
+      await db.delete(bodyComposition).where(and(eq(bodyComposition.id, input.id), eq(bodyComposition.userId, ctx.user.id)));
       return { success: true };
     }),
 
@@ -410,8 +410,8 @@ const bodyRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       for (const row of input) {
-        await db.insert(bodyMetrics).values({ ...row, userId: ctx.user.id, source: "sheets" })
-          .onDuplicateKeyUpdate({ set: { ...row, source: "sheets" } }).catch(() => {});
+        await db.insert(bodyComposition).values({ ...row, userId: ctx.user.id, source: "sheets" })
+          .onConflictDoNothing().catch(() => {});
       }
       return { success: true, count: input.length };
     }),
@@ -424,9 +424,9 @@ const heartRateRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      return db.select().from(heartRateRecords)
-        .where(eq(heartRateRecords.userId, ctx.user.id))
-        .orderBy(desc(heartRateRecords.date))
+      return db.select().from(heartRateLogs)
+        .where(eq(heartRateLogs.userId, ctx.user.id))
+        .orderBy(desc(heartRateLogs.date))
         .limit(input?.limit || 200);
     }),
 
@@ -443,7 +443,7 @@ const heartRateRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(heartRateRecords).values({ ...input, userId: ctx.user.id });
+      await db.insert(heartRateLogs).values({ ...input, userId: ctx.user.id });
       return { success: true };
     }),
 
@@ -460,7 +460,7 @@ const heartRateRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const { id, ...data } = input;
-      await db.update(heartRateRecords).set(data).where(and(eq(heartRateRecords.id, id), eq(heartRateRecords.userId, ctx.user.id)));
+      await db.update(heartRateLogs).set(data).where(and(eq(heartRateLogs.id, id), eq(heartRateLogs.userId, ctx.user.id)));
       return { success: true };
     }),
 
@@ -469,7 +469,7 @@ const heartRateRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.delete(heartRateRecords).where(and(eq(heartRateRecords.id, input.id), eq(heartRateRecords.userId, ctx.user.id)));
+      await db.delete(heartRateLogs).where(and(eq(heartRateLogs.id, input.id), eq(heartRateLogs.userId, ctx.user.id)));
       return { success: true };
     }),
 
@@ -483,7 +483,7 @@ const heartRateRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       for (const row of input) {
-        await db.insert(heartRateRecords).values({ ...row, userId: ctx.user.id, source: "sheets" }).catch(() => {});
+        await db.insert(heartRateLogs).values({ ...row, userId: ctx.user.id, source: "sheets" }).catch(() => {});
       }
       return { success: true, count: input.length };
     }),
@@ -496,9 +496,9 @@ const sleepRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      return db.select().from(sleepRecords)
-        .where(eq(sleepRecords.userId, ctx.user.id))
-        .orderBy(desc(sleepRecords.date))
+      return db.select().from(sleepLogs)
+        .where(eq(sleepLogs.userId, ctx.user.id))
+        .orderBy(desc(sleepLogs.date))
         .limit(input?.limit || 200);
     }),
 
@@ -518,13 +518,19 @@ const sleepRouter = router({
       notes: z.string().optional(),
       source: z.string().optional(),
     }))
-    .mutation(async ({ ctx, input }) => {
+        .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(sleepRecords).values({ ...input, userId: ctx.user.id });
+      const { score, quality, duration, restingHr: _rhr, ...rest } = input;
+      await db.insert(sleepLogs).values({
+        ...rest,
+        userId: ctx.user.id,
+        sleepScore: score,
+        sleepQuality: quality,
+        sleepDuration: duration,
+      });
       return { success: true };
     }),
-
   update: protectedProcedure
     .input(z.object({
       id: z.number(),
@@ -541,8 +547,9 @@ const sleepRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const { id, ...data } = input;
-      await db.update(sleepRecords).set(data).where(and(eq(sleepRecords.id, id), eq(sleepRecords.userId, ctx.user.id)));
+      const { id, score, quality, duration, restingHr: _rhr, ...rest } = input;
+      const data = { ...rest, sleepScore: score, sleepQuality: quality, sleepDuration: duration };
+      await db.update(sleepLogs).set(data).where(and(eq(sleepLogs.id, id), eq(sleepLogs.userId, ctx.user.id)));
       return { success: true };
     }),
 
@@ -551,7 +558,7 @@ const sleepRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.delete(sleepRecords).where(and(eq(sleepRecords.id, input.id), eq(sleepRecords.userId, ctx.user.id)));
+      await db.delete(sleepLogs).where(and(eq(sleepLogs.id, input.id), eq(sleepLogs.userId, ctx.user.id)));
       return { success: true };
     }),
 
@@ -570,7 +577,7 @@ const sleepRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       for (const row of input) {
-        await db.insert(sleepRecords).values({ ...row, userId: ctx.user.id, source: "sheets" }).catch(() => {});
+        await db.insert(sleepLogs).values({ ...row, userId: ctx.user.id, source: "sheets" }).catch(() => {});
       }
       return { success: true, count: input.length };
     }),
@@ -605,7 +612,7 @@ const photosRouter = router({
         userId: ctx.user.id,
         date: input.date,
         photoUrl: url,
-        photoKey: key,
+        fileKey: key,
         angle: input.angle || "front",
         weight: input.weight,
         notes: input.notes,
@@ -630,7 +637,7 @@ const insightsRouter = router({
     if (!db) return null;
     const results = await db.select().from(aiInsights)
       .where(eq(aiInsights.userId, ctx.user.id))
-      .orderBy(desc(aiInsights.createdAt))
+      .orderBy(desc(aiInsights.weekStart))
       .limit(4);
     return results;
   }),
@@ -648,11 +655,11 @@ const insightsRouter = router({
       const todayStr = today.toISOString().split("T")[0];
 
       const [meals, sessions, body, sleep, hr] = await Promise.all([
-        db.select().from(mealLogs).where(and(eq(mealLogs.userId, ctx.user.id), gte(mealLogs.date, weekAgoStr))).limit(50),
-        db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, ctx.user.id), gte(workoutSessions.date, weekAgoStr))),
-        db.select().from(bodyMetrics).where(eq(bodyMetrics.userId, ctx.user.id)).orderBy(desc(bodyMetrics.date)).limit(5),
-        db.select().from(sleepRecords).where(and(eq(sleepRecords.userId, ctx.user.id), gte(sleepRecords.date, weekAgoStr))),
-        db.select().from(heartRateRecords).where(and(eq(heartRateRecords.userId, ctx.user.id), gte(heartRateRecords.date, weekAgoStr))),
+        db.select().from(mealLogs).where(and(eq(mealLogs.userId, ctx.user.id), sql`${mealLogs.loggedAt} >= ${weekAgo}`)).limit(50),
+        db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, ctx.user.id), sql`${workoutSessions.startTime} >= ${weekAgo}`)),
+        db.select().from(bodyComposition).where(eq(bodyComposition.userId, ctx.user.id)).orderBy(desc(bodyComposition.date)).limit(5),
+        db.select().from(sleepLogs).where(and(eq(sleepLogs.userId, ctx.user.id), gte(sleepLogs.date, weekAgoStr))),
+        db.select().from(heartRateLogs).where(and(eq(heartRateLogs.userId, ctx.user.id), gte(heartRateLogs.date, weekAgoStr))),
       ]);
 
       const dataContext = JSON.stringify({ meals, sessions, body, sleep, hr }, null, 2);
@@ -678,7 +685,7 @@ const insightsRouter = router({
         userId: ctx.user.id,
         weekStart,
         content,
-        type: input.type || "overall",
+        period: input.type || "overall",
       });
 
       return { content, weekStart };
@@ -691,26 +698,28 @@ const dashboardRouter = router({
     const db = await getDb();
     if (!db) return null;
 
-    const today = new Date().toISOString().split("T")[0];
-    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-
+        const todayStr = new Date().toISOString().split("T")[0];
+    const todayStart = new Date(todayStr + "T00:00:00");
+    const todayEnd = new Date(todayStr + "T23:59:59");
+    const weekAgoDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const weekAgoStr = weekAgoDate.toISOString().split("T")[0];
     const [todayMeals, recentSessions, latestBody, latestSleep, latestHr, weekMeals] = await Promise.all([
-      db.select().from(mealLogs).where(and(eq(mealLogs.userId, ctx.user.id), eq(mealLogs.date, today))),
-      db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, ctx.user.id), gte(workoutSessions.date, weekAgo))).orderBy(desc(workoutSessions.date)).limit(7),
-      db.select().from(bodyMetrics).where(eq(bodyMetrics.userId, ctx.user.id)).orderBy(desc(bodyMetrics.date)).limit(2),
-      db.select().from(sleepRecords).where(eq(sleepRecords.userId, ctx.user.id)).orderBy(desc(sleepRecords.date)).limit(1),
-      db.select().from(heartRateRecords).where(eq(heartRateRecords.userId, ctx.user.id)).orderBy(desc(heartRateRecords.date)).limit(1),
-      db.select().from(mealLogs).where(and(eq(mealLogs.userId, ctx.user.id), gte(mealLogs.date, weekAgo))),
+      db.select().from(mealLogs).where(and(eq(mealLogs.userId, ctx.user.id), sql`${mealLogs.loggedAt} >= ${todayStart}`, sql`${mealLogs.loggedAt} <= ${todayEnd}`)),
+      db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, ctx.user.id), sql`${workoutSessions.startTime} >= ${weekAgoDate}`)).orderBy(desc(workoutSessions.startTime)).limit(7),
+      db.select().from(bodyComposition).where(eq(bodyComposition.userId, ctx.user.id)).orderBy(desc(bodyComposition.date)).limit(2),
+      db.select().from(sleepLogs).where(eq(sleepLogs.userId, ctx.user.id)).orderBy(desc(sleepLogs.date)).limit(1),
+      db.select().from(heartRateLogs).where(eq(heartRateLogs.userId, ctx.user.id)).orderBy(desc(heartRateLogs.date)).limit(1),
+      db.select().from(mealLogs).where(and(eq(mealLogs.userId, ctx.user.id), sql`${mealLogs.loggedAt} >= ${weekAgoDate}`)),
     ]);
 
-    const todayCalories = todayMeals.reduce((s, m) => s + m.calories, 0);
-    const todayProtein = todayMeals.reduce((s, m) => s + m.protein, 0);
-    const todayCarbs = todayMeals.reduce((s, m) => s + m.carbs, 0);
-    const todayFat = todayMeals.reduce((s, m) => s + m.fat, 0);
+    const todayCalories = todayMeals.reduce((s, m) => s + (m.calories ?? 0), 0);
+    const todayProtein = todayMeals.reduce((s, m) => s + (m.protein ?? 0), 0);
+    const todayCarbs = todayMeals.reduce((s, m) => s + (m.carbs ?? 0), 0);
+    const todayFat = todayMeals.reduce((s, m) => s + (m.fat ?? 0), 0);
 
     // Calculate workout streak
     let streak = 0;
-    const sessionDates = new Set(recentSessions.map(s => s.date));
+    const sessionDates = new Set(recentSessions.map(s => new Date(s.startTime).toISOString().split('T')[0]));
     for (let i = 0; i < 7; i++) {
       const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
       if (sessionDates.has(d)) streak++;
@@ -746,7 +755,7 @@ const sheetsRouter = router({
         for (const row of rows) {
           const dateVal = String(row.date ?? "");
           if (!dateVal) continue;
-          await db.insert(bodyMetrics).values({
+          await db.insert(bodyComposition).values({
             userId: ctx.user.id,
             date: dateVal,
             weight: row.weight !== undefined ? Number(row.weight) : undefined,
@@ -765,15 +774,14 @@ const sheetsRouter = router({
           const dateVal = String(row.date ?? "");
           if (!dateVal) continue;
           const qualityVal = String(row.quality ?? "") as "Poor" | "Fair" | "Good" | "Excellent" | undefined;
-          await db.insert(sleepRecords).values({
+          await db.insert(sleepLogs).values({
             userId: ctx.user.id,
             date: dateVal,
-            score: row.score !== undefined ? Number(row.score) : undefined,
-            restingHr: row.restingHr !== undefined ? Number(row.restingHr) : undefined,
+            sleepScore: row.score !== undefined ? Number(row.score) : undefined,
             bodyBattery: row.bodyBattery !== undefined ? Number(row.bodyBattery) : undefined,
             pulseOx: row.pulseOx !== undefined ? Number(row.pulseOx) : undefined,
             respiration: row.respiration !== undefined ? Number(row.respiration) : undefined,
-            quality: ["Poor","Fair","Good","Excellent"].includes(qualityVal ?? "") ? qualityVal : undefined,
+            sleepQuality: ["Poor","Fair","Good","Excellent"].includes(qualityVal ?? "") ? qualityVal : undefined,
             source: "sheets",
           }).catch(() => {});
           count++;
@@ -782,10 +790,9 @@ const sheetsRouter = router({
         for (const row of rows) {
           const dateVal = String(row.date ?? "");
           if (!dateVal) continue;
-          await db.insert(heartRateRecords).values({
+          await db.insert(heartRateLogs).values({
             userId: ctx.user.id,
             date: dateVal,
-            restingHr: row.restingHr !== undefined ? Number(row.restingHr) : undefined,
             highHr: row.highHr !== undefined ? Number(row.highHr) : undefined,
             hrv: row.hrv !== undefined ? Number(row.hrv) : undefined,
             source: "sheets",
@@ -823,7 +830,7 @@ const sheetsRouter = router({
         const dateVal = String(row.date ?? "");
         if (!dateVal) continue;
         if (input.type === "body") {
-          await db.insert(bodyMetrics).values({ userId: ctx.user.id, date: dateVal,
+          await db.insert(bodyComposition).values({ userId: ctx.user.id, date: dateVal,
             weight: row.weight !== undefined ? Number(row.weight) : undefined,
             bmi: row.bmi !== undefined ? Number(row.bmi) : undefined,
             bodyFatPct: row.bodyFatPct !== undefined ? Number(row.bodyFatPct) : undefined,
@@ -835,18 +842,16 @@ const sheetsRouter = router({
           }).catch(() => {});
         } else if (input.type === "sleep") {
           const qualityVal = String(row.quality ?? "") as "Poor" | "Fair" | "Good" | "Excellent" | undefined;
-          await db.insert(sleepRecords).values({ userId: ctx.user.id, date: dateVal,
-            score: row.score !== undefined ? Number(row.score) : undefined,
-            restingHr: row.restingHr !== undefined ? Number(row.restingHr) : undefined,
+          await db.insert(sleepLogs).values({ userId: ctx.user.id, date: dateVal,
+            sleepScore: row.score !== undefined ? Number(row.score) : undefined,
             bodyBattery: row.bodyBattery !== undefined ? Number(row.bodyBattery) : undefined,
             pulseOx: row.pulseOx !== undefined ? Number(row.pulseOx) : undefined,
             respiration: row.respiration !== undefined ? Number(row.respiration) : undefined,
-            quality: ["Poor","Fair","Good","Excellent"].includes(qualityVal ?? "") ? qualityVal : undefined,
+            sleepQuality: ["Poor","Fair","Good","Excellent"].includes(qualityVal ?? "") ? qualityVal : undefined,
             source: "sheets",
           }).catch(() => {});
         } else if (input.type === "heartrate") {
-          await db.insert(heartRateRecords).values({ userId: ctx.user.id, date: dateVal,
-            restingHr: row.restingHr !== undefined ? Number(row.restingHr) : undefined,
+          await db.insert(heartRateLogs).values({ userId: ctx.user.id, date: dateVal,
             highHr: row.highHr !== undefined ? Number(row.highHr) : undefined,
             source: "sheets",
           }).catch(() => {});

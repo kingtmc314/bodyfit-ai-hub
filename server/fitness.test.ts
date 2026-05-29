@@ -21,7 +21,10 @@ vi.mock("./db", () => ({
     select: vi.fn().mockReturnValue(makeChainable([])),
     insert: vi.fn().mockReturnValue({
       values: vi.fn().mockReturnValue({
-        onDuplicateKeyUpdate: vi.fn().mockResolvedValue(undefined),
+        onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+        onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+        returning: vi.fn().mockResolvedValue([{ id: 42 }]),
+        catch: vi.fn().mockResolvedValue(undefined),
         then: (resolve: (v: unknown) => unknown) => Promise.resolve(undefined).then(resolve),
       }),
     }),
@@ -145,12 +148,7 @@ describe("workout.createSession", () => {
   it("creates a workout session and returns id", async () => {
     const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
-    // Mock insert to return insertId
-    const { getDb } = await import("./db");
-    const mockDb = await (getDb as ReturnType<typeof vi.fn>)();
-    mockDb.insert.mockReturnValue({
-      values: vi.fn().mockResolvedValue({ insertId: 42 }),
-    });
+    // Mock insert to return id via .returning()
     const result = await caller.workout.createSession({
       date: "2026-05-29",
       name: "Chest Day",

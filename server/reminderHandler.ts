@@ -1,8 +1,8 @@
 import type { Request, Response } from "express";
 import { sdk } from "./_core/sdk";
 import { getDb } from "./db";
-import { mealLogs, workoutSessions, bodyMetrics, sleepRecords } from "../drizzle/schema";
-import { eq, and, gte } from "drizzle-orm";
+import { mealLogs, workoutSessions, bodyComposition, sleepLogs } from "../drizzle/schema";
+import { gte } from "drizzle-orm";
 import { notifyOwner } from "./_core/notification";
 
 /**
@@ -23,20 +23,21 @@ export async function dailyReminderHandler(req: Request, res: Response) {
     }
 
     const today = new Date().toISOString().split("T")[0];
+    const todayStart = new Date(today);
 
-    // Check what has been logged today for all users (owner-level reminder)
-    const [todayMeals, todayWorkouts, todayBody, todaySleep] = await Promise.all([
-      db.select().from(mealLogs).where(gte(mealLogs.date, today)).limit(1),
-      db.select().from(workoutSessions).where(gte(workoutSessions.date, today)).limit(1),
-      db.select().from(bodyMetrics).where(gte(bodyMetrics.date, today)).limit(1),
-      db.select().from(sleepRecords).where(gte(sleepRecords.date, today)).limit(1),
+    // Check what has been logged today
+    const [todayMeals, todayWorkouts, todayBody, todaySleepLogs] = await Promise.all([
+      db.select().from(mealLogs).where(gte(mealLogs.loggedAt, today)).limit(1),
+      db.select().from(workoutSessions).where(gte(workoutSessions.startTime, todayStart)).limit(1),
+      db.select().from(bodyComposition).where(gte(bodyComposition.date, today)).limit(1),
+      db.select().from(sleepLogs).where(gte(sleepLogs.date, today)).limit(1),
     ]);
 
     const missing: string[] = [];
     if (todayMeals.length === 0) missing.push("🍽️ Meals");
     if (todayWorkouts.length === 0) missing.push("💪 Workout");
     if (todayBody.length === 0) missing.push("⚖️ Body Metrics");
-    if (todaySleep.length === 0) missing.push("😴 Sleep");
+    if (todaySleepLogs.length === 0) missing.push("😴 Sleep");
 
     if (missing.length === 0) {
       return res.json({ ok: true, message: "All entries logged for today — great job!" });
@@ -50,11 +51,12 @@ export async function dailyReminderHandler(req: Request, res: Response) {
     });
 
     return res.json({ ok: true, reminded: missing });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const error = err as { message?: string; stack?: string };
     console.error("[daily-reminder] Error:", err);
     return res.status(500).json({
-      error: err?.message ?? "Unknown error",
-      stack: err?.stack,
+      error: error?.message ?? "Unknown error",
+      stack: error?.stack,
       context: { url: req.url, taskUid: "unknown" },
       timestamp: new Date().toISOString(),
     });

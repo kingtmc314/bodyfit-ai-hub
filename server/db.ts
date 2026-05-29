@@ -1,20 +1,37 @@
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import pg from "pg";
 import { InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
-let _db: ReturnType<typeof drizzle> | null = null;
+const { Pool } = pg;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
+let _db: ReturnType<typeof drizzle> | null = null;
+let _pool: InstanceType<typeof Pool> | null = null;
+
+// Lazily create the drizzle instance — prefer Supabase over built-in MySQL.
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  if (_db) return _db;
+
+  const connStr = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
+  if (!connStr) return null;
+
+  // If it's a PostgreSQL URL, use pg driver
+  if (connStr.startsWith("postgresql://") || connStr.startsWith("postgres://")) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _pool = new Pool({
+        connectionString: connStr,
+        ssl: { rejectUnauthorized: false },
+        max: 5,
+      });
+      _db = drizzle(_pool);
+      console.log("[Database] Connected to Supabase PostgreSQL");
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+      console.warn("[Database] Failed to connect to PostgreSQL:", error);
       _db = null;
     }
   }
+
   return _db;
 }
 
@@ -68,9 +85,13 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
+    // PostgreSQL upsert using onConflictDoUpdate
+    await db.insert(users)
+      .values(values)
+      .onConflictDoUpdate({
+        target: users.openId,
+        set: updateSet as Partial<InsertUser>,
+      });
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
@@ -88,5 +109,3 @@ export async function getUserByOpenId(openId: string) {
 
   return result.length > 0 ? result[0] : undefined;
 }
-
-// TODO: add feature queries here as your schema grows.
