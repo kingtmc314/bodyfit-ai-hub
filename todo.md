@@ -107,3 +107,14 @@
   - Insights.tsx: use sleepScore, add format import, use startTime for workout date
 - [x] Fix server/reminderHandler.ts: use sql template literal for timestamp comparison (gte on PgTimestamp)
 - [x] All 16 tests passing after fixes
+
+## Phase 16: Vercel Auto-Deploy
+- [x] Create api/index.ts — Express app wrapped as Vercel serverless entry
+- [x] Create build-vercel-full.mjs — esbuild-only build script (no tsc, avoids type conflicts)
+- [x] Update vercel.json — correct functions config, rewrites, build command
+- [x] Install Vercel CLI and authenticate (kingtmc314)
+- [x] Set all 12 environment variables on Vercel production
+- [x] Deploy to Vercel — https://bodyfit-ai-hub.vercel.app ✅
+- [x] Health check verified: GET /api/health → {"ok":true,"version":"1.0.0"}
+- [x] Frontend verified: / returns HTML
+- [x] Auto-deploy enabled: every push to main branch triggers redeploy
