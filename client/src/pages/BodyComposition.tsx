@@ -1,0 +1,304 @@
+import { useState } from "react";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Plus, Scale, Trash2, Edit2, Loader2, RefreshCw, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import {
+  AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, Legend, ComposedChart, Bar, BarChart
+} from "recharts";
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload?.length) {
+    return (
+      <div className="bg-card border border-border rounded-xl p-3 shadow-xl text-xs">
+        <p className="text-muted-foreground mb-1">{label}</p>
+        {payload.map((p: any) => (
+          <p key={p.name} style={{ color: p.color }} className="font-semibold">{p.name}: {p.value != null ? Number(p.value).toFixed(1) : "—"}</p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
+const defaultForm = { date: format(new Date(), "yyyy-MM-dd"), weight: "", bodyFatPct: "", muscleMass: "", bmi: "", fatMass: "", visceralFat: "", bmr: "", notes: "" };
+
+export default function BodyComposition() {
+  const [showDialog, setShowDialog] = useState(false);
+  const [editEntry, setEditEntry] = useState<any>(null);
+  const [form, setForm] = useState<any>(defaultForm);
+  const [syncing, setSyncing] = useState(false);
+
+  const utils = trpc.useUtils();
+  const { data: records = [], isLoading } = trpc.body.getAll.useQuery({ limit: 60 });
+  const addMutation = trpc.body.add.useMutation({
+    onSuccess: () => { utils.body.getAll.invalidate(); toast.success("Body metrics logged!"); setShowDialog(false); setForm(defaultForm); },
+    onError: (e) => toast.error(e.message),
+  });
+  const updateMutation = trpc.body.update.useMutation({
+    onSuccess: () => { utils.body.getAll.invalidate(); toast.success("Updated!"); setEditEntry(null); setShowDialog(false); },
+  });
+  const deleteMutation = trpc.body.delete.useMutation({
+    onSuccess: () => { utils.body.getAll.invalidate(); toast.success("Deleted"); },
+  });
+  const syncMutation = trpc.sheets.pullFromSheets.useMutation({
+    onSuccess: (data: { count: number; rows: number }) => { utils.body.getAll.invalidate(); setSyncing(false); toast.success(`Pulled ${data.count} records from Google Sheets (${data.rows} rows found)`); },
+    onError: (err) => { setSyncing(false); toast.error("Sync failed: " + err.message); },
+  });
+
+  const pushToSheetsMutation = trpc.sheets.pushToSheets.useMutation({
+    onError: (err) => console.warn("Sheets write-back failed:", err.message)
+  });
+
+  const chartData = [...records].reverse().map(r => ({
+    date: r.date.slice(5),
+    weight: r.weight,
+    fat: r.bodyFatPct,
+    muscle: r.muscleMass,
+    bmi: r.bmi,
+    fatMass: r.fatMass,
+    bmr: r.bmr,
+  }));
+
+  const latest = records[0];
+  const prev = records[1];
+  const diff = (key: string) => {
+    if (!latest || !prev) return null;
+    const d = (latest as any)[key] - (prev as any)[key];
+    return d;
+  };
+
+  const StatBadge = ({ val }: { val: number | null }) => {
+    if (val === null) return null;
+    const Icon = val > 0 ? TrendingUp : val < 0 ? TrendingDown : Minus;
+    const color = val > 0 ? "text-rose-400" : val < 0 ? "text-emerald-400" : "text-muted-foreground";
+    return <span className={`flex items-center gap-0.5 text-xs ${color}`}><Icon className="w-3 h-3" />{Math.abs(val).toFixed(1)}</span>;
+  };
+
+  const handleSubmit = () => {
+    const payload = {
+      date: form.date,
+      weight: form.weight ? Number(form.weight) : undefined,
+      bodyFatPct: form.bodyFatPct ? Number(form.bodyFatPct) : undefined,
+      muscleMass: form.muscleMass ? Number(form.muscleMass) : undefined,
+      bmi: form.bmi ? Number(form.bmi) : undefined,
+      fatMass: form.fatMass ? Number(form.fatMass) : undefined,
+      visceralFat: form.visceralFat ? Number(form.visceralFat) : undefined,
+      bmr: form.bmr ? Number(form.bmr) : undefined,
+      notes: form.notes || undefined,
+    };
+    if (editEntry) {
+      updateMutation.mutate({ id: editEntry.id, ...payload });
+    } else {
+      addMutation.mutate(payload, {
+        onSuccess: () => {
+          // Write-back to Google Sheets automatically
+          pushToSheetsMutation.mutate({ type: "body", data: payload });
+        }
+      });
+    }
+  };
+
+  return (
+    <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Body Composition</h1>
+          <p className="text-muted-foreground text-sm">Track weight, body fat, muscle mass and more</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-2" disabled={syncing}
+            onClick={() => { setSyncing(true); syncMutation.mutate({ type: "body" }); }}>
+            <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} /> Sync Sheets
+          </Button>
+          <Button size="sm" className="gap-2" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
+            <Plus className="w-4 h-4" /> Log Metrics
+          </Button>
+        </div>
+      </div>
+
+      {/* Latest Metrics Cards */}
+      {latest && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+    { label: "Weight", value: latest.weight, unit: "kg", key: "weight", color: "text-emerald-400", bg: "bg-emerald-500/20" },
+          { label: "Body Fat", value: latest.bodyFatPct, unit: "%", key: "bodyFatPct", color: "text-amber-400", bg: "bg-amber-500/20" },
+          { label: "Muscle Mass", value: latest.muscleMass, unit: "kg", key: "muscleMass", color: "text-blue-400", bg: "bg-blue-500/20" },
+          { label: "BMI", value: latest.bmi, unit: "", key: "bmi", color: "text-purple-400", bg: "bg-purple-500/20" },
+          { label: "Fat Mass", value: latest.fatMass, unit: "kg", key: "fatMass", color: "text-rose-400", bg: "bg-rose-500/20" },
+          { label: "Visceral Fat", value: latest.visceralFat, unit: "", key: "visceralFat", color: "text-orange-400", bg: "bg-orange-500/20" },
+          { label: "BMR", value: latest.bmr, unit: "kcal", key: "bmr", color: "text-cyan-400", bg: "bg-cyan-500/20" },
+          { label: "Source", value: latest.source, unit: "", key: "source", color: "text-muted-foreground", bg: "bg-muted/50" },
+          ].map(m => (
+            <div key={m.label} className="bg-card border border-border rounded-2xl p-4">
+              <div className={`w-8 h-8 rounded-lg ${m.bg} flex items-center justify-center mb-2`}>
+                <Scale className={`w-4 h-4 ${m.color}`} />
+              </div>
+              <p className="text-xs text-muted-foreground">{m.label}</p>
+              <p className={`metric-value text-2xl text-foreground mt-0.5`}>{m.value != null ? Number(m.value).toFixed(1) : "—"} <span className="text-sm font-normal text-muted-foreground">{m.unit}</span></p>
+              <StatBadge val={diff(m.key)} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Tabs defaultValue="charts">
+        <TabsList className="bg-muted/50">
+          <TabsTrigger value="charts">Charts</TabsTrigger>
+          <TabsTrigger value="log">Log</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="charts" className="mt-4 space-y-4">
+          {/* Weight & Muscle Trend */}
+          <div className="bg-card border border-border rounded-2xl p-5">
+            <h3 className="font-semibold text-foreground mb-4">Weight & Muscle Mass Trend</h3>
+            {chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={chartData}>
+                  <defs>
+                    <linearGradient id="wGrad2" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="oklch(0.72 0.19 160)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="oklch(0.72 0.19 160)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.24 0.018 240)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "oklch(0.60 0.010 240)" }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: "oklch(0.60 0.010 240)" }} axisLine={false} tickLine={false} width={35} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend />
+                  <Area type="monotone" dataKey="weight" name="Weight (kg)" stroke="oklch(0.72 0.19 160)" fill="url(#wGrad2)" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="muscle" name="Muscle (kg)" stroke="oklch(0.65 0.18 200)" strokeWidth={2} dot={false} strokeDasharray="4 2" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            ) : <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">No data yet</div>}
+          </div>
+
+          {/* Body Fat & Water */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-card border border-border rounded-2xl p-5">
+              <h3 className="font-semibold text-foreground mb-4">Body Fat % Trend</h3>
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={180}>
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="fatGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="oklch(0.78 0.20 50)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="oklch(0.78 0.20 50)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.24 0.018 240)" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: "oklch(0.60 0.010 240)" }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: "oklch(0.60 0.010 240)" }} axisLine={false} tickLine={false} width={30} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Area type="monotone" dataKey="fat" name="Body Fat %" stroke="oklch(0.78 0.20 50)" fill="url(#fatGrad)" strokeWidth={2} dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : <div className="h-40 flex items-center justify-center text-muted-foreground text-sm">No data yet</div>}
+            </div>
+
+            <div className="bg-card border border-border rounded-2xl p-5">
+              <h3 className="font-semibold text-foreground mb-4">BMI Trend</h3>
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={180}>
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.24 0.018 240)" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: "oklch(0.60 0.010 240)" }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: "oklch(0.60 0.010 240)" }} axisLine={false} tickLine={false} width={30} domain={['auto', 'auto']} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Line type="monotone" dataKey="bmi" name="BMI" stroke="oklch(0.75 0.17 280)" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : <div className="h-40 flex items-center justify-center text-muted-foreground text-sm">No data yet</div>}
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="log" className="mt-4">
+          <div className="bg-card border border-border rounded-2xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    {["Date", "Weight", "Body Fat", "Muscle", "BMI", "Fat Mass", "Visceral Fat", "Notes", ""].map(h => (
+                      <th key={h} className="text-left px-4 py-3 text-xs text-muted-foreground font-medium whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {records.map(r => (
+                    <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/20">
+                      <td className="px-4 py-3 font-medium whitespace-nowrap">{r.date}</td>
+                      <td className="px-4 py-3">{r.weight != null ? `${Number(r.weight).toFixed(1)} kg` : "—"}</td>
+                      <td className="px-4 py-3">{r.bodyFatPct != null ? `${Number(r.bodyFatPct).toFixed(1)}%` : "—"}</td>
+                      <td className="px-4 py-3">{r.muscleMass != null ? `${Number(r.muscleMass).toFixed(1)} kg` : "—"}</td>
+                      <td className="px-4 py-3">{r.bmi != null ? Number(r.bmi).toFixed(1) : "—"}</td>
+                      <td className="px-4 py-3">{r.fatMass != null ? `${Number(r.fatMass).toFixed(1)} kg` : "—"}</td>
+                      <td className="px-4 py-3">{r.visceralFat ?? "—"}</td>
+                      <td className="px-4 py-3 max-w-32 truncate text-muted-foreground">{r.notes || "—"}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => {
+                            setEditEntry(r);
+                            setForm({ date: r.date, weight: r.weight ?? "", bodyFatPct: r.bodyFatPct ?? "", muscleMass: r.muscleMass ?? "", bmi: r.bmi ?? "", fatMass: r.fatMass ?? "", visceralFat: r.visceralFat ?? "", bmr: r.bmr ?? "", notes: r.notes ?? "" });
+                            setShowDialog(true);
+                          }}><Edit2 className="w-3.5 h-3.5" /></Button>
+                          <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: r.id })}><Trash2 className="w-3.5 h-3.5" /></Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {records.length === 0 && (
+                    <tr><td colSpan={9} className="text-center py-8 text-muted-foreground text-sm">No records yet</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{editEntry ? "Edit Body Metrics" : "Log Body Metrics"}</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="text-xs text-muted-foreground mb-1 block">Date</label>
+              <Input type="date" value={form.date} onChange={e => setForm((f: any) => ({ ...f, date: e.target.value }))} />
+            </div>
+            {[
+              { key: "weight", label: "Weight (kg)", step: "0.1" },
+              { key: "bodyFatPct", label: "Body Fat (%)", step: "0.1" },
+              { key: "muscleMass", label: "Muscle Mass (kg)", step: "0.1" },
+              { key: "bmi", label: "BMI", step: "0.1" },
+              { key: "fatMass", label: "Fat Mass (kg)", step: "0.1" },
+              { key: "visceralFat", label: "Visceral Fat", step: "1" },
+              { key: "bmr", label: "BMR (kcal)", step: "1" },
+            ].map(f => (
+              <div key={f.key}>
+                <label className="text-xs text-muted-foreground mb-1 block">{f.label}</label>
+                <Input type="number" step={f.step} value={form[f.key]} onChange={e => setForm((prev: any) => ({ ...prev, [f.key]: e.target.value }))} />
+              </div>
+            ))}
+            <div className="col-span-2">
+              <label className="text-xs text-muted-foreground mb-1 block">Notes</label>
+              <Input placeholder="Optional notes…" value={form.notes} onChange={e => setForm((f: any) => ({ ...f, notes: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowDialog(false); setEditEntry(null); }}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={addMutation.isPending || updateMutation.isPending}>
+              {(addMutation.isPending || updateMutation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {editEntry ? "Save" : "Log"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
