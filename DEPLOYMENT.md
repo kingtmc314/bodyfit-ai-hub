@@ -2,33 +2,60 @@
 
 ## GitHub Repository
 
-The source code is hosted at: **https://github.com/kingtmc314/bodyfit-ai-hub**
+Source code: **https://github.com/kingtmc314/bodyfit-ai-hub**
 
 ---
 
-## Deploying to Vercel
+## Architecture Note
 
-This app uses a Node.js Express + React (Vite) stack. Follow these steps to deploy on Vercel.
+This app uses a **full Node.js Express server** (tRPC + Vite SSR) which requires a **persistent server runtime**. It is **not compatible** with Vercel's serverless model without significant refactoring.
 
-### Step 1: Import the GitHub Repository
+### Recommended Deployment Options
 
-1. Go to [https://vercel.com/new](https://vercel.com/new)
-2. Click **"Import Git Repository"**
+| Platform | Compatibility | Notes |
+|---|---|---|
+| **Manus Built-in Hosting** | ✅ Native | Click Publish in Management UI — zero config |
+| **Railway** | ✅ Full | Supports persistent Node.js servers |
+| **Render** | ✅ Full | Free tier available, supports Node.js |
+| **Fly.io** | ✅ Full | Docker-based, excellent for Node.js |
+| **Vercel** | ⚠️ Partial | Requires serverless refactor (not recommended) |
+
+---
+
+## Option 1: Manus Built-in Hosting (Recommended)
+
+1. Open the project in Manus
+2. Create a checkpoint via the Management UI
+3. Click the **Publish** button in the Management UI header
+4. Your app will be live at `https://bodyfit-ai-hub-[id].manus.space`
+
+---
+
+## Option 2: Railway
+
+1. Go to [https://railway.app](https://railway.app) and sign in
+2. Click **New Project → Deploy from GitHub repo**
 3. Select `kingtmc314/bodyfit-ai-hub`
-4. Choose **Framework Preset: Other**
+4. Railway auto-detects Node.js and runs `pnpm build && pnpm start`
+5. Add all environment variables in the Railway Variables panel (see list below)
+6. Railway provides a public URL automatically
 
-### Step 2: Configure Build Settings
+---
 
-| Setting | Value |
-|---|---|
-| Build Command | `pnpm build` |
-| Output Directory | `dist` |
-| Install Command | `pnpm install` |
-| Node.js Version | 18.x or 20.x |
+## Option 3: Render
 
-### Step 3: Set Environment Variables
+1. Go to [https://render.com](https://render.com) and sign in
+2. Click **New → Web Service**
+3. Connect `kingtmc314/bodyfit-ai-hub`
+4. Set:
+   - **Build Command:** `pnpm install && pnpm build`
+   - **Start Command:** `pnpm start`
+   - **Environment:** Node
+5. Add environment variables (see list below)
 
-In Vercel Dashboard → Settings → Environment Variables, add all of the following:
+---
+
+## Required Environment Variables
 
 | Variable | Description |
 |---|---|
@@ -43,24 +70,13 @@ In Vercel Dashboard → Settings → Environment Variables, add all of the follo
 | `BUILT_IN_FORGE_API_KEY` | Manus built-in API key (server-side) |
 | `VITE_FRONTEND_FORGE_API_KEY` | Manus built-in API key (frontend) |
 | `VITE_FRONTEND_FORGE_API_URL` | Manus built-in API URL (frontend) |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | Full JSON content of Google Service Account key |
-
-### Step 4: Deploy
-
-Click **Deploy**. Vercel will build and deploy the app automatically.
-
-### Step 5: Configure OAuth Redirect URI
-
-After deployment, go to your Manus OAuth app settings and add the Vercel domain as an allowed redirect URI:
-```
-https://your-app.vercel.app/api/oauth/callback
-```
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Full JSON of Google Service Account key |
 
 ---
 
 ## Google Sheets Setup
 
-The app syncs with this spreadsheet:
+The app syncs with:
 **https://docs.google.com/spreadsheets/d/16MzWHNx9Njww8Ml3eq5tJEspmSkHcWxmaI9I5xTqsEU**
 
 Required sheet tabs (matching kingsrunai Body Fitness naming):
@@ -74,21 +90,17 @@ Share the spreadsheet with your Service Account email (found in the JSON key as 
 
 ## Daily Health Reminders
 
-The daily reminder endpoint is at `/api/scheduled/daily-reminder`.
-
-To activate scheduled reminders after deployment, configure a cron job (e.g., via Vercel Cron or an external scheduler) to POST to:
+After deployment, configure a cron job to POST to:
 ```
-POST https://your-app.vercel.app/api/scheduled/daily-reminder
+POST https://your-domain/api/scheduled/daily-reminder
 ```
 Recommended schedule: `0 9 * * *` (9:00 AM daily)
 
 ---
 
-## Alternative: Manus Built-in Hosting
+## OAuth Redirect URI
 
-If you prefer to use Manus built-in hosting instead of Vercel:
-1. Open the project in Manus
-2. Create a checkpoint
-3. Click the **Publish** button in the Management UI header
-
-The app is already configured and ready to publish on Manus infrastructure.
+After deployment, add your domain to Manus OAuth allowed redirect URIs:
+```
+https://your-domain/api/oauth/callback
+```
