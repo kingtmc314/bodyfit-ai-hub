@@ -7,7 +7,7 @@ import { getDb } from "./db";
 import {
   mealLogs, foodItems, workoutSessions, workoutSets, exercises,
   bodyComposition, heartRateLogs, sleepLogs, progressPhotos, aiInsights,
-  healthGoals
+  healthGoals, runningLogs
 } from "../drizzle/schema";
 import { eq, and, desc, gte, lte, like, or, sql } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -225,8 +225,8 @@ const workoutRouter = router({
       const db = await getDb();
       if (!db) return [];
       const conditions = [eq(workoutSessions.userId, OWNER_USER_ID)];
-      if (input?.startDate) conditions.push(sql`${workoutSessions.startTime} >= ${new Date(input.startDate)}`);
-      if (input?.endDate) conditions.push(sql`${workoutSessions.startTime} <= ${new Date(input.endDate)}`);
+      if (input?.startDate) conditions.push(sql`${workoutSessions.startTime} >= ${new Date(input.startDate + 'T00:00:00+08:00')}`);
+      if (input?.endDate) conditions.push(sql`${workoutSessions.startTime} <= ${new Date(input.endDate + 'T23:59:59+08:00')}`);
       return db.select().from(workoutSessions).where(and(...conditions)).orderBy(desc(workoutSessions.startTime));
     }),
 
@@ -1302,6 +1302,130 @@ const imageImportRouter = router({
     }),
 });
 
+
+// --- Running Router ---
+const runningRouter = router({
+  getLogs: publicProcedure
+    .input(z.object({ limit: z.number().optional().default(200) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db.execute(
+        sql`SELECT * FROM running_logs ORDER BY date DESC LIMIT ${input.limit}`
+      );
+      return (rows as any).rows ?? rows;
+    }),
+
+  getStats: publicProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return null;
+      const rows = await db.execute(sql`
+        SELECT
+          COUNT(*) as total_runs,
+          SUM(distance_km::numeric) as total_distance,
+          AVG(distance_km::numeric) as avg_distance,
+          AVG(average_pace::numeric) as avg_pace_sec,
+          AVG(average_heart_rate::numeric) as avg_hr,
+          AVG(average_cadence::numeric) as avg_cadence,
+          MAX(distance_km::numeric) as max_distance,
+          MIN(average_pace::numeric) as best_pace_sec,
+          SUM(calories::numeric) as total_calories,
+          MIN(date) as first_run,
+          MAX(date) as last_run
+        FROM running_logs
+      `);
+      const typeRows = await db.execute(sql`
+        SELECT running_type, COUNT(*) as count, SUM(distance_km::numeric) as total_km
+        FROM running_logs
+        GROUP BY running_type
+        ORDER BY count DESC
+      `);
+      const monthlyRows = await db.execute(sql`
+        SELECT
+          TO_CHAR(date, 'YYYY-MM') as month,
+          COUNT(*) as runs,
+          SUM(distance_km::numeric) as distance,
+          AVG(average_pace::numeric) as avg_pace,
+          AVG(average_heart_rate::numeric) as avg_hr
+        FROM running_logs
+        WHERE date >= NOW() - INTERVAL '12 months'
+        GROUP BY TO_CHAR(date, 'YYYY-MM')
+        ORDER BY month ASC
+      `);
+      return {
+        summary: ((rows as any).rows ?? rows)[0],
+        byType: (typeRows as any).rows ?? typeRows,
+        monthly: (monthlyRows as any).rows ?? monthlyRows,
+      };
+    }),
+
+  getAIAnalysis: publicProcedure
+    .input(z.object({ weeks: z.number().optional().default(12) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const recentRows = await db.execute(sql`
+        SELECT date, running_type, running_shoes, distance_km, hour, minutes, second,
+               average_pace, best_pace, average_heart_rate, maximum_heart_rate,
+               average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
+               vertical_oscillation_cm, avg_ground_contact_time_ms, calories,
+               temperature, humidity, notes
+        FROM running_logs
+        ORDER BY date DESC
+        LIMIT ${input.weeks * 7}
+      `);
+      const logs = (recentRows as any).rows ?? recentRows;
+
+      if (!logs.length) return { analysis: '目前沒有足夠的跑步記錄。' };
+      const statsRows = await db.execute(sql`
+        SELECT
+          COUNT(*) as total_runs,
+          SUM(distance_km::numeric) as total_distance,
+          AVG(average_pace::numeric) as avg_pace,
+          AVG(average_heart_rate::numeric) as avg_hr,
+          AVG(average_cadence::numeric) as avg_cadence,
+          AVG(avg_stride_length_m::numeric) as avg_stride,
+          AVG(avg_vertical_ratio::numeric) as avg_vr,
+          AVG(vertical_oscillation_cm::numeric) as avg_vo
+        FROM running_logs
+        WHERE date >= NOW() - INTERVAL '${sql.raw(String(input.weeks))} weeks'
+      `);
+      const stats = ((statsRows as any).rows ?? statsRows)[0];
+
+      const formatPace = (sec: number | null) => {
+        if (!sec) return 'N/A';
+        const m = Math.floor(sec / 60);
+        const s = Math.round(sec % 60);
+        return `${m}:${String(s).padStart(2, '0')}/km`;
+      };
+
+      const summary = logs.slice(0, 30).map((r: any) => [
+        `日期:${r.date?.toString().slice(0,10)}`,
+        r.running_type ? `類型:${r.running_type}` : '',
+        r.distance_km ? `距離:${parseFloat(r.distance_km).toFixed(2)}km` : '',
+        (r.hour != null || r.minutes != null) ? `時間:${r.hour||0}h${r.minutes||0}m${r.second||0}s` : '',
+        r.average_pace ? `配速:${formatPace(parseFloat(r.average_pace) * 60)}` : '',
+        r.average_heart_rate ? `心率:${r.average_heart_rate}bpm` : '',
+        r.average_cadence ? `步頻:${r.average_cadence}spm` : '',
+        r.avg_stride_length_m ? `步幅:${r.avg_stride_length_m}m` : '',
+        r.avg_vertical_ratio ? `垂直比:${r.avg_vertical_ratio}%` : '',
+        r.vertical_oscillation_cm ? `振幅:${r.vertical_oscillation_cm}cm` : '',
+        r.running_shoes ? `跑鞋:${r.running_shoes}` : '',
+        r.notes ? `備註:${r.notes}` : '',
+      ].filter(Boolean).join(', ')).join('\\n');
+
+      const res = await invokeLLM({
+        messages: [
+          { role: 'system', content: '你是一位專業跑步教練和運動科學分析師。請用繁體中文回答，結構清晰，分段說明。' },
+          { role: 'user', content: `請分析我的跑步數據，最近${input.weeks}週共${logs.length}次跑步。\n總距離:${parseFloat(stats?.total_distance||0).toFixed(1)}km，平均配速:${formatPace(parseFloat(stats?.avg_pace||0)*60)}，平均心率:${Math.round(stats?.avg_hr||0)}bpm，平均步頻:${Math.round(stats?.avg_cadence||0)}spm，平均步幅:${parseFloat(stats?.avg_stride||0).toFixed(2)}m，平均垂直比:${parseFloat(stats?.avg_vr||0).toFixed(1)}%，平均振幅:${parseFloat(stats?.avg_vo||0).toFixed(1)}cm\n\n詳細記錄(最近30次):\n${summary}\n\n請提供以下分析:\n1. 跑步表現總結(配速趨勢、距離進展、心率效率)\n2. 步頻與步幅分析(是否達到理想步頻 170-180spm)\n3. 垂直振幅與垂直比分析(跑步經濟性評估)\n4. 訓練負荷與類型分布分析\n5. 具體改進建議(至少 3 項可執行的訓練建議)` },
+        ],
+      });
+      return { analysis: res.choices[0]?.message?.content ?? '分析失敗，請稍後再試。' };
+    }),
+});
+
+
 // ─── App Router ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
@@ -1325,6 +1449,8 @@ export const appRouter = router({
   charts: chartsRouter,
   goals: goalsRouter,
   imageImport: imageImportRouter,
+  running: runningRouter,
 });
 
 export type AppRouter = typeof appRouter;
+

@@ -131,8 +131,7 @@ export default function Workout() {
 
   const utils = trpc.useUtils();
   const { data: sessions = [], isLoading } = trpc.workout.getSessions.useQuery({
-    startDate: toHKDateString(new Date(Date.now() - 30 * 86400000)),
-    endDate: selectedDate,
+    startDate: toHKDateString(new Date(Date.now() - 90 * 86400000)),
   });
   const { data: sessionDetail } = trpc.workout.getSessionWithSets.useQuery(
     { sessionId: activeSession?.id }, { enabled: !!activeSession?.id }

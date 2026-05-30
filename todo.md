@@ -246,3 +246,19 @@
 - [x] Fix mobile top nav bar to be sticky: added overflow-y-auto h-svh to SidebarInset so sticky top-0 works correctly
 - [x] Investigated workout records: only 1 session in DB (Leg Day today), Dashboard correctly shows it; screenshot was from a different app (lifemanage)
 - [x] Run tests, save checkpoint, push to GitHub
+
+## Phase 30: Running Analysis Tab
+- [ ] Add running_logs table to drizzle schema (date, distance_km, duration_min, avg_pace, avg_hr, max_hr, calories, cadence, stride_length, vertical_ratio, vertical_oscillation, notes)
+- [ ] Generate migration SQL and apply via webdev_execute_sql
+- [ ] Add server procedures: running.getLogs, running.addLog, running.updateLog, running.deleteLog, running.getAIAnalysis
+- [ ] Build Running.tsx page: stats cards, trend charts (distance/pace/HR), log table with CRUD, AI analysis tab
+- [ ] AI analysis: send all running data to LLM for comprehensive analysis (pace trends, HR zones, cadence, stride efficiency, training load)
+- [ ] Add running nav link to AppLayout sidebar
+- [ ] Run tests, save checkpoint, push to GitHub
+
+## Phase 30b: Running Data in AI Health Analysis (Insights)
+- [ ] Add running.getLogs and running.getStats procedures using actual running_logs table schema (snake_case columns: distance_km, hour/minutes/second, average_pace, average_heart_rate, average_cadence, etc.)
+- [ ] Update insights.generateInsights to include running data summary in the LLM prompt
+- [ ] Add Running tab to Insights page showing: recent runs chart, pace trend, HR trend, cadence/stride stats
+- [ ] AI analysis includes: running type breakdown, pace progression, HR efficiency, cadence/stride analysis, training load
+- [ ] Run tests, save checkpoint, push to GitHub

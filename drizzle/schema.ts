@@ -232,6 +232,32 @@ export const aiInsights = pgTable("ai_insights", {
 export type AiInsight = typeof aiInsights.$inferSelect;
 export type InsertAiInsight = typeof aiInsights.$inferInsert;
 
+// ─── Running Logs ───────────────────────────────────────────────────────────────
+export const runningLogs = pgTable("running_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: date("date").notNull(),
+  distanceKm: real("distanceKm"),                  // km
+  durationMin: real("durationMin"),                 // minutes
+  avgPaceSecPerKm: integer("avgPaceSecPerKm"),       // seconds per km
+  avgHr: integer("avgHr"),                          // bpm
+  maxHr: integer("maxHr"),                          // bpm
+  calories: integer("calories"),                    // kcal
+  avgCadence: integer("avgCadence"),                 // steps/min
+  maxCadence: integer("maxCadence"),                 // steps/min
+  avgStrideLength: real("avgStrideLength"),          // metres
+  avgVerticalRatio: real("avgVerticalRatio"),        // %
+  verticalOscillation: real("verticalOscillation"), // cm
+  elevationGain: real("elevationGain"),             // metres
+  notes: text("notes"),
+  source: varchar("source", { length: 50 }).default("manual"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type RunningLog = typeof runningLogs.$inferSelect;
+export type InsertRunningLog = typeof runningLogs.$inferInsert;
+
 // ─── Health Goals ─────────────────────────────────────────────────────────────
 export const goalTypeEnum = pgEnum("goal_type", [
   "weight",
