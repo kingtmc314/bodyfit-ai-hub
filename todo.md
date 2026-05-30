@@ -337,3 +337,19 @@
 - [x] Confirmed sleep.getAll correctly normalizes sleepDuration (minutes to hours when > 24)
 - [x] HRV chart uses sleep_logs.hrv via heartRateHistory JOIN
 - [x] 35/35 tests pass, 0 TypeScript errors
+
+## Phase 40: i18n Expansion & Trends Charts Enhancement
+- [x] Add bedtime/waketime columns to sleep_logs via migration script (confirmed already exist)
+- [x] Add bedtime/waketime to sleepHistory chartsRouter query
+- [x] Replace Sleep Stages Breakdown chart in Trends.tsx with 4 meaningful charts:
+  - HRV Trend (line chart from sleep_logs.hrv)
+  - Bedtime & Waketime (ComposedChart with midnight reference line)
+  - Blood Ox & Respiration Rate (dual-line chart)
+  - Body Battery (area chart)
+- [x] Apply useTranslation i18n to Running.tsx (all UI strings)
+- [x] Apply useTranslation i18n to Login.tsx (all UI strings)
+- [x] Apply useTranslation i18n to Import.tsx (CsvImportTab + ImageImportTab + wrapper)
+- [x] Update en.json with csv_import, image_import, ai_extract, ai_extract_desc, select_file, or, drop_here keys
+- [x] Update zh.json with matching Chinese translations for all new import keys
+- [x] 35/35 tests passing, 0 TypeScript errors
+- [x] Save checkpoint and push to GitHub

@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -72,6 +73,7 @@ const TYPE_LABELS: Record<string, string> = {
 
 // ─── CSV Import Component ─────────────────────────────────────────────────────
 function CsvImportTab() {
+  const { t } = useTranslation();
   const [csvText, setCsvText] = useState("");
   const [dataType, setDataType] = useState<DataType | "auto">("auto");
   const [previewResult, setPreviewResult] = useState<{
@@ -156,7 +158,7 @@ function CsvImportTab() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Info className="w-4 h-4 text-blue-400" />
-            Supported Formats
+            {t("import.supported_formats")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -185,8 +187,8 @@ function CsvImportTab() {
       {/* Upload Area */}
       <Card className="border-border/50">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Upload CSV File</CardTitle>
-          <CardDescription>Drag & drop, click to browse, or paste CSV text below</CardDescription>
+          <CardTitle className="text-base">{t("import.upload_csv")}</CardTitle>
+          <CardDescription>{t("import.drag_drop")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Drag & Drop Zone */}
@@ -200,8 +202,8 @@ function CsvImportTab() {
             onClick={() => fileInputRef.current?.click()}
           >
             <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-            <p className="text-sm font-medium">Drop CSV file here or click to browse</p>
-            <p className="text-xs text-muted-foreground mt-1">Max 5 MB · CSV format only</p>
+            <p className="text-sm font-medium">{t("import.drop_here")}</p>
+            <p className="text-xs text-muted-foreground mt-1">Max 5 MB · CSV</p>
             <input
               ref={fileInputRef}
               type="file"
@@ -214,7 +216,7 @@ function CsvImportTab() {
           {/* Paste Area */}
           <Tabs defaultValue="file">
             <TabsList className="mb-2">
-              <TabsTrigger value="file"><FileText className="w-3 h-3 mr-1" />File Upload</TabsTrigger>
+              <TabsTrigger value="file"><FileText className="w-3 h-3 mr-1" />{t("import.select_file")}</TabsTrigger>
               <TabsTrigger value="paste"><FileText className="w-3 h-3 mr-1" />Paste CSV</TabsTrigger>
             </TabsList>
             <TabsContent value="file">
@@ -239,19 +241,19 @@ function CsvImportTab() {
 
           {/* Data Type Selector */}
           <div className="flex items-center gap-3">
-            <label className="text-sm font-medium shrink-0">Data Type:</label>
+            <label className="text-sm font-medium shrink-0">{t("import.select_type")}:</label>
             <Select value={dataType} onValueChange={(v) => setDataType(v as DataType | "auto")}>
               <SelectTrigger className="w-52">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="auto">Auto-detect</SelectItem>
-                <SelectItem value="body">Body Composition</SelectItem>
-                <SelectItem value="sleep">Sleep</SelectItem>
-                <SelectItem value="heartrate">Heart Rate</SelectItem>
-                <SelectItem value="workout">Workouts</SelectItem>
-                <SelectItem value="nutrition">Nutrition</SelectItem>
-                <SelectItem value="running">Running</SelectItem>
+                <SelectItem value="body">{t("import.data_types.body")}</SelectItem>
+                <SelectItem value="sleep">{t("import.data_types.sleep")}</SelectItem>
+                <SelectItem value="heartrate">{t("import.data_types.heartrate")}</SelectItem>
+                <SelectItem value="workout">{t("nav.workout")}</SelectItem>
+                <SelectItem value="nutrition">{t("import.data_types.nutrition")}</SelectItem>
+                <SelectItem value="running">{t("import.data_types.running")}</SelectItem>
               </SelectContent>
             </Select>
             <Button
@@ -259,7 +261,7 @@ function CsvImportTab() {
               onClick={handlePreview}
               disabled={previewMutation.isPending || !csvText}
             >
-              {previewMutation.isPending ? "Parsing..." : "Preview"}
+              {previewMutation.isPending ? t("import.importing") : t("import.preview")}
             </Button>
           </div>
         </CardContent>
@@ -281,7 +283,7 @@ function CsvImportTab() {
               )}
             </div>
             <CardDescription>
-              {previewResult.validRows} valid rows out of {previewResult.totalRows} total rows
+              {previewResult.validRows} / {previewResult.totalRows} rows
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -326,7 +328,7 @@ function CsvImportTab() {
                 {!importResult && (
                   <div className="flex items-center justify-between pt-2">
                     <p className="text-sm text-muted-foreground">
-                      Ready to import <strong className="text-foreground">{previewResult.validRows}</strong> rows into Supabase
+                      {t("import.rows_imported", { count: previewResult.validRows })}
                     </p>
                     <Button
                       onClick={handleImport}
@@ -334,9 +336,9 @@ function CsvImportTab() {
                       className="gap-2"
                     >
                       {importMutation.isPending ? (
-                        <><Loader2 className="w-4 h-4 animate-spin" />Importing...</>
+                        <><Loader2 className="w-4 h-4 animate-spin" />{t("import.importing")}</>
                       ) : (
-                        <>Import All <ChevronRight className="w-4 h-4" /></>
+                        <>{t("import.import_btn")} <ChevronRight className="w-4 h-4" /></>
                       )}
                     </Button>
                   </div>
@@ -354,11 +356,11 @@ function CsvImportTab() {
             <div className="flex items-start gap-3">
               <CheckCircle2 className="w-6 h-6 text-green-400 shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold text-green-400">Import Successful!</p>
+                <p className="font-semibold text-green-400">{t("import.success")}</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  <strong className="text-foreground">{importResult.inserted}</strong> rows inserted into Supabase.
+                  {t("import.rows_imported", { count: importResult.inserted })}.
                   {importResult.skipped > 0 && (
-                    <> <strong className="text-yellow-400">{importResult.skipped}</strong> rows skipped (duplicates or errors).</>
+                    <> {t("import.rows_skipped", { count: importResult.skipped })}</>
                   )}
                 </p>
                 <Button
@@ -392,6 +394,7 @@ type ExtractedData = {
 };
 
 function ImageImportTab() {
+  const { t } = useTranslation();
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [imageMime, setImageMime] = useState("image/jpeg");
@@ -482,7 +485,7 @@ function ImageImportTab() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Info className="w-4 h-4 text-blue-400" />
-            How Image Import Works
+            {t("import.ai_extract")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -515,7 +518,7 @@ function ImageImportTab() {
       {/* Upload Zone */}
       <Card className="border-border/50">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Upload Health Screenshot or Photo</CardTitle>
+          <CardTitle className="text-base">{t("import.image_import")}</CardTitle>
           <CardDescription>JPG, PNG, HEIC — max 10 MB</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -531,7 +534,7 @@ function ImageImportTab() {
             {imagePreview ? (
               <div className="flex flex-col items-center gap-3">
                 <img src={imagePreview} alt="Preview" className="max-h-48 max-w-full rounded-lg object-contain border border-border/50" />
-                <p className="text-xs text-muted-foreground">Click to change image</p>
+                <p className="text-xs text-muted-foreground">{t("import.select_file")}</p>
               </div>
             ) : (
               <>
@@ -557,9 +560,9 @@ function ImageImportTab() {
                 className="gap-2"
               >
                 {extractMutation.isPending ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" />Extracting with AI...</>
+                  <><Loader2 className="w-4 h-4 animate-spin" />{t("import.importing")}</>
                 ) : (
-                  <><Eye className="w-4 h-4" />Extract Data with AI</>
+                  <><Eye className="w-4 h-4" />{t("import.ai_extract")}</>
                 )}
               </Button>
             </div>
@@ -598,7 +601,7 @@ function ImageImportTab() {
             {/* Date & Type selectors */}
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2">
-                <label className="text-sm font-medium shrink-0">Date:</label>
+                <label className="text-sm font-medium shrink-0">{t("running.date")}:</label>
                 <Input
                   type="date"
                   value={editDate}
@@ -607,16 +610,16 @@ function ImageImportTab() {
                 />
               </div>
               <div className="flex items-center gap-2">
-                <label className="text-sm font-medium shrink-0">Save as:</label>
+                <label className="text-sm font-medium shrink-0">{t("import.step_complete")}:</label>
                 <Select value={saveType} onValueChange={(v) => setSaveType(v as typeof saveType)}>
                   <SelectTrigger className="w-44 h-8 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="body">Body Composition</SelectItem>
-                    <SelectItem value="sleep">Sleep</SelectItem>
-                    <SelectItem value="heartrate">Heart Rate</SelectItem>
-                    <SelectItem value="nutrition">Nutrition</SelectItem>
+                    <SelectItem value="body">{t("import.data_types.body")}</SelectItem>
+                    <SelectItem value="sleep">{t("import.data_types.sleep")}</SelectItem>
+                    <SelectItem value="heartrate">{t("import.data_types.heartrate")}</SelectItem>
+                    <SelectItem value="nutrition">{t("import.data_types.nutrition")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -690,9 +693,9 @@ function ImageImportTab() {
                   className="gap-2"
                 >
                   {saveMutation.isPending ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" />Saving...</>
+                    <><Loader2 className="w-4 h-4 animate-spin" />{t("import.importing")}</>
                   ) : (
-                    <><Save className="w-4 h-4" />Save to Supabase</>
+                    <><Save className="w-4 h-4" />{t("import.import_btn")}</>
                   )}
                 </Button>
               </div>
@@ -700,15 +703,15 @@ function ImageImportTab() {
               <div className="flex items-center gap-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
                 <CheckCircle2 className="w-5 h-5 text-green-400 shrink-0" />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-green-400">Saved successfully!</p>
-                  <p className="text-xs text-muted-foreground">Data has been added to your Supabase database.</p>
+                  <p className="text-sm font-medium text-green-400">{t("import.success")}</p>
+                  <p className="text-xs text-muted-foreground">{t("import.success")}</p>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => { setImagePreview(null); setImageBase64(null); setExtracted(null); setSaved(false); }}
                 >
-                  Import Another
+                  {t("import.import_btn")}
                 </Button>
               </div>
             )}
@@ -721,13 +724,14 @@ function ImageImportTab() {
 
 // ─── Main Import Page ─────────────────────────────────────────────────────────
 export default function Import() {
+  const { t } = useTranslation();
   return (
     <div className="container max-w-4xl py-8 space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Import Health Data</h1>
+        <h1 className="text-2xl font-bold text-foreground">{t("import.title")}</h1>
         <p className="text-muted-foreground mt-1">
-          Import data from CSV files, or upload screenshots for AI-powered extraction.
+          {t("import.subtitle")}
         </p>
       </div>
 
@@ -736,11 +740,11 @@ export default function Import() {
         <TabsList className="mb-4">
           <TabsTrigger value="csv" className="gap-2">
             <FileText className="w-4 h-4" />
-            CSV Import
+            {t("import.csv_import")}
           </TabsTrigger>
           <TabsTrigger value="image" className="gap-2">
             <Image className="w-4 h-4" />
-            Image Import
+            {t("import.image_import")}
             <Badge className="ml-1 text-[10px] px-1 py-0 bg-primary/20 text-primary border-0">AI</Badge>
           </TabsTrigger>
         </TabsList>

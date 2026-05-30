@@ -1026,6 +1026,8 @@ const chartsRouter = router({
         restingHr: sleepLogs.restingHr,
         pulseOx: sleepLogs.pulseOx,
         respiration: sleepLogs.respiration,
+        bedtime: sleepLogs.bedtime,
+        waketime: sleepLogs.waketime,
       }).from(sleepLogs)
         .where(and(
           eq(sleepLogs.userId, OWNER_USER_ID),

@@ -231,6 +231,37 @@ function BodyCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
   );
 }
 
+// ─── Helper: parse bedtime/waketime string (HH:MM) to decimal hours offset from midnight ─────
+// bedtime like "22:30" → -1.5 (before midnight), "00:30" → 0.5 (after midnight)
+function parseBedtime(t: string | null | undefined): number | null {
+  if (!t) return null;
+  const match = t.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const h = parseInt(match[1]);
+  const m = parseInt(match[2]);
+  const decimal = h + m / 60;
+  // Bedtime: if hour >= 18 treat as before midnight (negative offset from midnight)
+  // e.g. 22:30 → 22.5 - 24 = -1.5; 23:00 → -1.0
+  return decimal >= 18 ? decimal - 24 : decimal;
+}
+// waketime like "06:30" → 6.5
+function parseWaketime(t: string | null | undefined): number | null {
+  if (!t) return null;
+  const match = t.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const h = parseInt(match[1]);
+  const m = parseInt(match[2]);
+  return h + m / 60;
+}
+function fmtDecimalHour(v: number | null): string {
+  if (v == null) return "";
+  const absH = Math.abs(v);
+  const h = Math.floor(absH);
+  const m = Math.round((absH - h) * 60);
+  const sign = v < 0 ? "-" : "";
+  return `${sign}${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 // ─── Sleep Charts ─────────────────────────────────────────────────────────────
 function SleepCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
   const { data, isLoading, error, refetch } = trpc.charts.sleepHistory.useQuery({ days });
@@ -240,10 +271,14 @@ function SleepCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
       label: fmtDate(r.date, days),
       score: r.sleepScore ?? null,
       duration: r.sleepDuration ?? null,
-      deep: r.deepSleep ?? null,
-      rem: r.remSleep ?? null,
-      light: r.lightSleep ?? null,
       battery: r.bodyBattery ?? null,
+      hrv: r.hrv ?? null,
+      pulseOx: r.pulseOx ?? null,
+      respiration: r.respiration ?? null,
+      bedtime: parseBedtime((r as any).bedtime),
+      waketime: parseWaketime((r as any).waketime),
+      bedtimeRaw: (r as any).bedtime ?? null,
+      waketimeRaw: (r as any).waketime ?? null,
     })), [data, days]);
 
   if (isLoading) return <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><ChartSkeleton /><ChartSkeleton /></div>;
@@ -320,24 +355,123 @@ function SleepCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
         </CardContent>
       </Card>
 
-      {/* Sleep Stages Stacked Bar */}
+      {/* HRV Trend Chart */}
       <Card className="md:col-span-2">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Sleep Stages Breakdown</CardTitle>
-          <CardDescription className="text-xs">Deep, REM, and Light sleep per night (hours)</CardDescription>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium">HRV Trend</CardTitle>
+            <TrendBadge values={chartData.map(d => d.hrv)} unit=" ms" />
+          </div>
+          <CardDescription className="text-xs">Heart Rate Variability from sleep — higher indicates better recovery</CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }} barSize={days <= 30 ? 14 : 6}>
+            <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+              <defs>
+                <linearGradient id="sleepHrvGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                </linearGradient>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
               <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-              <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" unit="h" />
-              <Tooltip {...TooltipStyle} formatter={(v: number) => [`${v?.toFixed(1)}h`]} />
+              <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" domain={["auto", "auto"]} unit=" ms" />
+              <Tooltip {...TooltipStyle} formatter={(v: number) => [`${v} ms`, "HRV"]} />
+              <Area type="monotone" dataKey="hrv" stroke="#22c55e" strokeWidth={2} fill="url(#sleepHrvGrad)" name="HRV (ms)" connectNulls />
+            </AreaChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* Bedtime & Waketime Comparison Chart */}
+      <Card className="md:col-span-2">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium">Bedtime &amp; Waketime</CardTitle>
+          <CardDescription className="text-xs">Bedtime (hours before/after midnight) vs Waketime — dashed line = midnight (00:00)</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={220}>
+            <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: -5, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+              <YAxis
+                tick={{ fontSize: 10 }}
+                stroke="hsl(var(--muted-foreground))"
+                domain={[-6, 10]}
+                tickFormatter={(v: number) => {
+                  const absH = Math.abs(v);
+                  const h = Math.floor(absH);
+                  const m = Math.round((absH - h) * 60);
+                  const sign = v < 0 ? "-" : "";
+                  return `${sign}${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+                }}
+              />
+              <Tooltip
+                {...TooltipStyle}
+                formatter={(v: number, name: string, props: any) => {
+                  const raw = name === "Bedtime" ? props.payload.bedtimeRaw : props.payload.waketimeRaw;
+                  return [raw ?? fmtDecimalHour(v), name];
+                }}
+              />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="deep" stackId="stages" fill="#312e81" name="Deep" radius={[0, 0, 0, 0]} />
-              <Bar dataKey="rem" stackId="stages" fill="#8b5cf6" name="REM" />
-              <Bar dataKey="light" stackId="stages" fill="#c4b5fd" name="Light" radius={[3, 3, 0, 0]} />
-            </BarChart>
+              <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: "Midnight", fontSize: 9, fill: "#94a3b8", position: "insideTopLeft" }} />
+              <Line type="monotone" dataKey="bedtime" stroke="#3b82f6" strokeWidth={2} dot={false} name="Bedtime" connectNulls />
+              <Line type="monotone" dataKey="waketime" stroke="#f97316" strokeWidth={2} dot={false} name="Waketime" connectNulls />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* Blood Ox & Respiration Chart */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium">Blood Ox &amp; Respiration</CardTitle>
+            <TrendBadge values={chartData.map(d => d.pulseOx)} unit="%" />
+          </div>
+          <CardDescription className="text-xs">Pulse Ox % (left) and Respiration rate rpm (right)</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={220}>
+            <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+              <YAxis yAxisId="ox" tick={{ fontSize: 10 }} stroke="#06b6d4" domain={[90, 100]} unit="%" />
+              <YAxis yAxisId="resp" orientation="right" tick={{ fontSize: 10 }} stroke="#f97316" domain={["auto", "auto"]} unit=" rpm" />
+              <Tooltip {...TooltipStyle} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line yAxisId="ox" type="monotone" dataKey="pulseOx" stroke="#06b6d4" strokeWidth={2} dot={false} name="Blood Ox (%)" connectNulls />
+              <Line yAxisId="resp" type="monotone" dataKey="respiration" stroke="#f97316" strokeWidth={2} dot={false} name="Respiration (rpm)" connectNulls />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* Body Battery Chart */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium">Body Battery</CardTitle>
+            <TrendBadge values={chartData.map(d => d.battery)} unit=" pts" />
+          </div>
+          <CardDescription className="text-xs">Garmin Body Battery level (0–100) — energy reserves after sleep</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+              <defs>
+                <linearGradient id="batteryGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.35} />
+                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+              <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" domain={[0, 100]} />
+              <Tooltip {...TooltipStyle} formatter={(v: number) => [v, "Body Battery"]} />
+              <ReferenceLine y={50} stroke="#f59e0b" strokeDasharray="4 2" label={{ value: "50", fontSize: 9, fill: "#f59e0b" }} />
+              <Area type="monotone" dataKey="battery" stroke="#f59e0b" strokeWidth={2} fill="url(#batteryGrad)" name="Body Battery" connectNulls />
+            </AreaChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>

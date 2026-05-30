@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { todayHKString, formatHKDate, formatHKChartDate } from "@/lib/hkTime";
@@ -81,6 +82,7 @@ const defaultForm = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function Running() {
+  const { t } = useTranslation();
   const [showDialog, setShowDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
@@ -98,40 +100,40 @@ export default function Running() {
     onSuccess: () => {
       utils.running.getLogs.invalidate();
       utils.running.getStats.invalidate();
-      toast.success("跑步記錄已新增！");
+      toast.success(t("running.add_record"));
       setShowDialog(false);
       setForm(defaultForm);
     },
-    onError: (e) => toast.error("儲存失敗：" + e.message),
+    onError: (e) => toast.error(t("common.error") + ": " + e.message),
   });
 
   const updateMutation = trpc.running.updateLog.useMutation({
     onSuccess: () => {
       utils.running.getLogs.invalidate();
       utils.running.getStats.invalidate();
-      toast.success("記錄已更新！");
+      toast.success(t("common.success"));
       setEditEntry(null);
       setShowDialog(false);
       setForm(defaultForm);
     },
-    onError: (e) => toast.error("更新失敗：" + e.message),
+    onError: (e) => toast.error(t("common.error") + ": " + e.message),
   });
 
   const deleteMutation = trpc.running.deleteLog.useMutation({
     onSuccess: () => {
       utils.running.getLogs.invalidate();
       utils.running.getStats.invalidate();
-      toast.success("記錄已刪除");
+      toast.success(t("common.success"));
       setDeleteConfirm(null);
     },
-    onError: () => toast.error("刪除失敗"),
+    onError: () => toast.error(t("common.error")),
   });
 
   const aiMutation = trpc.running.getAIAnalysis.useMutation({
     onSuccess: (data) => {
       setAiAnalysis(typeof data.analysis === 'string' ? data.analysis : null);
     },
-    onError: (e) => toast.error("AI 分析失敗：" + e.message),
+    onError: (e) => toast.error(t("common.error") + ": " + e.message),
   });
 
   // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -232,22 +234,22 @@ export default function Running() {
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <Footprints className="w-6 h-6 text-orange-500" />
-            跑步記錄
+            {t("running.title")}
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">追蹤跑步訓練與表現數據</p>
+          <p className="text-muted-foreground text-sm mt-1">{t("running.subtitle")}</p>
         </div>
         <Button onClick={openAdd} className="hero-gradient text-white">
-          <Plus className="w-4 h-4 mr-1" /> 記錄跑步
+          <Plus className="w-4 h-4 mr-1" /> {t("running.add_record")}
         </Button>
       </div>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "總跑步次數", value: `${totalRuns} 次`, icon: Footprints, color: "text-orange-500" },
-          { label: "總距離", value: `${totalDist} km`, icon: Activity, color: "text-emerald-500" },
-          { label: "平均配速", value: formatPace(avgPaceSec), icon: Timer, color: "text-blue-500" },
-          { label: "平均心率", value: avgHr ? `${avgHr} bpm` : "—", icon: Heart, color: "text-red-500" },
+          { label: t("running.total_runs"), value: `${totalRuns} ${t("running.runs")}`, icon: Footprints, color: "text-orange-500" },
+          { label: t("running.total_distance"), value: `${totalDist} km`, icon: Activity, color: "text-emerald-500" },
+          { label: t("running.avg_pace_label"), value: formatPace(avgPaceSec), icon: Timer, color: "text-blue-500" },
+          { label: t("running.avg_hr_label"), value: avgHr ? `${avgHr} bpm` : "—", icon: Heart, color: "text-red-500" },
         ].map((s) => (
           <div key={s.label} className="bg-card border border-border rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-1">
@@ -415,9 +417,9 @@ export default function Running() {
               <div>
                 <h3 className="font-semibold text-foreground flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-orange-500" />
-                  AI 跑步教練分析
+                  {t("running.ai_analysis")}
                 </h3>
-                <p className="text-xs text-muted-foreground mt-0.5">根據你的跑步數據提供個人化訓練建議</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{t("running.ai_analysis_desc")}</p>
               </div>
               <div className="flex items-center gap-2">
                 <Select value={String(aiWeeks)} onValueChange={(v) => { setAiWeeks(Number(v)); setAiAnalysis(null); }}>
@@ -426,7 +428,7 @@ export default function Running() {
                   </SelectTrigger>
                   <SelectContent>
                     {WEEKS_OPTIONS.map((w) => (
-                      <SelectItem key={w} value={String(w)}>最近 {w} 週</SelectItem>
+                      <SelectItem key={w} value={String(w)}>{w}W</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -436,9 +438,9 @@ export default function Running() {
                   className="hero-gradient text-white h-8 text-xs"
                 >
                   {aiMutation.isPending ? (
-                    <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />分析中...</>
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />{t("running.generating")}</>
                   ) : (
-                    <><Sparkles className="w-3.5 h-3.5 mr-1" />開始分析</>
+                    <><Sparkles className="w-3.5 h-3.5 mr-1" />{t("running.generate_analysis")}</>
                   )}
                 </Button>
               </div>
@@ -447,7 +449,7 @@ export default function Running() {
             {aiMutation.isPending && (
               <div className="flex flex-col items-center justify-center py-12 gap-3">
                 <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
-                <p className="text-sm text-muted-foreground">AI 教練正在分析你的跑步數據...</p>
+                <p className="text-sm text-muted-foreground">{t("running.generating")}</p>
               </div>
             )}
 
@@ -460,8 +462,7 @@ export default function Running() {
             {!aiMutation.isPending && !aiAnalysis && (
               <div className="text-center py-12 text-muted-foreground">
                 <Bot className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                <p className="font-medium">點擊「開始分析」獲取 AI 教練建議</p>
-                <p className="text-xs mt-1">分析包括配速趨勢、步頻評估、訓練負荷及改進建議</p>
+                <p className="font-medium">{t("running.ai_analysis_desc")}</p>
               </div>
             )}
           </div>
@@ -472,60 +473,60 @@ export default function Running() {
       <Dialog open={showDialog} onOpenChange={(o) => { setShowDialog(o); if (!o) { setEditEntry(null); setForm(defaultForm); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editEntry ? "修改跑步記錄" : "記錄跑步"}</DialogTitle>
+            <DialogTitle>{editEntry ? t("running.edit_record") : t("running.add_record")}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-2">
             <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">日期</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.date")}</label>
               <Input type="date" value={form.date} onChange={(e) => f("date", e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">訓練類型</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.activity_type")}</label>
               <Select value={form.runningType} onValueChange={(v) => f("runningType", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {RUNNING_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  {RUNNING_TYPES.map((rt) => <SelectItem key={rt} value={rt}>{rt}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">距離 (km)</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.distance")}</label>
               <Input type="number" step="0.01" placeholder="例: 10.5" value={form.distanceKm} onChange={(e) => f("distanceKm", e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">時間 — 小時</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.duration")} — h</label>
               <Input type="number" min="0" placeholder="0" value={form.hour} onChange={(e) => f("hour", e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">時間 — 分鐘</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.duration")} — min</label>
               <Input type="number" min="0" max="59" placeholder="例: 45" value={form.minutes} onChange={(e) => f("minutes", e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">時間 — 秒</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.duration")} — sec</label>
               <Input type="number" min="0" max="59" placeholder="0" value={form.second} onChange={(e) => f("second", e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">平均配速 (min/km)</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.avg_pace")}</label>
               <Input type="text" placeholder="例: 6.5 (=6:30/km)" value={form.averagePace} onChange={(e) => f("averagePace", e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">最佳配速</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Best Pace</label>
               <Input type="text" placeholder="例: 05:48" value={form.bestPace} onChange={(e) => f("bestPace", e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">平均心率 (bpm)</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.avg_hr")}</label>
               <Input type="number" placeholder="例: 145" value={form.averageHeartRate} onChange={(e) => f("averageHeartRate", e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">最高心率 (bpm)</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.max_hr")}</label>
               <Input type="number" placeholder="例: 175" value={form.maximumHeartRate} onChange={(e) => f("maximumHeartRate", e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">平均步頻 (spm)</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.avg_cadence")}</label>
               <Input type="number" placeholder="例: 178" value={form.averageCadence} onChange={(e) => f("averageCadence", e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">最高步頻 (spm)</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.max_cadence")}</label>
               <Input type="number" placeholder="例: 195" value={form.maxCadence} onChange={(e) => f("maxCadence", e.target.value)} />
             </div>
             <div>
@@ -541,7 +542,7 @@ export default function Running() {
               <Input type="number" step="0.1" placeholder="例: 9.2" value={form.verticalOscillationCm} onChange={(e) => f("verticalOscillationCm", e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">消耗卡路里 (kcal)</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.calories")}</label>
               <Input type="number" placeholder="例: 450" value={form.calories} onChange={(e) => f("calories", e.target.value)} />
             </div>
             {/* Shoe Locker selector */}
@@ -572,15 +573,15 @@ export default function Running() {
               </Select>
             </div>
             <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">備注</label>
-              <Input type="text" placeholder="訓練感受、路線等..." value={form.notes} onChange={(e) => f("notes", e.target.value)} />
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.notes")}</label>
+              <Input type="text" placeholder="..."  value={form.notes} onChange={(e) => f("notes", e.target.value)} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowDialog(false); setEditEntry(null); setForm(defaultForm); }}>取消</Button>
+            <Button variant="outline" onClick={() => { setShowDialog(false); setEditEntry(null); setForm(defaultForm); }}>{t("running.cancel")}</Button>
             <Button onClick={handleSave} disabled={addMutation.isPending || updateMutation.isPending} className="hero-gradient text-white">
               {(addMutation.isPending || updateMutation.isPending) ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-              儲存
+              {t("running.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -589,14 +590,14 @@ export default function Running() {
       {/* Delete confirm */}
       <Dialog open={deleteConfirm !== null} onOpenChange={(o) => { if (!o) setDeleteConfirm(null); }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>確認刪除</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">確定要刪除此跑步記錄？此操作無法復原。</p>
+          <DialogHeader><DialogTitle>{t("common.confirm_delete")}</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">{t("running.delete_confirm")}</p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>取消</Button>
+            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>{t("running.cancel")}</Button>
             <Button variant="destructive" onClick={() => deleteConfirm !== null && deleteMutation.mutate({ id: deleteConfirm })}
               disabled={deleteMutation.isPending}>
               {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-              刪除
+              {t("common.delete")}
             </Button>
           </DialogFooter>
         </DialogContent>
