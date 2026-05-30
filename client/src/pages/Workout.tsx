@@ -3,6 +3,7 @@ import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { todayHKString } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,7 @@ import {
   Flame, Timer, Weight, BarChart2, X, Check, Trophy, Target
 } from "lucide-react";
 import MuscleMap, { MUSCLE_GROUPS } from "@/components/MuscleMap";
+import ExerciseDetailModal from "@/components/ExerciseDetailModal";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, AreaChart, Area
@@ -113,13 +115,15 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export default function Workout() {
   const { t } = useTranslation();
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [selectedDate, setSelectedDate] = useState(todayHKString);
   const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEquipment, setSelectedEquipment] = useState<string>("all");
   const [showSessionDialog, setShowSessionDialog] = useState(false);
   const [showAddSetDialog, setShowAddSetDialog] = useState(false);
   const [showExerciseDialog, setShowExerciseDialog] = useState(false);
+  const [showExerciseDetail, setShowExerciseDetail] = useState(false);
+  const [detailExercise, setDetailExercise] = useState<any>(null);
   const [activeSession, setActiveSession] = useState<any>(null);
   const [selectedExercise, setSelectedExercise] = useState<any>(null);
   const [setForm, setSetForm] = useState({ reps: 10, weight: 0, notes: "" });
@@ -410,7 +414,8 @@ export default function Workout() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {filteredExercises.map((ex, i) => (
-                  <div key={i} className="bg-card border border-border rounded-xl p-4 hover:border-primary/50 transition-colors stagger-item">
+                  <div key={i} className="bg-card border border-border rounded-xl p-4 hover:border-primary/50 transition-colors stagger-item cursor-pointer"
+                    onClick={() => { setDetailExercise(ex); setShowExerciseDetail(true); }}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-foreground text-sm">{ex.name}</p>
@@ -423,12 +428,14 @@ export default function Workout() {
                           <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{ex.instructions}</p>
                         )}
                       </div>
-                      {activeSession && (
-                        <Button size="sm" variant="ghost" className="shrink-0 h-8 w-8 p-0"
-                          onClick={() => { setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                      )}
+                      <div className="flex flex-col gap-1 shrink-0">
+                        {activeSession && (
+                          <Button size="sm" variant="ghost" className="h-8 w-8 p-0"
+                            onClick={(e) => { e.stopPropagation(); setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
+                            <Plus className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -578,6 +585,22 @@ export default function Workout() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Exercise Detail Modal */}
+      <ExerciseDetailModal
+        exercise={detailExercise}
+        open={showExerciseDetail}
+        onClose={() => setShowExerciseDetail(false)}
+        hasActiveSession={!!activeSession}
+        onAddToSession={() => {
+          if (detailExercise) {
+            setSelectedExercise(detailExercise);
+            setSetForm({ reps: 10, weight: 0, notes: "" });
+            setEditSet(null);
+            setShowAddSetDialog(true);
+          }
+        }}
+      />
     </div>
   );
 }

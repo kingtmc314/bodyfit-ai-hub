@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { todayHKString } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,7 +53,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export default function Nutrition() {
   const { t } = useTranslation();
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [selectedDate, setSelectedDate] = useState(todayHKString);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showPhotoDialog, setShowPhotoDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);

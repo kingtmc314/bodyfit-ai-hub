@@ -3,6 +3,7 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { todayHKString } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +30,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-const defaultForm = { date: format(new Date(), "yyyy-MM-dd"), weight: "", bodyFatPct: "", muscleMass: "", bmi: "", fatMass: "", visceralFat: "", bmr: "", notes: "" };
+const defaultForm = { date: todayHKString(), weight: "", bodyFatPct: "", muscleMass: "", bmi: "", fatMass: "", visceralFat: "", bmr: "", notes: "" };
 
 export default function BodyComposition() {
   const { t } = useTranslation();

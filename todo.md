@@ -217,8 +217,16 @@
 - [x] 35/35 tests passing, 0 TypeScript errors
 
 ## Phase 26: Exercise Library - Images & Muscle Diagrams
-- [ ] Add imageUrl and muscleGroups display to exercise library cards
-- [ ] Source exercise action images (from wger API or similar open-source fitness API)
-- [ ] Add primary/secondary muscle group badges with muscle diagram
-- [ ] Add equipment image/icon to each exercise card
-- [ ] Show exercise detail modal with full image, instructions, and muscle diagram on card click
+- [x] Created ExerciseDetailModal component with wger SVG muscle diagrams (front/back body outline + highlighted overlays)
+- [x] Primary muscles shown in red, secondary in orange using wger static SVG overlays
+- [x] Equipment emoji icons, muscle group badge, instructions text, 加入訓練 button
+- [x] Made exercise cards clickable to open detail modal
+- [x] + button still works (stops propagation) to add to active session
+
+## Phase 27: Hong Kong Timezone Fix
+- [ ] Create shared HK timezone utility (formatHKDate, formatHKDateTime, toHKDateString)
+- [ ] Fix all date displays in Dashboard, BodyComposition, HeartRate, Sleep, Workout, Nutrition, Trends pages
+- [ ] Fix chart X-axis date labels to use HK timezone
+- [ ] Fix server-side date comparisons to use HK timezone for today queries
+- [ ] Fix date input defaults to use HK current date
+- [ ] Run tests, save checkpoint, push to GitHub

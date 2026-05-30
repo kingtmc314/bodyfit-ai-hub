@@ -13,6 +13,7 @@ import { eq, and, desc, gte, lte, like, or, sql } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
+import { todayHK, daysAgoHK, toHKDateString } from "./hkTime";
 import { parseRows, detectDataType, type ImportDataType } from "./csvImport";
 import Papa from "papaparse";
 // Fixed owner user ID - no login required
@@ -653,11 +654,10 @@ const insightsRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
 
-      // Gather recent data
-      const today = new Date();
-      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const weekAgoStr = weekAgo.toISOString().split("T")[0];
-      const todayStr = today.toISOString().split("T")[0];
+      // Gather recent data (HK timezone)
+      const todayStr = todayHK();
+      const weekAgoStr = daysAgoHK(7);
+      const weekAgo = new Date(weekAgoStr + "T00:00:00+08:00");
 
       const [meals, sessions, body, sleep, hr] = await Promise.all([
         db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.loggedAt} >= ${weekAgo}`)).limit(50),
@@ -703,11 +703,12 @@ const dashboardRouter = router({
     const db = await getDb();
     if (!db) return null;
 
-        const todayStr = new Date().toISOString().split("T")[0];
-    const todayStart = new Date(todayStr + "T00:00:00");
-    const todayEnd = new Date(todayStr + "T23:59:59");
-    const weekAgoDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const weekAgoStr = weekAgoDate.toISOString().split("T")[0];
+        // Use HK timezone for today/week boundaries
+    const todayStr = todayHK();
+    const todayStart = new Date(todayStr + "T00:00:00+08:00");
+    const todayEnd = new Date(todayStr + "T23:59:59+08:00");
+    const weekAgoStr = daysAgoHK(7);
+    const weekAgoDate = new Date(weekAgoStr + "T00:00:00+08:00");
     const [todayMeals, recentSessions, latestBody, latestSleep, latestHr, weekMeals] = await Promise.all([
       db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.loggedAt} >= ${todayStart}`, sql`${mealLogs.loggedAt} <= ${todayEnd}`)),
       db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, OWNER_USER_ID), sql`${workoutSessions.startTime} >= ${weekAgoDate}`)).orderBy(desc(workoutSessions.startTime)).limit(7),
@@ -724,9 +725,9 @@ const dashboardRouter = router({
 
     // Calculate workout streak
     let streak = 0;
-    const sessionDates = new Set(recentSessions.map(s => new Date(s.startTime).toISOString().split('T')[0]));
+    const sessionDates = new Set(recentSessions.map(s => toHKDateString(new Date(s.startTime))));
     for (let i = 0; i < 7; i++) {
-      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+      const d = daysAgoHK(i);
       if (sessionDates.has(d)) streak++;
       else if (i > 0) break;
     }
@@ -911,8 +912,7 @@ const chartsRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
+      const sinceStr = daysAgoHK(input.days);
       return db.select({
         date: bodyComposition.date,
         weight: bodyComposition.weight,
@@ -922,7 +922,7 @@ const chartsRouter = router({
       }).from(bodyComposition)
         .where(and(
           eq(bodyComposition.userId, OWNER_USER_ID),
-          sql`${bodyComposition.date} >= ${since.toISOString().slice(0, 10)}`
+          sql`${bodyComposition.date} >= ${sinceStr}`
         ))
         .orderBy(bodyComposition.date);
     }),
@@ -933,8 +933,7 @@ const chartsRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
+      const sinceStr = daysAgoHK(input.days);
       const rows = await db.select({
         date: sleepLogs.date,
         sleepScore: sleepLogs.sleepScore,
@@ -947,7 +946,7 @@ const chartsRouter = router({
       }).from(sleepLogs)
         .where(and(
           eq(sleepLogs.userId, OWNER_USER_ID),
-          sql`${sleepLogs.date} >= ${since.toISOString().slice(0, 10)}`
+          sql`${sleepLogs.date} >= ${sinceStr}`
         ))
         .orderBy(sleepLogs.date);
       // Normalize: if values stored as minutes (> 24), convert to hours
@@ -967,8 +966,7 @@ const chartsRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
+      const sinceStr = daysAgoHK(input.days);
       return db.select({
         date: heartRateLogs.date,
         restingHr: heartRateLogs.restingHr,
@@ -978,7 +976,7 @@ const chartsRouter = router({
       }).from(heartRateLogs)
         .where(and(
           eq(heartRateLogs.userId, OWNER_USER_ID),
-          sql`${heartRateLogs.date} >= ${since.toISOString().slice(0, 10)}`
+          sql`${heartRateLogs.date} >= ${sinceStr}`
         ))
         .orderBy(heartRateLogs.date);
     }),
@@ -989,17 +987,17 @@ const chartsRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
+      const sinceStr = daysAgoHK(input.days);
+      const sinceDate = new Date(sinceStr + "T00:00:00+08:00");
       return db.select({
-        date: sql<string>`DATE(${workoutSessions.startTime})`.as("date"),
+        date: sql<string>`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
         duration: workoutSessions.duration,
         totalVolume: workoutSessions.totalVolume,
         name: workoutSessions.name,
       }).from(workoutSessions)
         .where(and(
           eq(workoutSessions.userId, OWNER_USER_ID),
-          sql`${workoutSessions.startTime} >= ${since}`
+          sql`${workoutSessions.startTime} >= ${sinceDate}`
         ))
         .orderBy(workoutSessions.startTime);
     }),
@@ -1010,10 +1008,10 @@ const chartsRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
+      const sinceStr = daysAgoHK(input.days);
+      const sinceDate = new Date(sinceStr + "T00:00:00+08:00");
       const rows = await db.select({
-        date: sql<string>`DATE(${mealLogs.loggedAt})`.as("date"),
+        date: sql<string>`TO_CHAR(${mealLogs.loggedAt} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
         totalCalories: sql<number>`COALESCE(SUM(${mealLogs.calories}), 0)`.as("totalCalories"),
         totalProtein: sql<number>`COALESCE(SUM(${mealLogs.protein}), 0)`.as("totalProtein"),
         totalCarbs: sql<number>`COALESCE(SUM(${mealLogs.carbs}), 0)`.as("totalCarbs"),
@@ -1021,10 +1019,10 @@ const chartsRouter = router({
       }).from(mealLogs)
         .where(and(
           eq(mealLogs.userId, OWNER_USER_ID),
-          sql`${mealLogs.loggedAt} >= ${since}`
+          sql`${mealLogs.loggedAt} >= ${sinceDate}`
         ))
-        .groupBy(sql`DATE(${mealLogs.loggedAt})`)
-        .orderBy(sql`DATE(${mealLogs.loggedAt})`);
+        .groupBy(sql`TO_CHAR(${mealLogs.loggedAt} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`)
+        .orderBy(sql`TO_CHAR(${mealLogs.loggedAt} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`);
       return rows;
     }),
 });

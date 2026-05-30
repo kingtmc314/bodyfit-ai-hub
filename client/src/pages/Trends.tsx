@@ -73,11 +73,13 @@ function EmptyChart({ message }: { message: string }) {
   );
 }
 
-// ─── Format date for X axis ───────────────────────────────────────────────────
-function fmtDate(dateStr: string, days: number) {
+// ─── Format date for X axis (server returns YYYY-MM-DD in HK time) ──────────────────────────────
+function fmtDate(dateStr: string, _days: number) {
   try {
-    const d = parseISO(dateStr);
-    return days <= 30 ? format(d, "MM/dd") : format(d, "MM/dd");
+    // dateStr is YYYY-MM-DD already in HK timezone from server
+    const parts = dateStr.split("-");
+    if (parts.length === 3) return `${parts[1]}/${parts[2]}`;
+    return dateStr;
   } catch {
     return dateStr;
   }
