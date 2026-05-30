@@ -15,6 +15,7 @@ import ProgressPhotos from "./pages/ProgressPhotos";
 import Insights from "./pages/Insights";
 import Login from "./pages/Login";
 import Import from "./pages/Import";
+import Trends from "./pages/Trends";
 
 function Router() {
   return (
@@ -29,6 +30,7 @@ function Router() {
       <Route path="/photos" component={() => <AppLayout><ProgressPhotos /></AppLayout>} />
       <Route path="/insights" component={() => <AppLayout><Insights /></AppLayout>} />
       <Route path="/import" component={() => <AppLayout><Import /></AppLayout>} />
+      <Route path="/trends" component={() => <AppLayout><Trends /></AppLayout>} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

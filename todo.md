@@ -131,4 +131,13 @@
 - [x] Build Import UI page with file upload, auto-detect format, column preview, progress bar
 - [x] Add Import nav item to sidebar
 - [x] Write vitest tests for CSV parsing logic (35/35 passing)
-- [ ] Deploy to Vercel
+- [x] Deploy to Vercel (auto-deploy triggered via GitHub push)
+
+## Phase 19: Health Data Visualization Dashboard
+- [x] Add tRPC chartsRouter with bodyHistory, sleepHistory, heartRateHistory, workoutHistory, calorieHistory procedures
+- [x] Build Trends.tsx page with Recharts line/area/bar charts for all 5 data categories
+- [x] Add date range selector (7d / 30d / 90d / 1y)
+- [x] Add nav item "Trends" (TrendingUp icon) to AppLayout sidebar
+- [x] Register /trends route in App.tsx
+- [x] Add trends translation key to en.json ("Trends") and zh.json ("趨勢分析")
+- [ ] Push to GitHub and deploy to Vercel

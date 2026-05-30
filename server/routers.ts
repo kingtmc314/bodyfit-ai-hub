@@ -878,6 +878,123 @@ const csvImportRouter = router({
     }),
 });
 
+// ─── Charts Router ──────────────────────────────────────────────────────────
+const COOKIE_NAME_CONST = "bf_session";
+const chartsRouter = router({
+  // Fetch body composition history for charting
+  bodyHistory: protectedProcedure
+    .input(z.object({ days: z.number().int().min(7).max(365).default(90) }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const since = new Date();
+      since.setDate(since.getDate() - input.days);
+      return db.select({
+        date: bodyComposition.date,
+        weight: bodyComposition.weight,
+        bodyFatPct: bodyComposition.bodyFatPct,
+        muscleMass: bodyComposition.muscleMass,
+        bmi: bodyComposition.bmi,
+      }).from(bodyComposition)
+        .where(and(
+          eq(bodyComposition.userId, ctx.user.id),
+          sql`${bodyComposition.date} >= ${since.toISOString().slice(0, 10)}`
+        ))
+        .orderBy(bodyComposition.date);
+    }),
+
+  // Fetch sleep history for charting
+  sleepHistory: protectedProcedure
+    .input(z.object({ days: z.number().int().min(7).max(365).default(90) }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const since = new Date();
+      since.setDate(since.getDate() - input.days);
+      return db.select({
+        date: sleepLogs.date,
+        sleepScore: sleepLogs.sleepScore,
+        sleepDuration: sleepLogs.sleepDuration,
+        deepSleep: sleepLogs.deepSleep,
+        remSleep: sleepLogs.remSleep,
+        lightSleep: sleepLogs.lightSleep,
+        bodyBattery: sleepLogs.bodyBattery,
+      }).from(sleepLogs)
+        .where(and(
+          eq(sleepLogs.userId, ctx.user.id),
+          sql`${sleepLogs.date} >= ${since.toISOString().slice(0, 10)}`
+        ))
+        .orderBy(sleepLogs.date);
+    }),
+
+  // Fetch heart rate history for charting
+  heartRateHistory: protectedProcedure
+    .input(z.object({ days: z.number().int().min(7).max(365).default(90) }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const since = new Date();
+      since.setDate(since.getDate() - input.days);
+      return db.select({
+        date: heartRateLogs.date,
+        restingHr: heartRateLogs.restingHr,
+        highHr: heartRateLogs.highHr,
+        avgHr: heartRateLogs.avgHr,
+        hrv: heartRateLogs.hrv,
+      }).from(heartRateLogs)
+        .where(and(
+          eq(heartRateLogs.userId, ctx.user.id),
+          sql`${heartRateLogs.date} >= ${since.toISOString().slice(0, 10)}`
+        ))
+        .orderBy(heartRateLogs.date);
+    }),
+
+  // Fetch workout history for charting
+  workoutHistory: protectedProcedure
+    .input(z.object({ days: z.number().int().min(7).max(365).default(90) }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const since = new Date();
+      since.setDate(since.getDate() - input.days);
+      return db.select({
+        date: sql<string>`DATE(${workoutSessions.startTime})`.as("date"),
+        duration: workoutSessions.duration,
+        totalVolume: workoutSessions.totalVolume,
+        name: workoutSessions.name,
+      }).from(workoutSessions)
+        .where(and(
+          eq(workoutSessions.userId, ctx.user.id),
+          sql`${workoutSessions.startTime} >= ${since}`
+        ))
+        .orderBy(workoutSessions.startTime);
+    }),
+
+  // Fetch daily calorie totals for charting
+  calorieHistory: protectedProcedure
+    .input(z.object({ days: z.number().int().min(7).max(365).default(30) }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const since = new Date();
+      since.setDate(since.getDate() - input.days);
+      const rows = await db.select({
+        date: sql<string>`DATE(${mealLogs.loggedAt})`.as("date"),
+        totalCalories: sql<number>`COALESCE(SUM(${mealLogs.calories}), 0)`.as("totalCalories"),
+        totalProtein: sql<number>`COALESCE(SUM(${mealLogs.protein}), 0)`.as("totalProtein"),
+        totalCarbs: sql<number>`COALESCE(SUM(${mealLogs.carbs}), 0)`.as("totalCarbs"),
+        totalFat: sql<number>`COALESCE(SUM(${mealLogs.fat}), 0)`.as("totalFat"),
+      }).from(mealLogs)
+        .where(and(
+          eq(mealLogs.userId, ctx.user.id),
+          sql`${mealLogs.loggedAt} >= ${since}`
+        ))
+        .groupBy(sql`DATE(${mealLogs.loggedAt})`)
+        .orderBy(sql`DATE(${mealLogs.loggedAt})`);
+      return rows;
+    }),
+});
+
 // ─── App Router ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
@@ -898,6 +1015,7 @@ export const appRouter = router({
   insights: insightsRouter,
   dashboard: dashboardRouter,
   csvImport: csvImportRouter,
+  charts: chartsRouter,
 });
 
 export type AppRouter = typeof appRouter;

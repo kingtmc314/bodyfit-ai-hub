@@ -20,6 +20,7 @@ import {
   Activity,
   Languages,
   Upload,
+  TrendingUp,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,7 @@ const navItems = [
   { path: "/photos",     key: "photos",     icon: Camera,          badgeClass: "icon-badge-blue"   },
   { path: "/insights",   key: "insights",   icon: Sparkles,        badgeClass: "icon-badge-orange" },
   { path: "/import",     key: "import",     icon: Upload,          badgeClass: "icon-badge-green"  },
+  { path: "/trends",     key: "trends",     icon: TrendingUp,      badgeClass: "icon-badge-blue"   },
 ];
 
 interface AppLayoutProps {
