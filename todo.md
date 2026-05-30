@@ -278,3 +278,34 @@
 - [x] Update analyzeFoodPhoto in routers.ts to use structured image_url content block instead of [IMAGE:url] placeholder
 - [x] TypeScript check: 0 errors
 - [x] 35/35 tests pass
+
+## Phase 34: Running Shoe Selector + AI Coach on Running Page
+- [x] Add running.getActiveShoes tRPC query (SELECT from running_shoes WHERE status != 'Retired')
+- [x] Replace free-text shoe input in Running.tsx dialog with Select dropdown from Shoe Locker (17 active shoes)
+- [x] Add AI Coach tab to Running.tsx with weeks selector and getAIAnalysis mutation
+- [x] Display AI analysis result with Streamdown markdown renderer
+- [x] Add maxCadence, avgStrideLengthM, avgVerticalRatio, verticalOscillationCm fields to dialog form
+
+## Phase 35: Running CSV Import on Import Page
+- [x] Add ParsedRunningRow interface and parseRunningRow() function to csvImport.ts
+- [x] Update detectDataType() to recognize running CSV (Garmin activity export)
+- [x] Update ImportDataType to include "running"
+- [x] Add running import handler in csvImport router (importData procedure)
+- [x] Add running type card to DATA_TYPE_INFO in Import.tsx
+- [x] Add running to TYPE_LABELS in Import.tsx
+- [x] Add running SelectItem to manual data type selector in Import.tsx
+
+## Phase 36: Fix HRV Chart Data Source
+- [x] Confirmed HRV data is in sleep_logs.hrv (not heart_rate_logs.hrv)
+- [x] Trends.tsx already maps r.hrv from sleepHistory query
+- [x] Added hrv column to sleep_logs table (already existed in DB from other webapp)
+- [x] Updated sleep CSV import to map HRV column
+
+## Phase 37: DB Schema Audit & Fix
+- [x] Confirmed sleep_logs already has hrv, lightSleep, awakeDuration columns (from other webapp)
+- [x] Confirmed running_logs has all expected columns including windSpeed, apparentTemp, status, shoesId
+- [x] drizzle/schema.ts already has all columns (lightSleep, awakeDuration, hrv in sleepLogs; all running fields)
+- [x] Updated sleep CSV import (parseSleepRow) to map hrv, lightSleep, awakeDuration
+- [x] Updated sleep bulkImport CSV handler to include hrv, lightSleep, awakeDuration
+- [x] Running.tsx dialog form now includes maxCadence, avgStrideLengthM, avgVerticalRatio, verticalOscillationCm
+- [x] 35/35 tests passing, 0 TypeScript errors

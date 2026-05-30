@@ -3,7 +3,7 @@
  * Supports: body composition, sleep, heart rate, workout/activity data, nutrition.
  */
 
-export type ImportDataType = "body" | "sleep" | "heartrate" | "workout" | "nutrition";
+export type ImportDataType = "body" | "sleep" | "heartrate" | "workout" | "nutrition" | "running";
 
 export interface ParsedBodyRow {
   date: string;
@@ -22,12 +22,15 @@ export interface ParsedSleepRow {
   sleepDuration?: number; // hours
   deepSleep?: number; // hours
   remSleep?: number; // hours
+  lightSleep?: number; // hours
+  awakeDuration?: number; // hours
   bodyBattery?: number;
   pulseOx?: number;
   respiration?: number;
   stress?: number;
   sleepQuality?: "Poor" | "Fair" | "Good" | "Excellent";
   restingHr?: number;
+  hrv?: number; // Heart Rate Variability (ms)
 }
 
 export interface ParsedHeartRateRow {
@@ -62,7 +65,31 @@ export interface ParsedNutritionRow {
   servings?: number;
 }
 
-export type ParsedRow = ParsedBodyRow | ParsedSleepRow | ParsedHeartRateRow | ParsedWorkoutRow | ParsedNutritionRow;
+export interface ParsedRunningRow {
+  date: string;
+  runningType?: string;
+  runningShoes?: string;
+  distanceKm?: number;
+  hour?: number;
+  minutes?: number;
+  second?: number;
+  averagePace?: string;   // decimal min/km e.g. "6.5"
+  bestPace?: string;
+  averageHeartRate?: number;
+  maximumHeartRate?: number;
+  averageCadence?: number;
+  maxCadence?: number;
+  avgStrideLengthM?: number;
+  avgVerticalRatio?: number;
+  verticalOscillationCm?: number;
+  avgGroundContactTimeMs?: number;
+  calories?: number;
+  temperature?: number;
+  humidity?: number;
+  notes?: string;
+}
+
+export type ParsedRow = ParsedBodyRow | ParsedSleepRow | ParsedHeartRateRow | ParsedWorkoutRow | ParsedNutritionRow | ParsedRunningRow;
 
 /** Normalize a column header: lowercase, remove spaces/special chars */
 function normalizeKey(k: string): string {
@@ -196,18 +223,27 @@ export function parseSleepRow(row: Record<string, string>): ParsedSleepRow | nul
   let remSleep = toNum(keys["remsleep"] ?? keys["remsleepduration"] ?? keys["remsleepmins"]);
   if (remSleep !== undefined && remSleep > 24) remSleep = remSleep / 60;
 
+  let lightSleep = toNum(keys["lightsleep"] ?? keys["lightsleepduration"] ?? keys["lightsleepmins"]);
+  if (lightSleep !== undefined && lightSleep > 24) lightSleep = lightSleep / 60;
+
+  let awakeDuration = toNum(keys["awake"] ?? keys["awakeduration"] ?? keys["awakemins"] ?? keys["awakenings"]);
+  if (awakeDuration !== undefined && awakeDuration > 24) awakeDuration = awakeDuration / 60;
+
   return {
     date,
     sleepScore,
     sleepDuration,
     deepSleep,
     remSleep,
+    lightSleep,
+    awakeDuration,
     bodyBattery: toNum(keys["bodybattery"] ?? keys["bodybatteryend"]),
     pulseOx: toNum(keys["pulseox"] ?? keys["spo2"] ?? keys["bloodoxygen"]),
     respiration: toNum(keys["respiration"] ?? keys["breathingrate"] ?? keys["avgrespirationrate"]),
     stress: toNum(keys["stress"] ?? keys["avgstress"] ?? keys["stresslevel"]),
     sleepQuality,
     restingHr: toNum(keys["restinghr"] ?? keys["restingheartrate"] ?? keys["avgrestinghr"]),
+    hrv: toNum(keys["hrv"] ?? keys["heartratevariability"] ?? keys["hrvscore"] ?? keys["avghrv"]),
   };
 }
 
@@ -380,6 +416,133 @@ export function parseNutritionRow(row: Record<string, string>): ParsedNutritionR
   };
 }
 
+// ─── Running ─────────────────────────────────────────────────────────────────
+
+/**
+ * Garmin Connect Running/Activity CSV columns (from Activities export):
+ *   Activity Type, Date, Favorite, Title, Distance, Calories, Time, Avg HR, Max HR,
+ *   Aerobic TE, Avg Run Cadence, Max Run Cadence, Avg Pace, Best Pace, Total Ascent,
+ *   Total Descent, Avg Stride Length, Avg Vertical Ratio, Avg Vertical Oscillation,
+ *   Avg Ground Contact Time, Training Stress Score, Grit, Flow, Climb, Bottom Time,
+ *   Min Temp, Surface Interval, Decompression, Best Lap Time, Number of Laps, Max Temp
+ */
+export function parseRunningRow(row: Record<string, string>): ParsedRunningRow | null {
+  const keys: Record<string, string> = {};
+  for (const [k, v] of Object.entries(row)) {
+    keys[normalizeKey(k)] = v;
+  }
+
+  const rawDate = keys["date"] ?? keys["calendardate"] ?? keys["datetime"] ?? keys["starttime"];
+  const date = rawDate ? parseDate(rawDate) : null;
+  if (!date) return null;
+
+  // Only process running-type activities
+  const actType = (keys["activitytype"] ?? keys["type"] ?? keys["sport"] ?? "").toLowerCase();
+  const runningKeywords = ["running", "run", "trail", "race", "jogging", "treadmill"];
+  if (actType && !runningKeywords.some(k => actType.includes(k))) return null;
+
+  // Parse duration HH:MM:SS or seconds
+  let hour: number | undefined;
+  let minutes: number | undefined;
+  let second: number | undefined;
+  const rawTime = keys["time"] ?? keys["duration"] ?? keys["durationinseconds"];
+  if (rawTime) {
+    const hmsMatch = rawTime.match(/(\d+):(\d{2}):(\d{2})/);
+    if (hmsMatch) {
+      hour = parseInt(hmsMatch[1]);
+      minutes = parseInt(hmsMatch[2]);
+      second = parseInt(hmsMatch[3]);
+    } else {
+      const secs = parseFloat(rawTime);
+      if (!isNaN(secs) && secs > 0) {
+        hour = Math.floor(secs / 3600);
+        minutes = Math.floor((secs % 3600) / 60);
+        second = Math.round(secs % 60);
+      }
+    }
+  }
+
+  // Distance: Garmin exports in km
+  let distanceKm = toNum(keys["distance"] ?? keys["distancekm"] ?? keys["distancemiles"]);
+  if (distanceKm !== undefined) {
+    // If very large, might be in meters
+    if (distanceKm > 500) distanceKm = distanceKm / 1000;
+  }
+
+  // Pace: Garmin exports as "M:SS /km" or "M:SS /mi" or decimal
+  let averagePace: string | undefined;
+  const rawPace = keys["avgpace"] ?? keys["averagepace"] ?? keys["pace"];
+  if (rawPace && rawPace !== "--") {
+    const paceMatch = rawPace.match(/(\d+):(\d{2})/);
+    if (paceMatch) {
+      // Convert M:SS to decimal min/km
+      const decPace = parseInt(paceMatch[1]) + parseInt(paceMatch[2]) / 60;
+      averagePace = decPace.toFixed(4);
+    } else {
+      const n = parseFloat(rawPace);
+      if (!isNaN(n)) averagePace = String(n);
+    }
+  }
+
+  let bestPace: string | undefined;
+  const rawBest = keys["bestpace"] ?? keys["fastestpace"];
+  if (rawBest && rawBest !== "--") {
+    bestPace = rawBest.trim();
+  }
+
+  // Cadence: Garmin exports steps/min (already spm, not rpm)
+  const avgCadence = toNum(keys["avgcadence"] ?? keys["avgruncadence"] ?? keys["averagecadence"] ?? keys["cadence"]);
+  const maxCadence = toNum(keys["maxcadence"] ?? keys["maxruncadence"]);
+
+  // Stride length: Garmin exports in meters
+  const avgStrideLengthM = toNum(keys["avgstridelength"] ?? keys["averagestridelength"] ?? keys["avgstridelengthmeter"]);
+
+  // Vertical ratio & oscillation
+  const avgVerticalRatio = toNum(keys["avgverticalratio"] ?? keys["verticalratio"]);
+  const verticalOscillationCm = toNum(keys["avgverticaloscillation"] ?? keys["verticaloscillation"] ?? keys["avgverticaloscillationcm"]);
+  const avgGroundContactTimeMs = toNum(keys["avggroundcontacttime"] ?? keys["groundcontacttime"]);
+
+  // Running type from activity title or type
+  let runningType: string | undefined;
+  const title = (keys["title"] ?? keys["activityname"] ?? "").toLowerCase();
+  if (title.includes("interval") || title.includes("track")) runningType = "Interval";
+  else if (title.includes("tempo") || title.includes("threshold")) runningType = "Tempo";
+  else if (title.includes("long") || title.includes("lsd")) runningType = "Long Run";
+  else if (title.includes("race") || title.includes("competition")) runningType = "Race";
+  else if (title.includes("trail")) runningType = "Trail";
+  else if (title.includes("recovery") || title.includes("easy")) runningType = "Easy";
+  else if (actType.includes("trail")) runningType = "Trail";
+
+  return {
+    date,
+    runningType,
+    distanceKm,
+    hour,
+    minutes,
+    second,
+    averagePace,
+    bestPace,
+    averageHeartRate: toNum(keys["avghr"] ?? keys["averageheartrate"] ?? keys["heartrateavg"]) !== undefined
+      ? Math.round(toNum(keys["avghr"] ?? keys["averageheartrate"] ?? keys["heartrateavg"])!)
+      : undefined,
+    maximumHeartRate: toNum(keys["maxhr"] ?? keys["maximumheartrate"] ?? keys["heartratemax"]) !== undefined
+      ? Math.round(toNum(keys["maxhr"] ?? keys["maximumheartrate"] ?? keys["heartratemax"])!)
+      : undefined,
+    averageCadence: avgCadence,
+    maxCadence,
+    avgStrideLengthM,
+    avgVerticalRatio,
+    verticalOscillationCm,
+    avgGroundContactTimeMs,
+    calories: toNum(keys["calories"] ?? keys["activekilocalories"] ?? keys["totalcalories"]) !== undefined
+      ? Math.round(toNum(keys["calories"] ?? keys["activekilocalories"] ?? keys["totalcalories"])!)
+      : undefined,
+    temperature: toNum(keys["mintemp"] ?? keys["temperature"] ?? keys["avgtemperature"]),
+    humidity: toNum(keys["humidity"]),
+    notes: keys["title"] ?? undefined,
+  };
+}
+
 // ─── Auto-detect format ───────────────────────────────────────────────────────
 
 /**
@@ -397,6 +560,10 @@ export function detectDataType(headers: string[]): ImportDataType | null {
   // Heart rate: has HR-specific columns (but not sleep)
   if (hasAny("restinghr", "restingheartrate", "hrv", "lastnightavg", "heartratevariability")) {
     return "heartrate";
+  }
+  // Running: Garmin activity export with running-specific columns
+  if (hasAny("activitytype", "workoutactivitytype") && hasAny("avgruncadence", "avgcadence", "avgpace", "bestpace", "avgstridelength", "avgverticalratio")) {
+    return "running";
   }
   // Workout: has activity type or duration with calories
   if (hasAny("activitytype", "workoutactivitytype", "sport") || (hasAny("calories", "activekilocalories") && hasAny("time", "duration", "durationinseconds"))) {
@@ -432,6 +599,7 @@ export function parseRows(
     else if (type === "heartrate") parsed = parseHeartRateRow(row);
     else if (type === "workout") parsed = parseWorkoutRow(row);
     else if (type === "nutrition") parsed = parseNutritionRow(row);
+    else if (type === "running") parsed = parseRunningRow(row);
 
     if (parsed) results.push(parsed);
   }

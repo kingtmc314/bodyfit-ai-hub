@@ -11,10 +11,10 @@ import { toast } from "sonner";
 import {
   Upload, FileText, CheckCircle2, AlertCircle, Info,
   Activity, Moon, Heart, Scale, ChevronRight, Image, Utensils,
-  Loader2, Eye, Save, RefreshCw
+  Loader2, Eye, Save, RefreshCw, Footprints
 } from "lucide-react";
 
-type DataType = "body" | "sleep" | "heartrate" | "workout" | "nutrition";
+type DataType = "body" | "sleep" | "heartrate" | "workout" | "nutrition" | "running";
 
 const DATA_TYPE_INFO: Record<DataType, { label: string; icon: React.ReactNode; color: string; garminPath: string; columns: string[] }> = {
   body: {
@@ -52,6 +52,13 @@ const DATA_TYPE_INFO: Record<DataType, { label: string; icon: React.ReactNode; c
     garminPath: "MyFitnessPal / Cronometer → Export",
     columns: ["Date", "Calories", "Protein", "Carbs", "Fat", "Fiber", "Meal Type"],
   },
+  running: {
+    label: "Running (Garmin)",
+    icon: <Footprints className="w-4 h-4" />,
+    color: "text-amber-500",
+    garminPath: "Activities → Filter by Running → Export to CSV",
+    columns: ["Activity Type", "Date", "Title", "Distance", "Time", "Avg HR", "Max HR", "Avg Pace", "Best Pace", "Avg Run Cadence", "Avg Stride Length", "Calories"],
+  },
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -60,6 +67,7 @@ const TYPE_LABELS: Record<string, string> = {
   heartrate: "Heart Rate",
   workout: "Workout",
   nutrition: "Nutrition",
+  running: "Running",
 };
 
 // ─── CSV Import Component ─────────────────────────────────────────────────────
@@ -243,6 +251,7 @@ function CsvImportTab() {
                 <SelectItem value="heartrate">Heart Rate</SelectItem>
                 <SelectItem value="workout">Workouts</SelectItem>
                 <SelectItem value="nutrition">Nutrition</SelectItem>
+                <SelectItem value="running">Running</SelectItem>
               </SelectContent>
             </Select>
             <Button

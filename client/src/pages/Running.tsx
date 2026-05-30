@@ -8,11 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Zap } from "lucide-react";
+import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart, Area
 } from "recharts";
+import { Streamdown } from "streamdown";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const formatPace = (secPerKm: number | null | undefined): string => {
@@ -22,12 +23,10 @@ const formatPace = (secPerKm: number | null | undefined): string => {
   return `${m}:${String(s).padStart(2, "0")}/km`;
 };
 
-// average_pace in DB is min/km as decimal (e.g. "7.08" = 7 min 4.8 sec per km)
 const parsePaceField = (val: string | null | undefined): number => {
   if (!val) return 0;
   const f = parseFloat(val);
   if (isNaN(f)) return 0;
-  // Convert decimal minutes to seconds
   return f * 60;
 };
 
@@ -39,7 +38,8 @@ const formatDuration = (h: number, m: number, s: number): string => {
   return parts.join(" ") || "—";
 };
 
-const RUNNING_TYPES = ["Easy", "Tempo", "Interval", "Long Run", "Race", "Trail", "Recovery", "其他"];
+const RUNNING_TYPES = ["Easy", "Tempo", "Interval", "Long Run", "Race", "Trail", "Recovery", "Fartlek", "Sprint", "Time Trial", "其他"];
+const WEEKS_OPTIONS = [4, 8, 12, 24, 52];
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload?.length) {
@@ -71,6 +71,10 @@ const defaultForm = {
   averageHeartRate: "",
   maximumHeartRate: "",
   averageCadence: "",
+  maxCadence: "",
+  avgStrideLengthM: "",
+  avgVerticalRatio: "",
+  verticalOscillationCm: "",
   calories: "",
   notes: "",
 };
@@ -81,10 +85,13 @@ export default function Running() {
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [aiWeeks, setAiWeeks] = useState(12);
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
 
   const utils = trpc.useUtils();
   const { data: logs = [], isLoading } = trpc.running.getLogs.useQuery({ limit: 200 });
   const { data: stats } = trpc.running.getStats.useQuery();
+  const { data: activeShoes = [] } = trpc.running.getActiveShoes.useQuery();
 
   // ─── Mutations ───────────────────────────────────────────────────────────────
   const addMutation = trpc.running.addLog.useMutation({
@@ -120,6 +127,13 @@ export default function Running() {
     onError: () => toast.error("刪除失敗"),
   });
 
+  const aiMutation = trpc.running.getAIAnalysis.useMutation({
+    onSuccess: (data) => {
+      setAiAnalysis(typeof data.analysis === 'string' ? data.analysis : null);
+    },
+    onError: (e) => toast.error("AI 分析失敗：" + e.message),
+  });
+
   // ─── Handlers ────────────────────────────────────────────────────────────────
   const openAdd = () => {
     setEditEntry(null);
@@ -142,6 +156,10 @@ export default function Running() {
       averageHeartRate: row.average_heart_rate != null ? String(row.average_heart_rate) : "",
       maximumHeartRate: row.maximum_heart_rate != null ? String(row.maximum_heart_rate) : "",
       averageCadence: row.average_cadence != null ? String(row.average_cadence) : "",
+      maxCadence: row.max_cadence != null ? String(row.max_cadence) : "",
+      avgStrideLengthM: row.avg_stride_length_m != null ? String(row.avg_stride_length_m) : "",
+      avgVerticalRatio: row.avg_vertical_ratio != null ? String(row.avg_vertical_ratio) : "",
+      verticalOscillationCm: row.vertical_oscillation_cm != null ? String(row.vertical_oscillation_cm) : "",
       calories: row.calories != null ? String(row.calories) : "",
       notes: row.notes ?? "",
     });
@@ -162,6 +180,10 @@ export default function Running() {
       averageHeartRate: form.averageHeartRate ? parseInt(form.averageHeartRate) : undefined,
       maximumHeartRate: form.maximumHeartRate ? parseInt(form.maximumHeartRate) : undefined,
       averageCadence: form.averageCadence ? parseFloat(form.averageCadence) : undefined,
+      maxCadence: form.maxCadence ? parseFloat(form.maxCadence) : undefined,
+      avgStrideLengthM: form.avgStrideLengthM ? parseFloat(form.avgStrideLengthM) : undefined,
+      avgVerticalRatio: form.avgVerticalRatio ? parseFloat(form.avgVerticalRatio) : undefined,
+      verticalOscillationCm: form.verticalOscillationCm ? parseFloat(form.verticalOscillationCm) : undefined,
       calories: form.calories ? parseInt(form.calories) : undefined,
       notes: form.notes || undefined,
     };
@@ -242,6 +264,10 @@ export default function Running() {
         <TabsList className="mb-4">
           <TabsTrigger value="charts">趨勢</TabsTrigger>
           <TabsTrigger value="log">查看全部</TabsTrigger>
+          <TabsTrigger value="ai" className="flex items-center gap-1">
+            <Bot className="w-3.5 h-3.5" />
+            AI 教練
+          </TabsTrigger>
         </TabsList>
 
         {/* Charts tab */}
@@ -322,7 +348,7 @@ export default function Running() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/40">
-                      {["日期", "類型", "距離", "時間", "配速", "心率", "步頻", "卡路里", "備注", ""].map((h) => (
+                      {["日期", "類型", "跑鞋", "距離", "時間", "配速", "心率", "步頻", "卡路里", "備注", ""].map((h) => (
                         <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -335,6 +361,9 @@ export default function Running() {
                           {row.running_type ? (
                             <Badge variant="outline" className="text-xs">{row.running_type}</Badge>
                           ) : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs max-w-[120px] truncate">
+                          {row.running_shoes || "—"}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           {row.distance_km ? `${parseFloat(row.distance_km).toFixed(2)} km` : "—"}
@@ -374,6 +403,65 @@ export default function Running() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* AI Coach tab */}
+        <TabsContent value="ai" className="space-y-4">
+          <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+              <div>
+                <h3 className="font-semibold text-foreground flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-orange-500" />
+                  AI 跑步教練分析
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">根據你的跑步數據提供個人化訓練建議</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={String(aiWeeks)} onValueChange={(v) => { setAiWeeks(Number(v)); setAiAnalysis(null); }}>
+                  <SelectTrigger className="w-28 h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WEEKS_OPTIONS.map((w) => (
+                      <SelectItem key={w} value={String(w)}>最近 {w} 週</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  onClick={() => { setAiAnalysis(null); aiMutation.mutate({ weeks: aiWeeks }); }}
+                  disabled={aiMutation.isPending}
+                  className="hero-gradient text-white h-8 text-xs"
+                >
+                  {aiMutation.isPending ? (
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />分析中...</>
+                  ) : (
+                    <><Sparkles className="w-3.5 h-3.5 mr-1" />開始分析</>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {aiMutation.isPending && (
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+                <p className="text-sm text-muted-foreground">AI 教練正在分析你的跑步數據...</p>
+              </div>
+            )}
+
+            {!aiMutation.isPending && aiAnalysis && (
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <Streamdown>{aiAnalysis}</Streamdown>
+              </div>
+            )}
+
+            {!aiMutation.isPending && !aiAnalysis && (
+              <div className="text-center py-12 text-muted-foreground">
+                <Bot className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                <p className="font-medium">點擊「開始分析」獲取 AI 教練建議</p>
+                <p className="text-xs mt-1">分析包括配速趨勢、步頻評估、訓練負荷及改進建議</p>
               </div>
             )}
           </div>
@@ -437,12 +525,51 @@ export default function Running() {
               <Input type="number" placeholder="例: 178" value={form.averageCadence} onChange={(e) => f("averageCadence", e.target.value)} />
             </div>
             <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">最高步頻 (spm)</label>
+              <Input type="number" placeholder="例: 195" value={form.maxCadence} onChange={(e) => f("maxCadence", e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">平均步幅 (m)</label>
+              <Input type="number" step="0.01" placeholder="例: 1.15" value={form.avgStrideLengthM} onChange={(e) => f("avgStrideLengthM", e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">垂直比率 (%)</label>
+              <Input type="number" step="0.1" placeholder="例: 8.5" value={form.avgVerticalRatio} onChange={(e) => f("avgVerticalRatio", e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">垂直振幅 (cm)</label>
+              <Input type="number" step="0.1" placeholder="例: 9.2" value={form.verticalOscillationCm} onChange={(e) => f("verticalOscillationCm", e.target.value)} />
+            </div>
+            <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">消耗卡路里 (kcal)</label>
               <Input type="number" placeholder="例: 450" value={form.calories} onChange={(e) => f("calories", e.target.value)} />
             </div>
+            {/* Shoe Locker selector */}
             <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">跑鞋</label>
-              <Input type="text" placeholder="例: Asics Metaspeed Sky" value={form.runningShoes} onChange={(e) => f("runningShoes", e.target.value)} />
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                跑鞋 <span className="text-[10px] text-muted-foreground/60">(來自 Shoe Locker，排除退役跑鞋)</span>
+              </label>
+              <Select
+                value={form.runningShoes || "__none__"}
+                onValueChange={(v) => f("runningShoes", v === "__none__" ? "" : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="選擇跑鞋..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— 不選擇 —</SelectItem>
+                  {(activeShoes as any[]).map((shoe: any) => (
+                    <SelectItem key={shoe.id} value={shoe.shoes_name}>
+                      <span className="flex items-center gap-2">
+                        {shoe.shoes_name}
+                        {shoe.status === "Not Yet Opened" && (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1">未開封</Badge>
+                        )}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="col-span-2">
               <label className="text-xs font-medium text-muted-foreground mb-1 block">備注</label>

@@ -167,6 +167,11 @@ export const heartRateLogs = pgTable("heart_rate_logs", {
   zone3: integer("zone3"),
   zone4: integer("zone4"),
   zone5: integer("zone5"),
+  zone1Minutes: integer("zone1Minutes"),
+  zone2Minutes: integer("zone2Minutes"),
+  zone3Minutes: integer("zone3Minutes"),
+  zone4Minutes: integer("zone4Minutes"),
+  zone5Minutes: integer("zone5Minutes"),
   notes: text("notes"),
   source: varchar("source", { length: 50 }).default("manual"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -192,6 +197,7 @@ export const sleepLogs = pgTable("sleep_logs", {
   remSleep: real("remSleep"),
   lightSleep: real("lightSleep"),
   awakeDuration: real("awakeDuration"),
+  hrv: integer("hrv"),
   notes: text("notes"),
   source: varchar("source", { length: 50 }).default("manual"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -211,6 +217,7 @@ export const progressPhotos = pgTable("progress_photos", {
   angle: varchar("angle", { length: 50 }).default("front"),
   notes: text("notes"),
   weight: real("weight"),
+  bodyFatPct: real("bodyFatPct"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -232,26 +239,36 @@ export type AiInsight = typeof aiInsights.$inferSelect;
 export type InsertAiInsight = typeof aiInsights.$inferInsert;
 
 // ─── Running Logs ───────────────────────────────────────────────────────────────
+// NOTE: This table uses snake_case column names matching the existing DB schema
 export const runningLogs = pgTable("running_logs", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
   date: text("date").notNull(),
-  distanceKm: real("distanceKm"),                  // km
-  durationMin: real("durationMin"),                 // minutes
-  avgPaceSecPerKm: integer("avgPaceSecPerKm"),       // seconds per km
-  avgHr: integer("avgHr"),                          // bpm
-  maxHr: integer("maxHr"),                          // bpm
-  calories: integer("calories"),                    // kcal
-  avgCadence: integer("avgCadence"),                 // steps/min
-  maxCadence: integer("maxCadence"),                 // steps/min
-  avgStrideLength: real("avgStrideLength"),          // metres
-  avgVerticalRatio: real("avgVerticalRatio"),        // %
-  verticalOscillation: real("verticalOscillation"), // cm
-  elevationGain: real("elevationGain"),             // metres
+  runningType: text("running_type"),
+  runningShoes: text("running_shoes"),
+  shoesId: integer("shoes_id"),
+  distanceKm: real("distance_km"),
+  hour: integer("hour"),
+  minutes: integer("minutes"),
+  second: integer("second"),
+  averagePace: text("average_pace"),
+  bestPace: text("best_pace"),
+  averageHeartRate: integer("average_heart_rate"),
+  maximumHeartRate: integer("maximum_heart_rate"),
+  averageCadence: real("average_cadence"),
+  maxCadence: real("max_cadence"),
+  avgStrideLengthM: real("avg_stride_length_m"),
+  avgVerticalRatio: real("avg_vertical_ratio"),
+  verticalOscillationCm: real("vertical_oscillation_cm"),
+  avgGroundContactTimeMs: real("avg_ground_contact_time_ms"),
+  calories: integer("calories"),
+  temperature: real("temperature"),
+  humidity: real("humidity"),
+  windSpeed: real("wind_speed"),
+  apparentTemp: real("apparent_temp"),
+  status: text("status"),
   notes: text("notes"),
-  source: varchar("source", { length: 50 }).default("manual"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export type RunningLog = typeof runningLogs.$inferSelect;

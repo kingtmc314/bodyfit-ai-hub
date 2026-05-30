@@ -526,14 +526,17 @@ const sleepRouter = router({
       pulseOx: z.number().optional(),
       respiration: z.number().optional(),
       stress: z.number().optional(),
+      hrv: z.number().optional(),
       quality: z.enum(["Poor", "Fair", "Good", "Excellent"]).optional(),
       duration: z.number().optional(),
       deepSleep: z.number().optional(),
       remSleep: z.number().optional(),
+      lightSleep: z.number().optional(),
+      awakeDuration: z.number().optional(),
       notes: z.string().optional(),
       source: z.string().optional(),
     }))
-        .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const { score, quality, duration, restingHr: _rhr, ...rest } = input;
@@ -555,8 +558,14 @@ const sleepRouter = router({
       bodyBattery: z.number().optional(),
       pulseOx: z.number().optional(),
       respiration: z.number().optional(),
+      stress: z.number().optional(),
+      hrv: z.number().optional(),
       quality: z.enum(["Poor", "Fair", "Good", "Excellent"]).optional(),
       duration: z.number().optional(),
+      deepSleep: z.number().optional(),
+      remSleep: z.number().optional(),
+      lightSleep: z.number().optional(),
+      awakeDuration: z.number().optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -586,13 +595,27 @@ const sleepRouter = router({
       pulseOx: z.number().optional(),
       respiration: z.number().optional(),
       stress: z.number().optional(),
+      hrv: z.number().optional(),
       quality: z.enum(["Poor", "Fair", "Good", "Excellent"]).optional(),
+      duration: z.number().optional(),
+      deepSleep: z.number().optional(),
+      remSleep: z.number().optional(),
+      lightSleep: z.number().optional(),
+      awakeDuration: z.number().optional(),
     })))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       for (const row of input) {
-        await db.insert(sleepLogs).values({ ...row, userId: OWNER_USER_ID, source: "sheets" }).catch(() => {});
+        const { score, quality, duration, restingHr: _rhr, ...rest } = row;
+        await db.insert(sleepLogs).values({
+          ...rest,
+          userId: OWNER_USER_ID,
+          source: "sheets",
+          sleepScore: score,
+          sleepQuality: quality,
+          sleepDuration: duration,
+        }).catch(() => {});
       }
       return { success: true, count: input.length };
     }),
@@ -764,7 +787,7 @@ const csvImportRouter = router({
   preview: publicProcedure
     .input(z.object({
       csvText: z.string().max(5_000_000), // 5 MB limit
-      dataType: z.enum(["body", "sleep", "heartrate", "workout", "nutrition", "auto"]).default("auto"),
+      dataType: z.enum(["body", "sleep", "heartrate", "workout", "nutrition", "running", "auto"]).default("auto"),
     }))
     .mutation(async ({ input }) => {
       const parsed = Papa.parse<Record<string, string>>(input.csvText, {
@@ -798,7 +821,7 @@ const csvImportRouter = router({
   importData: publicProcedure
     .input(z.object({
       csvText: z.string().max(5_000_000),
-      dataType: z.enum(["body", "sleep", "heartrate", "workout", "nutrition"]),
+      dataType: z.enum(["body", "sleep", "heartrate", "workout", "nutrition", "running"]),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -842,11 +865,14 @@ const csvImportRouter = router({
               sleepDuration: r.sleepDuration,
               deepSleep: r.deepSleep,
               remSleep: r.remSleep,
+              lightSleep: r.lightSleep,
+              awakeDuration: r.awakeDuration,
               bodyBattery: r.bodyBattery,
               pulseOx: r.pulseOx,
               respiration: r.respiration,
               stress: r.stress,
               sleepQuality: r.sleepQuality,
+              hrv: r.hrv,
               notes: r.restingHr ? `Resting HR: ${r.restingHr} bpm` : undefined,
               source: "csv",
             }).onConflictDoNothing();
@@ -903,6 +929,44 @@ const csvImportRouter = router({
               loggedAt: new Date(r.date + "T12:00:00Z"),
               notes: "Imported from CSV",
             });
+            inserted++;
+          } catch { skipped++; }
+        }
+      } else if (input.dataType === "running") {
+        for (const r of rows as import("./csvImport").ParsedRunningRow[]) {
+          try {
+            await db.execute(sql`
+              INSERT INTO running_logs (
+                date, running_type, running_shoes, distance_km, hour, minutes, second,
+                average_pace, best_pace, average_heart_rate, maximum_heart_rate,
+                average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
+                vertical_oscillation_cm, avg_ground_contact_time_ms, calories,
+                temperature, humidity, notes
+              ) VALUES (
+                ${r.date},
+                ${r.runningType ?? null},
+                ${r.runningShoes ?? null},
+                ${r.distanceKm ?? null},
+                ${r.hour ?? null},
+                ${r.minutes ?? null},
+                ${r.second ?? null},
+                ${r.averagePace ?? null},
+                ${r.bestPace ?? null},
+                ${r.averageHeartRate ?? null},
+                ${r.maximumHeartRate ?? null},
+                ${r.averageCadence ?? null},
+                ${r.maxCadence ?? null},
+                ${r.avgStrideLengthM ?? null},
+                ${r.avgVerticalRatio ?? null},
+                ${r.verticalOscillationCm ?? null},
+                ${r.avgGroundContactTimeMs ?? null},
+                ${r.calories ?? null},
+                ${r.temperature ?? null},
+                ${r.humidity ?? null},
+                ${r.notes ?? null}
+              )
+              ON CONFLICT DO NOTHING
+            `);
             inserted++;
           } catch { skipped++; }
         }
@@ -1314,6 +1378,19 @@ const imageImportRouter = router({
 
 // --- Running Router ---
 const runningRouter = router({
+  getActiveShoes: publicProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db.execute(sql`
+        SELECT id, shoes_name, brand, status
+        FROM running_shoes
+        WHERE status != 'Retired'
+        ORDER BY status ASC, shoes_name ASC
+      `);
+      return (rows as any).rows ?? rows;
+    }),
+
   getLogs: publicProcedure
     .input(z.object({ limit: z.number().optional().default(200) }))
     .query(async ({ input }) => {
@@ -1383,16 +1460,27 @@ const runningRouter = router({
       averageHeartRate: z.number().optional(),
       maximumHeartRate: z.number().optional(),
       averageCadence: z.number().optional(),
+      maxCadence: z.number().optional(),
+      avgStrideLengthM: z.number().optional(),
+      avgVerticalRatio: z.number().optional(),
+      verticalOscillationCm: z.number().optional(),
+      avgGroundContactTimeMs: z.number().optional(),
       calories: z.number().optional(),
+      temperature: z.number().optional(),
+      humidity: z.number().optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
       await db.execute(sql`
-        INSERT INTO running_logs (date, running_type, running_shoes, distance_km, hour, minutes, second,
-          average_pace, best_pace, average_heart_rate, maximum_heart_rate, average_cadence, calories, notes)
-        VALUES (
+        INSERT INTO running_logs (
+          date, running_type, running_shoes, distance_km, hour, minutes, second,
+          average_pace, best_pace, average_heart_rate, maximum_heart_rate,
+          average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
+          vertical_oscillation_cm, avg_ground_contact_time_ms,
+          calories, temperature, humidity, notes
+        ) VALUES (
           ${input.date},
           ${input.runningType ?? null},
           ${input.runningShoes ?? null},
@@ -1405,7 +1493,14 @@ const runningRouter = router({
           ${input.averageHeartRate ?? null},
           ${input.maximumHeartRate ?? null},
           ${input.averageCadence ?? null},
+          ${input.maxCadence ?? null},
+          ${input.avgStrideLengthM ?? null},
+          ${input.avgVerticalRatio ?? null},
+          ${input.verticalOscillationCm ?? null},
+          ${input.avgGroundContactTimeMs ?? null},
           ${input.calories ?? null},
+          ${input.temperature ?? null},
+          ${input.humidity ?? null},
           ${input.notes ?? null}
         )
       `);
@@ -1427,7 +1522,14 @@ const runningRouter = router({
       averageHeartRate: z.number().optional(),
       maximumHeartRate: z.number().optional(),
       averageCadence: z.number().optional(),
+      maxCadence: z.number().optional(),
+      avgStrideLengthM: z.number().optional(),
+      avgVerticalRatio: z.number().optional(),
+      verticalOscillationCm: z.number().optional(),
+      avgGroundContactTimeMs: z.number().optional(),
       calories: z.number().optional(),
+      temperature: z.number().optional(),
+      humidity: z.number().optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
