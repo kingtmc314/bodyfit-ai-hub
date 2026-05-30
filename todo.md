@@ -162,3 +162,15 @@
 - [x] Fix fitness.test.ts — updated UNAUTHORIZED test to reflect public procedure behavior
 - [x] 35/35 tests passing, 0 TypeScript errors
 - [x] Push to GitHub and deploy to Vercel
+
+## Phase 22: Goal Progress Rings, Achievement Notifications & Trends Badges
+
+- [x] Dashboard: GoalRing SVG component with animated stroke, 🎯 on hit, % progress, green ring on goal achieved
+- [x] Dashboard: Fetches goals + latest body/sleep/HR data; shows rings for weight, body fat, muscle, resting HR, sleep score, calories
+- [x] Trends: GoalBadge component — shows '🎯 Goal hit!' (emerald) or 'X% to goal' (amber/muted) on each chart card
+- [x] Trends: Badges on Weight, Body Fat, Sleep Score, Sleep Duration, Resting HR, HRV, Workout Duration, Daily Calories
+- [x] BodyComposition.tsx: checkGoalAchievement fires on add/update — toasts for weight, body fat, muscle mass
+- [x] HeartRate.tsx: checkGoalAchievement fires on add/update — toasts for resting HR, HRV
+- [x] Sleep.tsx: checkGoalAchievement fires on add/update — toasts for sleep score, sleep duration
+- [x] 35/35 tests passing, 0 TypeScript errors
+- [x] Push to GitHub and deploy to Vercel

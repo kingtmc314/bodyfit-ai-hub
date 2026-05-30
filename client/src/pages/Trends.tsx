@@ -97,6 +97,30 @@ function ErrorChart({ message, onRetry }: { message: string; onRetry: () => void
 // ─── Goal type (matches server enum) ────────────────────────────────────────
 type GoalRecord = { goalType: string; targetValue: number | string; unit?: string | null };
 
+// ─── Goal completion % badge ──────────────────────────────────────────────────
+function GoalBadge({ current, goal, inverse = false }: { current: number | null | undefined; goal: GoalRecord | undefined; inverse?: boolean }) {
+  if (!goal || current == null) return null;
+  const target = Number(goal.targetValue);
+  if (!target) return null;
+  const rawPct = inverse
+    ? Math.min((target / current) * 100, 100)
+    : Math.min((current / target) * 100, 100);
+  const isHit = inverse ? current <= target : current >= target;
+  const pct = Math.round(rawPct);
+  if (isHit) return (
+    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+      🎯 Goal hit!
+    </span>
+  );
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
+      pct >= 80 ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"
+    }`}>
+      {pct}% to goal
+    </span>
+  );
+}
+
 // ─── Body Composition Charts ──────────────────────────────────────────────────
 function BodyCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
   const { data, isLoading, error, refetch } = trpc.charts.bodyHistory.useQuery({ days });
@@ -119,6 +143,10 @@ function BodyCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
   const weightGoal = goals.find(g => g.goalType === "weight");
   const fatGoal = goals.find(g => g.goalType === "body_fat_pct");
   const muscleGoal = goals.find(g => g.goalType === "muscle_mass");
+  // Latest non-null values for badge
+  const latestWeight = [...weights].reverse().find(v => v != null);
+  const latestFat = [...fats].reverse().find(v => v != null);
+  const latestMuscle = [...chartData.map(d => d.muscle)].reverse().find(v => v != null);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -127,7 +155,10 @@ function BodyCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium">Weight & Muscle Mass</CardTitle>
-            <TrendBadge values={weights} unit=" kg" inverse={false} />
+            <div className="flex items-center gap-1.5">
+              <TrendBadge values={weights} unit=" kg" inverse={false} />
+              <GoalBadge current={latestWeight} goal={weightGoal} inverse={true} />
+            </div>
           </div>
           <CardDescription className="text-xs">kg over time</CardDescription>
         </CardHeader>
@@ -153,7 +184,10 @@ function BodyCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium">Body Fat %</CardTitle>
-            <TrendBadge values={fats} unit="%" inverse={true} />
+            <div className="flex items-center gap-1.5">
+              <TrendBadge values={fats} unit="%" inverse={true} />
+              <GoalBadge current={latestFat} goal={fatGoal} inverse={true} />
+            </div>
           </div>
           <CardDescription className="text-xs">% body fat over time</CardDescription>
         </CardHeader>
@@ -225,6 +259,8 @@ function SleepCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
   const durations = chartData.map(d => d.duration);
   const sleepScoreGoal = goals.find(g => g.goalType === "sleep_score");
   const sleepDurGoal = goals.find(g => g.goalType === "sleep_duration");
+  const latestScore = [...scores].reverse().find(v => v != null);
+  const latestDuration = [...durations].reverse().find(v => v != null);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -233,7 +269,10 @@ function SleepCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium">Sleep Score</CardTitle>
-            <TrendBadge values={scores} unit=" pts" />
+            <div className="flex items-center gap-1.5">
+              <TrendBadge values={scores} unit=" pts" />
+              <GoalBadge current={latestScore} goal={sleepScoreGoal} />
+            </div>
           </div>
           <CardDescription className="text-xs">Garmin sleep score (0–100)</CardDescription>
         </CardHeader>
@@ -263,7 +302,10 @@ function SleepCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium">Sleep Duration</CardTitle>
-            <TrendBadge values={durations} unit="h" />
+            <div className="flex items-center gap-1.5">
+              <TrendBadge values={durations} unit="h" />
+              <GoalBadge current={latestDuration} goal={sleepDurGoal} />
+            </div>
           </div>
           <CardDescription className="text-xs">Hours of sleep per night</CardDescription>
         </CardHeader>
@@ -329,6 +371,8 @@ function HeartRateCharts({ days, goals }: { days: number; goals: GoalRecord[] })
   const hrvs = chartData.map(d => d.hrv);
   const restingHrGoal = goals.find(g => g.goalType === "resting_hr");
   const hrvGoal = goals.find(g => g.goalType === "hrv");
+  const latestResting = [...restings].reverse().find(v => v != null);
+  const latestHrv = [...hrvs].reverse().find(v => v != null);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -337,7 +381,10 @@ function HeartRateCharts({ days, goals }: { days: number; goals: GoalRecord[] })
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium">Resting Heart Rate</CardTitle>
-            <TrendBadge values={restings} unit=" bpm" inverse={true} />
+            <div className="flex items-center gap-1.5">
+              <TrendBadge values={restings} unit=" bpm" inverse={true} />
+              <GoalBadge current={latestResting} goal={restingHrGoal} inverse={true} />
+            </div>
           </div>
           <CardDescription className="text-xs">bpm — lower is generally better</CardDescription>
         </CardHeader>
@@ -363,7 +410,10 @@ function HeartRateCharts({ days, goals }: { days: number; goals: GoalRecord[] })
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium">Heart Rate Variability (HRV)</CardTitle>
-            <TrendBadge values={hrvs} unit=" ms" />
+            <div className="flex items-center gap-1.5">
+              <TrendBadge values={hrvs} unit=" ms" />
+              <GoalBadge current={latestHrv} goal={hrvGoal} />
+            </div>
           </div>
           <CardDescription className="text-xs">ms — higher indicates better recovery</CardDescription>
         </CardHeader>
@@ -429,6 +479,7 @@ function WorkoutCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
 
   const durations = chartData.map(d => d.duration);
   const workoutDurGoal = goals.find(g => g.goalType === "workout_duration");
+  const latestWorkoutDur = [...durations].reverse().find(v => v != null);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -437,7 +488,10 @@ function WorkoutCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium">Workout Duration</CardTitle>
-            <TrendBadge values={durations} unit=" min" />
+            <div className="flex items-center gap-1.5">
+              <TrendBadge values={durations} unit=" min" />
+              <GoalBadge current={latestWorkoutDur} goal={workoutDurGoal} />
+            </div>
           </div>
           <CardDescription className="text-xs">Minutes per session</CardDescription>
         </CardHeader>
@@ -503,6 +557,7 @@ function NutritionCharts({ days, goals }: { days: number; goals: GoalRecord[] })
   const cals = chartData.map(d => d.calories);
   const calGoal = goals.find(g => g.goalType === "daily_calories");
   const proteinGoal = goals.find(g => g.goalType === "daily_protein");
+  const latestCal = [...cals].reverse().find(v => v != null);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -511,7 +566,10 @@ function NutritionCharts({ days, goals }: { days: number; goals: GoalRecord[] })
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium">Daily Calories</CardTitle>
-            <TrendBadge values={cals} unit=" kcal" />
+            <div className="flex items-center gap-1.5">
+              <TrendBadge values={cals} unit=" kcal" />
+              <GoalBadge current={latestCal} goal={calGoal} />
+            </div>
           </div>
           <CardDescription className="text-xs">Total kcal per day</CardDescription>
         </CardHeader>

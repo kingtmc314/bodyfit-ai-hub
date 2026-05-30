@@ -38,12 +38,47 @@ export default function BodyComposition() {
 
   const utils = trpc.useUtils();
   const { data: records = [], isLoading } = trpc.body.getAll.useQuery({ limit: 60 });
+  const { data: goalsData } = trpc.goals.getGoals.useQuery();
+
+  // Check if a saved value meets/beats a goal and show a celebratory toast
+  const checkGoalAchievement = (payload: Record<string, number | undefined>) => {
+    const goals = goalsData ?? [];
+    const checks: Array<{ goalType: string; value: number | undefined; inverse?: boolean; label: string; unit: string }> = [
+      { goalType: "weight",       value: payload.weight,      inverse: true,  label: "Weight",      unit: "kg" },
+      { goalType: "body_fat_pct", value: payload.bodyFatPct,  inverse: true,  label: "Body Fat",    unit: "%" },
+      { goalType: "muscle_mass",  value: payload.muscleMass,  inverse: false, label: "Muscle Mass", unit: "kg" },
+    ];
+    checks.forEach(({ goalType, value, inverse, label, unit }) => {
+      if (value == null) return;
+      const goal = goals.find(g => g.goalType === goalType);
+      if (!goal) return;
+      const target = Number(goal.targetValue);
+      const hit = inverse ? value <= target : value >= target;
+      if (hit) {
+        const symbol = inverse ? "≤" : "≥";
+        toast.success(`🎯 ${label} goal hit! ${value}${unit} ${symbol} ${target}${unit}`, { duration: 5000 });
+      }
+    });
+  };
+
   const addMutation = trpc.body.add.useMutation({
-    onSuccess: () => { utils.body.getAll.invalidate(); toast.success("Body metrics logged!"); setShowDialog(false); setForm(defaultForm); },
+    onSuccess: (_, vars) => {
+      utils.body.getAll.invalidate();
+      toast.success("Body metrics logged!");
+      checkGoalAchievement(vars as any);
+      setShowDialog(false);
+      setForm(defaultForm);
+    },
     onError: (e) => toast.error(e.message),
   });
   const updateMutation = trpc.body.update.useMutation({
-    onSuccess: () => { utils.body.getAll.invalidate(); toast.success("Updated!"); setEditEntry(null); setShowDialog(false); },
+    onSuccess: (_, vars) => {
+      utils.body.getAll.invalidate();
+      toast.success("Updated!");
+      checkGoalAchievement(vars as any);
+      setEditEntry(null);
+      setShowDialog(false);
+    },
   });
   const deleteMutation = trpc.body.delete.useMutation({
     onSuccess: () => { utils.body.getAll.invalidate(); toast.success("Deleted"); },

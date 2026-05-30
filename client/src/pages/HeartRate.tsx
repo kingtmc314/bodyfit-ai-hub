@@ -38,12 +38,45 @@ export default function HeartRate() {
 
   const utils = trpc.useUtils();
   const { data: records = [], isLoading } = trpc.heartRate.getAll.useQuery({ limit: 60 });
+  const { data: goalsData } = trpc.goals.getGoals.useQuery();
+
+  const checkGoalAchievement = (payload: Record<string, number | undefined>) => {
+    const goals = goalsData ?? [];
+    const checks: Array<{ goalType: string; value: number | undefined; inverse: boolean; label: string; unit: string }> = [
+      { goalType: "resting_hr", value: payload.restingHr, inverse: true,  label: "Resting HR", unit: " bpm" },
+      { goalType: "hrv",        value: payload.hrv,       inverse: false, label: "HRV",        unit: " ms"  },
+    ];
+    checks.forEach(({ goalType, value, inverse, label, unit }) => {
+      if (value == null) return;
+      const goal = goals.find(g => g.goalType === goalType);
+      if (!goal) return;
+      const target = Number(goal.targetValue);
+      const hit = inverse ? value <= target : value >= target;
+      if (hit) {
+        const symbol = inverse ? "≤" : "≥";
+        toast.success(`🎯 ${label} goal hit! ${value}${unit} ${symbol} ${target}${unit}`, { duration: 5000 });
+      }
+    });
+  };
+
   const addMutation = trpc.heartRate.add.useMutation({
-    onSuccess: () => { utils.heartRate.getAll.invalidate(); toast.success("Heart rate logged!"); setShowDialog(false); setForm(defaultForm); },
+    onSuccess: (_, vars) => {
+      utils.heartRate.getAll.invalidate();
+      toast.success("Heart rate logged!");
+      checkGoalAchievement(vars as any);
+      setShowDialog(false);
+      setForm(defaultForm);
+    },
     onError: () => toast.error("Failed to save"),
   });
   const updateMutation = trpc.heartRate.update.useMutation({
-    onSuccess: () => { utils.heartRate.getAll.invalidate(); toast.success("Updated!"); setEditEntry(null); setShowDialog(false); },
+    onSuccess: (_, vars) => {
+      utils.heartRate.getAll.invalidate();
+      toast.success("Updated!");
+      checkGoalAchievement(vars as any);
+      setEditEntry(null);
+      setShowDialog(false);
+    },
   });
   const deleteMutation = trpc.heartRate.delete.useMutation({
     onSuccess: () => { utils.heartRate.getAll.invalidate(); toast.success("Deleted"); },

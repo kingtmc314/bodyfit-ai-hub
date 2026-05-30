@@ -23,6 +23,52 @@ const PROTEIN_GOAL = 150;
 const CARBS_GOAL = 250;
 const FAT_GOAL = 65;
 
+// ─── Goal Progress Ring ───────────────────────────────────────────────────────
+function GoalRing({
+  label, current, target, unit, color, inverse = false, size = 72
+}: {
+  label: string; current: number | null | undefined; target: number;
+  unit: string; color: string; inverse?: boolean; size?: number;
+}) {
+  const r = (size / 2) * 0.72;
+  const circ = 2 * Math.PI * r;
+  const rawPct = current != null ? Math.min((current / target) * 100, 100) : 0;
+  // For inverse goals (lower is better), flip the visual fill
+  const fillPct = inverse ? Math.min((target / (current || target)) * 100, 100) : rawPct;
+  const isHit = current != null && (inverse ? current <= target : current >= target);
+  const offset = circ * (1 - fillPct / 100);
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="-rotate-90" viewBox={`0 0 ${size} ${size}`}>
+          <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="currentColor" strokeWidth={5} className="text-muted/40" />
+          <circle
+            cx={size/2} cy={size/2} r={r} fill="none"
+            stroke={isHit ? "#22c55e" : color}
+            strokeWidth={5}
+            strokeDasharray={circ}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            style={{ transition: "stroke-dashoffset 900ms cubic-bezier(0.23,1,0.32,1)" }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          {isHit
+            ? <span className="text-lg">🎯</span>
+            : <span className="text-xs font-extrabold text-foreground">{Math.round(fillPct)}%</span>
+          }
+        </div>
+      </div>
+      <p className="text-[10px] text-muted-foreground font-medium text-center leading-tight max-w-[72px]">{label}</p>
+      {current != null && (
+        <p className="text-[10px] font-bold text-foreground">
+          {typeof current === 'number' ? current.toFixed(1) : current}<span className="text-muted-foreground font-normal"> / {target}{unit}</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
 function StatCard({ title, value, unit, subtitle, icon: Icon, badgeClass, trend, href }: any) {
   const TrendIcon = trend > 0 ? TrendingUp : trend < 0 ? TrendingDown : Minus;
   const trendColor = trend > 0 ? "text-emerald-500" : trend < 0 ? "text-rose-500" : "text-muted-foreground";
@@ -98,6 +144,9 @@ export default function Dashboard() {
   const { data: summary, isLoading } = trpc.dashboard.getSummary.useQuery();
   const { data: bodyData } = trpc.body.getAll.useQuery({ limit: 14 });
   const { data: sleepData } = trpc.sleep.getAll.useQuery({ limit: 7 });
+  const { data: goalsData } = trpc.goals.getGoals.useQuery();
+  const goals = goalsData ?? [];
+  const getGoal = (type: string) => goals.find(g => g.goalType === type);
   const generateInsightMutation = trpc.insights.generate.useMutation({
     onSuccess: (data) => {
       setInsightText(data.content || "");
@@ -269,6 +318,41 @@ export default function Dashboard() {
           icon={Heart} badgeClass="icon-badge-red" trend={0} href="/heart-rate"
         />
       </div>
+
+      {/* ── GOAL PROGRESS RINGS ── */}
+      {goals.length > 0 && (() => {
+        const weightGoal = getGoal("weight");
+        const fatGoal = getGoal("body_fat_pct");
+        const muscleGoal = getGoal("muscle_mass");
+        const hrGoal = getGoal("resting_hr");
+        const sleepScoreGoal = getGoal("sleep_score");
+        const calGoal = getGoal("daily_calories");
+        const rings = [
+          weightGoal && { label: "Weight", current: latestBody?.weight, target: Number(weightGoal.targetValue), unit: "kg", color: "#22c55e", inverse: false },
+          fatGoal    && { label: "Body Fat", current: latestBody?.bodyFatPct, target: Number(fatGoal.targetValue), unit: "%", color: "#f97316", inverse: true },
+          muscleGoal && { label: "Muscle", current: latestBody?.muscleMass, target: Number(muscleGoal.targetValue), unit: "kg", color: "#3b82f6", inverse: false },
+          hrGoal     && { label: "Resting HR", current: latestHr?.restingHr, target: Number(hrGoal.targetValue), unit: "bpm", color: "#f43f5e", inverse: true },
+          sleepScoreGoal && { label: "Sleep Score", current: latestSleep?.sleepScore, target: Number(sleepScoreGoal.targetValue), unit: "", color: "#8b5cf6", inverse: false },
+          calGoal    && { label: "Calories", current: tod?.calories, target: Number(calGoal.targetValue), unit: "kcal", color: "#f59e0b", inverse: false },
+        ].filter(Boolean) as { label: string; current: number | null | undefined; target: number; unit: string; color: string; inverse: boolean }[];
+        if (!rings.length) return null;
+        return (
+          <div className="bg-white rounded-2xl p-5 border border-border shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="icon-badge icon-badge-orange"><Target className="w-4 h-4" /></div>
+                <h3 className="font-bold text-foreground">Goal Progress</h3>
+              </div>
+              <Link href="/goals"><Button variant="ghost" size="sm" className="text-xs gap-1 text-primary hover:text-primary">Edit Goals <ChevronRight className="w-3 h-3" /></Button></Link>
+            </div>
+            <div className="flex flex-wrap gap-4 justify-around">
+              {rings.map(r => (
+                <GoalRing key={r.label} label={r.label} current={r.current} target={r.target} unit={r.unit} color={r.color} inverse={r.inverse} />
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── CHARTS ROW ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

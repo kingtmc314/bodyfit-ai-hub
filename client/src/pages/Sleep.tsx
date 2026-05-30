@@ -52,12 +52,45 @@ export default function Sleep() {
 
   const utils = trpc.useUtils();
   const { data: records = [], isLoading } = trpc.sleep.getAll.useQuery({ limit: 60 });
+  const { data: goalsData } = trpc.goals.getGoals.useQuery();
+
+  const checkGoalAchievement = (payload: Record<string, number | undefined>) => {
+    const goals = goalsData ?? [];
+    const checks: Array<{ goalType: string; value: number | undefined; inverse: boolean; label: string; unit: string }> = [
+      { goalType: "sleep_score",    value: payload.score,    inverse: false, label: "Sleep Score",    unit: " pts" },
+      { goalType: "sleep_duration", value: payload.duration, inverse: false, label: "Sleep Duration", unit: "h"   },
+    ];
+    checks.forEach(({ goalType, value, inverse, label, unit }) => {
+      if (value == null) return;
+      const goal = goals.find(g => g.goalType === goalType);
+      if (!goal) return;
+      const target = Number(goal.targetValue);
+      const hit = inverse ? value <= target : value >= target;
+      if (hit) {
+        const symbol = inverse ? "≤" : "≥";
+        toast.success(`🎯 ${label} goal hit! ${value}${unit} ${symbol} ${target}${unit}`, { duration: 5000 });
+      }
+    });
+  };
+
   const addMutation = trpc.sleep.add.useMutation({
-    onSuccess: () => { utils.sleep.getAll.invalidate(); toast.success("Sleep logged!"); setShowDialog(false); setForm(defaultForm); },
+    onSuccess: (_, vars) => {
+      utils.sleep.getAll.invalidate();
+      toast.success("Sleep logged!");
+      checkGoalAchievement(vars as any);
+      setShowDialog(false);
+      setForm(defaultForm);
+    },
     onError: () => toast.error("Failed to save"),
   });
   const updateMutation = trpc.sleep.update.useMutation({
-    onSuccess: () => { utils.sleep.getAll.invalidate(); toast.success("Updated!"); setEditEntry(null); setShowDialog(false); },
+    onSuccess: (_, vars) => {
+      utils.sleep.getAll.invalidate();
+      toast.success("Updated!");
+      checkGoalAchievement(vars as any);
+      setEditEntry(null);
+      setShowDialog(false);
+    },
   });
   const deleteMutation = trpc.sleep.delete.useMutation({
     onSuccess: () => { utils.sleep.getAll.invalidate(); toast.success("Deleted"); },
