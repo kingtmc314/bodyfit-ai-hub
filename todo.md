@@ -353,3 +353,13 @@
 - [x] Update zh.json with matching Chinese translations for all new import keys
 - [x] 35/35 tests passing, 0 TypeScript errors
 - [x] Save checkpoint and push to GitHub
+
+## Phase 41: Exercise Detail Modal Enhancement
+- [x] Generate comprehensive bilingual descriptions for 59 exercises (steps, tips, common mistakes, difficulty)
+- [x] Create client/src/data/exerciseDescriptions.ts with full data for all exercises
+- [x] Update ExerciseDetailModal: step-by-step instructions, pro tips, common mistakes sections
+- [x] Add difficulty badge (Beginner/Intermediate/Advanced) to exercise modal header
+- [x] Add ScrollArea for scrollable modal content (max-h-[90vh])
+- [x] Implement fuzzy name matching for exercise lookup (case-insensitive, partial, word-based)
+- [x] Dark mode support for all new sections (yellow/red tinted backgrounds)
+- [x] 35/35 tests passing, 0 TypeScript errors

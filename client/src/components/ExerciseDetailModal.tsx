@@ -1,7 +1,10 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Plus, Dumbbell, Zap, Info } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Plus, Zap, Info, ChevronRight, Lightbulb, AlertTriangle, BookOpen } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { EXERCISE_DESCRIPTIONS } from "@/data/exerciseDescriptions";
 
 // wger muscle IDs mapped to our muscleGroup strings
 // Each entry: { wgerId, name, isFront }
@@ -70,6 +73,29 @@ interface Props {
   onClose: () => void;
   onAddToSession?: () => void;
   hasActiveSession?: boolean;
+}
+
+// Fuzzy name lookup - handles slight name differences between BUILT_IN_EXERCISES and EXERCISE_DESCRIPTIONS
+function lookupDescription(name: string) {
+  if (EXERCISE_DESCRIPTIONS[name]) return EXERCISE_DESCRIPTIONS[name];
+  // Try case-insensitive match
+  const lower = name.toLowerCase();
+  const key = Object.keys(EXERCISE_DESCRIPTIONS).find(k => k.toLowerCase() === lower);
+  if (key) return EXERCISE_DESCRIPTIONS[key];
+  // Try partial match (e.g. "Dumbbell Fly" matches "Dumbbell Flyes", "Push-up" matches "Push-Up")
+  const partial = Object.keys(EXERCISE_DESCRIPTIONS).find(k => {
+    const kl = k.toLowerCase();
+    return kl.startsWith(lower) || lower.startsWith(kl) ||
+      kl.replace(/[-\s]/g, "") === lower.replace(/[-\s]/g, "");
+  });
+  if (partial) return EXERCISE_DESCRIPTIONS[partial];
+  // Word-based match: check if all words of the shorter name appear in the longer
+  const words = lower.split(/\s+/);
+  const wordMatch = Object.keys(EXERCISE_DESCRIPTIONS).find(k => {
+    const kWords = k.toLowerCase().split(/\s+/);
+    return words.every(w => kWords.includes(w)) || kWords.every(w => words.includes(w));
+  });
+  return wordMatch ? EXERCISE_DESCRIPTIONS[wordMatch] : null;
 }
 
 function MuscleDiagram({ muscleGroup }: { muscleGroup: string }) {
@@ -178,95 +204,181 @@ function getMuscleSvgHash(id: number, isMain: boolean): string {
   return isMain ? (mainHashes[id] ?? "") : (secHashes[id] ?? "");
 }
 
+const DIFFICULTY_STYLE: Record<string, string> = {
+  Beginner: "text-green-600 bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-800",
+  Intermediate: "text-yellow-600 bg-yellow-50 border-yellow-200 dark:bg-yellow-950/30 dark:border-yellow-800",
+  Advanced: "text-red-600 bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800",
+};
+
+const DIFFICULTY_ZH: Record<string, string> = {
+  Beginner: "初級",
+  Intermediate: "中級",
+  Advanced: "高級",
+};
+
 export default function ExerciseDetailModal({ exercise, open, onClose, onAddToSession, hasActiveSession }: Props) {
+  const { i18n } = useTranslation();
+  const isZh = i18n.language === "zh";
+
   if (!exercise) return null;
 
   const primaryMuscles = WGER_MUSCLES[exercise.muscleGroup] ?? [];
   const secondaryGroups = SECONDARY_MUSCLES[exercise.muscleGroup] ?? [];
   const color = MUSCLE_COLORS[exercise.muscleGroup] ?? "#6366f1";
   const equipIcon = EQUIPMENT_ICONS[exercise.equipment] ?? "🏋️";
+  const desc = lookupDescription(exercise.name);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-lg flex flex-col" style={{ maxHeight: "90vh" }}>
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <span className="text-lg">{equipIcon}</span>
-            <div>
-              <p className="font-bold">{exercise.name}</p>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="font-bold">{exercise.name}</p>
+                {desc && (
+                  <Badge variant="outline" className={`text-xs font-medium ${DIFFICULTY_STYLE[desc.difficulty] ?? ""}`}>
+                    {isZh ? (DIFFICULTY_ZH[desc.difficulty] ?? desc.difficulty) : desc.difficulty}
+                  </Badge>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground font-normal">{exercise.nameZh}</p>
             </div>
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Muscle diagram */}
-          <div className="bg-muted/30 rounded-xl p-4">
-            <MuscleDiagram muscleGroup={exercise.muscleGroup} />
-            {/* Legend */}
-            <div className="flex items-center justify-center gap-4 mt-3 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-3 rounded-full bg-red-500" />
-                主要肌肉
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-3 rounded-full bg-orange-400" />
-                輔助肌肉
-              </div>
-            </div>
-          </div>
-
-          {/* Tags */}
-          <div className="flex flex-wrap gap-2">
-            <Badge style={{ backgroundColor: color + "22", color, borderColor: color + "44" }} variant="outline" className="capitalize font-medium">
-              <Zap className="w-3 h-3 mr-1" />
-              {exercise.muscleGroup}
-            </Badge>
-            <Badge variant="secondary">
-              <span className="mr-1">{equipIcon}</span>
-              {exercise.equipment}
-            </Badge>
-            {primaryMuscles.map(m => (
-              <Badge key={m.id} variant="outline" className="text-xs">{m.label}</Badge>
-            ))}
-          </div>
-
-          {/* Secondary muscles */}
-          {secondaryGroups.length > 0 && (
-            <div>
-              <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
-                <Info className="w-3 h-3" /> 輔助肌肉
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {secondaryGroups.map(g => (
-                  <Badge key={g} variant="outline" className="text-xs capitalize text-muted-foreground">
-                    {g}
-                  </Badge>
-                ))}
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="space-y-4 pr-2 pb-1">
+            {/* Muscle diagram */}
+            <div className="bg-muted/30 rounded-xl p-4">
+              <MuscleDiagram muscleGroup={exercise.muscleGroup} />
+              {/* Legend */}
+              <div className="flex items-center justify-center gap-4 mt-3 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded-full bg-red-500" />
+                  {isZh ? "主要肌肉" : "Primary"}
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded-full bg-orange-400" />
+                  {isZh ? "輔助肌肉" : "Secondary"}
+                </div>
               </div>
             </div>
-          )}
 
-          {/* Instructions */}
-          {exercise.instructions && (
-            <div className="bg-muted/40 rounded-lg p-3">
-              <p className="text-xs font-medium mb-1 text-muted-foreground">動作說明</p>
-              <p className="text-sm leading-relaxed">{exercise.instructions}</p>
+            {/* Tags */}
+            <div className="flex flex-wrap gap-2">
+              <Badge style={{ backgroundColor: color + "22", color, borderColor: color + "44" }} variant="outline" className="capitalize font-medium">
+                <Zap className="w-3 h-3 mr-1" />
+                {exercise.muscleGroup}
+              </Badge>
+              <Badge variant="secondary">
+                <span className="mr-1">{equipIcon}</span>
+                {exercise.equipment}
+              </Badge>
+              {primaryMuscles.map(m => (
+                <Badge key={m.id} variant="outline" className="text-xs">{m.label}</Badge>
+              ))}
             </div>
-          )}
 
-          {/* Action buttons */}
-          <div className="flex gap-2 pt-1">
-            {hasActiveSession && onAddToSession && (
-              <Button className="flex-1 gap-2" onClick={() => { onAddToSession(); onClose(); }}>
-                <Plus className="w-4 h-4" /> 加入訓練
-              </Button>
+            {/* Secondary muscles */}
+            {secondaryGroups.length > 0 && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
+                  <Info className="w-3 h-3" /> {isZh ? "輔助肌肉" : "Secondary Muscles"}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {secondaryGroups.map(g => (
+                    <Badge key={g} variant="outline" className="text-xs capitalize text-muted-foreground">
+                      {g}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
             )}
-            <Button variant="outline" className={hasActiveSession ? "flex-1" : "w-full"} onClick={onClose}>
-              關閉
-            </Button>
+
+            {/* Detailed description from EXERCISE_DESCRIPTIONS */}
+            {desc ? (
+              <>
+                {/* Step-by-step instructions */}
+                <div className="rounded-xl border border-border/60 overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b border-border/40">
+                    <BookOpen className="w-3.5 h-3.5 text-primary" />
+                    <p className="text-xs font-semibold">{isZh ? "動作步驟" : "How To Do It"}</p>
+                  </div>
+                  <div className="divide-y divide-border/30">
+                    {(isZh ? desc.stepsZh : desc.steps).map((step, i) => (
+                      <div key={i} className="flex gap-3 px-3 py-2.5">
+                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center mt-0.5">
+                          {i + 1}
+                        </span>
+                        <p className="text-sm leading-relaxed">{step}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pro Tips */}
+                <div className="rounded-xl border border-yellow-200/60 overflow-hidden dark:border-yellow-800/40">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-yellow-50/50 border-b border-yellow-200/40 dark:bg-yellow-950/20 dark:border-yellow-800/30">
+                    <Lightbulb className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
+                    <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-400">
+                      {isZh ? "訓練提示" : "Pro Tips"}
+                    </p>
+                  </div>
+                  <div className="divide-y divide-yellow-100/60 dark:divide-yellow-900/30">
+                    {(isZh ? desc.tipsZh : desc.tips).map((tip, i) => (
+                      <div key={i} className="flex gap-2 px-3 py-2.5">
+                        <ChevronRight className="w-3.5 h-3.5 text-yellow-500 flex-shrink-0 mt-0.5" />
+                        <p className="text-sm leading-relaxed text-foreground/80">{tip}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Common Mistakes */}
+                <div className="rounded-xl border border-red-200/60 overflow-hidden dark:border-red-800/40">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-red-50/50 border-b border-red-200/40 dark:bg-red-950/20 dark:border-red-800/30">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+                    <p className="text-xs font-semibold text-red-600 dark:text-red-400">
+                      {isZh ? "常見錯誤" : "Common Mistakes"}
+                    </p>
+                  </div>
+                  <div className="divide-y divide-red-100/60 dark:divide-red-900/30">
+                    {(isZh ? desc.mistakesZh : desc.mistakes).map((mistake, i) => (
+                      <div key={i} className="flex gap-2 px-3 py-2.5">
+                        <span className="text-red-400 flex-shrink-0 mt-0.5 text-xs font-bold leading-5">✗</span>
+                        <p className="text-sm leading-relaxed text-foreground/80">{mistake}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* Fallback: show old instructions if no detailed desc */
+              exercise.instructions && (
+                <div className="bg-muted/40 rounded-lg p-3">
+                  <p className="text-xs font-medium mb-1 text-muted-foreground">
+                    {isZh ? "動作說明" : "Instructions"}
+                  </p>
+                  <p className="text-sm leading-relaxed">{exercise.instructions}</p>
+                </div>
+              )
+            )}
+
+            {/* Action buttons */}
+            <div className="flex gap-2 pt-1 pb-1">
+              {hasActiveSession && onAddToSession && (
+                <Button className="flex-1 gap-2" onClick={() => { onAddToSession(); onClose(); }}>
+                  <Plus className="w-4 h-4" /> {isZh ? "加入訓練" : "Add to Session"}
+                </Button>
+              )}
+              <Button variant="outline" className={hasActiveSession ? "flex-1" : "w-full"} onClick={onClose}>
+                {isZh ? "關閉" : "Close"}
+              </Button>
+            </div>
           </div>
-        </div>
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   );
