@@ -249,6 +249,7 @@ function SleepCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
       rem: r.remSleep ?? null,
       light: r.lightSleep ?? null,
       battery: r.bodyBattery ?? null,
+      stress: (r as any).stress ?? null,
     })), [data, days]);
 
   if (isLoading) return <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><ChartSkeleton /><ChartSkeleton /></div>;

@@ -97,15 +97,16 @@ export default function Sleep() {
   });
 
 
+  const toHrs = (v: number | null | undefined) => v != null && v > 24 ? Math.round((v / 60) * 10) / 10 : v ?? null;
   const chartData = [...records].reverse().map(r => ({
     date: r.date.slice(5),
-    score: r.sleepScore,
-    duration: r.sleepDuration,
-    deep: r.deepSleep,
-    rem: r.remSleep,
+    score: r.sleepScore ?? null,
+    duration: toHrs(r.sleepDuration),
+    deep: toHrs(r.deepSleep),
+    rem: toHrs(r.remSleep),
     hr: null, // restingHr not in sleep table
-    battery: r.bodyBattery,
-    stress: r.stress,
+    battery: r.bodyBattery ?? null,
+    stress: r.stress ?? null,
   }));
 
   const latest = records[0];
@@ -159,7 +160,7 @@ export default function Sleep() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { labelKey: "sleep.score", value: latest.sleepScore, unit: "/100", badgeClass: "icon-badge-blue" },
-            { labelKey: "sleep.duration", value: latest.sleepDuration != null ? `${Number(latest.sleepDuration).toFixed(1)}` : null, unit: "hrs", badgeClass: "icon-badge-purple" },
+            { labelKey: "sleep.duration", value: latest.sleepDuration != null ? `${toHrs(latest.sleepDuration)?.toFixed(1) ?? "—"}` : null, unit: "hrs", badgeClass: "icon-badge-purple" },
             { labelKey: "sleep.body_battery", value: latest.bodyBattery, unit: "/100", badgeClass: "icon-badge-green" },
             { labelKey: "sleep.pulse_ox", value: latest.pulseOx, unit: "%", badgeClass: "icon-badge-red" },
           ].map(m => (
@@ -263,9 +264,9 @@ export default function Sleep() {
                       <td className="px-4 py-3 font-medium whitespace-nowrap">{r.date}</td>
                       <td className="px-4 py-3">{r.sleepScore ?? "—"}</td>
                       <td className="px-4 py-3">{getQualityBadge(r.sleepQuality)}</td>
-                      <td className="px-4 py-3">{r.sleepDuration != null ? `${Number(r.sleepDuration).toFixed(1)}h` : "—"}</td>
-                      <td className="px-4 py-3">{r.deepSleep != null ? `${Number(r.deepSleep).toFixed(1)}h` : "—"}</td>
-                      <td className="px-4 py-3">{r.remSleep != null ? `${Number(r.remSleep).toFixed(1)}h` : "—"}</td>
+                      <td className="px-4 py-3">{r.sleepDuration != null ? `${toHrs(r.sleepDuration)?.toFixed(1)}h` : "—"}</td>
+                      <td className="px-4 py-3">{r.deepSleep != null ? `${toHrs(r.deepSleep)?.toFixed(1)}h` : "—"}</td>
+                      <td className="px-4 py-3">{r.remSleep != null ? `${toHrs(r.remSleep)?.toFixed(1)}h` : "—"}</td>
                       <td className="px-4 py-3">{r.pulseOx ? `${r.pulseOx}%` : "—"}</td>
                       <td className="px-4 py-3">{r.bodyBattery ?? "—"}</td>
                       <td className="px-4 py-3">{r.stress != null ? Number(r.stress).toFixed(0) : "—"}</td>

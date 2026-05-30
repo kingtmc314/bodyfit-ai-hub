@@ -915,7 +915,7 @@ const chartsRouter = router({
       if (!db) return [];
       const since = new Date();
       since.setDate(since.getDate() - input.days);
-      return db.select({
+      const rows = await db.select({
         date: sleepLogs.date,
         sleepScore: sleepLogs.sleepScore,
         sleepDuration: sleepLogs.sleepDuration,
@@ -923,12 +923,22 @@ const chartsRouter = router({
         remSleep: sleepLogs.remSleep,
         lightSleep: sleepLogs.lightSleep,
         bodyBattery: sleepLogs.bodyBattery,
+        stress: sleepLogs.stress,
       }).from(sleepLogs)
         .where(and(
           eq(sleepLogs.userId, OWNER_USER_ID),
           sql`${sleepLogs.date} >= ${since.toISOString().slice(0, 10)}`
         ))
         .orderBy(sleepLogs.date);
+      // Normalize: if values stored as minutes (> 24), convert to hours
+      const toHrs = (v: number | null) => v != null && v > 24 ? Math.round((v / 60) * 10) / 10 : v;
+      return rows.map(r => ({
+        ...r,
+        sleepDuration: toHrs(r.sleepDuration),
+        deepSleep: toHrs(r.deepSleep),
+        remSleep: toHrs(r.remSleep),
+        lightSleep: toHrs(r.lightSleep),
+      }));
     }),
 
   // Fetch heart rate history for charting

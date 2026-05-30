@@ -174,3 +174,10 @@
 - [x] Sleep.tsx: checkGoalAchievement fires on add/update — toasts for sleep score, sleep duration
 - [x] 35/35 tests passing, 0 TypeScript errors
 - [x] Push to GitHub and deploy to Vercel
+
+## Phase 23: Sleep Stage Data Fix
+- [x] Diagnosed: deepSleep/remSleep/lightSleep are null in DB — Google Sheets import never mapped those columns
+- [x] Fixed sleepDuration normalization in server sleepHistory procedure (minutes → hours when > 24)
+- [x] Fixed Sleep.tsx chartData, stat card, log table to normalize duration display
+- [x] Added stress field to sleepHistory chart procedure and Trends.tsx SleepCharts data mapping
+- [x] 35/35 tests passing, 0 TypeScript errors
