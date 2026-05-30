@@ -10,6 +10,10 @@ import {
   json,
   serial,
   decimal,
+  bigserial,
+  bigint,
+  date,
+  numeric,
 } from "drizzle-orm/pg-core";
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -305,3 +309,56 @@ export const healthGoals = pgTable("health_goals", {
 
 export type HealthGoal = typeof healthGoals.$inferSelect;
 export type InsertHealthGoal = typeof healthGoals.$inferInsert;
+
+// ─── Running Shoes ────────────────────────────────────────────────────────────
+export const runningShoes = pgTable("running_shoes", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  shoesName: text("shoes_name").notNull(),
+  brand: text("brand"),
+  model: text("model"),
+  status: text("status").default("Active"),
+  purchaseDate: date("purchase_date"),
+  retirementDate: date("retirement_date"),
+  initialKm: numeric("initial_km").default("0"),
+  notes: text("notes"),
+  photoUrl: text("photo_url"),
+  price: numeric("price"),
+  firstUseDate: date("firstusedate"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type RunningShoe = typeof runningShoes.$inferSelect;
+export type InsertRunningShoe = typeof runningShoes.$inferInsert;
+
+// ─── Races ────────────────────────────────────────────────────────────────────
+export const races = pgTable("races", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  raceName: text("race_name").notNull(),
+  date: date("date").notNull(),
+  distanceKm: numeric("distance_km"),
+  location: text("location"),
+  registration: text("registration"),
+  bibNo: text("bib_no"),
+  isPb: boolean("is_pb").default(false),
+  finishTime: text("finish_time"),
+  overallPlace: integer("overall_place"),
+  ageGroupPlace: integer("age_group_place"),
+  genderGroupPlace: integer("gender_group_place"),
+  runningShoes: text("running_shoes"),
+  shoesId: bigint("shoes_id", { mode: "number" }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type Race = typeof races.$inferSelect;
+export type InsertRace = typeof races.$inferInsert;
+
+// ─── Favourite Exercises ──────────────────────────────────────────────────────
+export const favouriteExercises = pgTable("favourite_exercises", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  exerciseName: text("exercise_name").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type FavouriteExercise = typeof favouriteExercises.$inferSelect;
+export type InsertFavouriteExercise = typeof favouriteExercises.$inferInsert;

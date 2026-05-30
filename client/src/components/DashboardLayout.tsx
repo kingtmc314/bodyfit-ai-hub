@@ -231,7 +231,7 @@ function DashboardLayoutContent({
               </DropdownMenuContent>
             </DropdownMenu>
             <div className="mt-2 px-1 group-data-[collapsible=icon]:hidden">
-              <p className="text-[10px] text-muted-foreground/50 select-none">v1.0.1</p>
+              <p className="text-[10px] text-muted-foreground/50 select-none">v1.2.0</p>
             </div>
           </SidebarFooter>
         </Sidebar>

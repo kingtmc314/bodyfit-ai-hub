@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot } from "lucide-react";
+import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot, Trophy, Star, MapPin, Calendar, Clock, Award, Flag } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart, Area
@@ -90,10 +90,27 @@ export default function Running() {
   const [aiWeeks, setAiWeeks] = useState(12);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
 
+  // Shoe Locker state
+  const [showShoeDialog, setShowShoeDialog] = useState(false);
+  const [editShoe, setEditShoe] = useState<any>(null);
+  const [shoeForm, setShoeForm] = useState<any>({ shoesName: '', brand: '', model: '', status: 'Active', purchaseDate: '', initialKm: '', notes: '', price: '', firstUseDate: '' });
+  const [deleteShoeConfirm, setDeleteShoeConfirm] = useState<number | null>(null);
+
+  // Race Events state
+  const [showRaceDialog, setShowRaceDialog] = useState(false);
+  const [editRace, setEditRace] = useState<any>(null);
+  const [raceForm, setRaceForm] = useState<any>({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' });
+  const [deleteRaceConfirm, setDeleteRaceConfirm] = useState<number | null>(null);
+  const [raceAnalysis, setRaceAnalysis] = useState<{ [id: number]: string }>({});
+  const [analyzingRace, setAnalyzingRace] = useState<number | null>(null);
+
   const utils = trpc.useUtils();
   const { data: logs = [], isLoading } = trpc.running.getLogs.useQuery({ limit: 200 });
   const { data: stats } = trpc.running.getStats.useQuery();
   const { data: activeShoes = [] } = trpc.running.getActiveShoes.useQuery();
+  const { data: allShoes = [] } = trpc.running.getShoes.useQuery();
+  const { data: races = [] } = trpc.running.getRaces.useQuery();
+  const { data: pbs = [] } = trpc.running.getPBs.useQuery();
 
   // ─── Mutations ───────────────────────────────────────────────────────────────
   const addMutation = trpc.running.addLog.useMutation({
@@ -134,6 +151,41 @@ export default function Running() {
       setAiAnalysis(typeof data.analysis === 'string' ? data.analysis : null);
     },
     onError: (e) => toast.error(t("common.error") + ": " + e.message),
+  });
+
+  // Shoe mutations
+  const addShoeMutation = trpc.running.addShoe.useMutation({
+    onSuccess: () => { utils.running.getShoes.invalidate(); utils.running.getActiveShoes.invalidate(); toast.success('跑鞋已新增'); setShowShoeDialog(false); setShoeForm({ shoesName: '', brand: '', model: '', status: 'Active', purchaseDate: '', initialKm: '', notes: '', price: '', firstUseDate: '' }); },
+    onError: (e) => toast.error('錯誤: ' + e.message),
+  });
+  const updateShoeMutation = trpc.running.updateShoe.useMutation({
+    onSuccess: () => { utils.running.getShoes.invalidate(); utils.running.getActiveShoes.invalidate(); toast.success('跑鞋已更新'); setShowShoeDialog(false); setEditShoe(null); },
+    onError: (e) => toast.error('錯誤: ' + e.message),
+  });
+  const deleteShoeMutation = trpc.running.deleteShoe.useMutation({
+    onSuccess: () => { utils.running.getShoes.invalidate(); utils.running.getActiveShoes.invalidate(); toast.success('跑鞋已刪除'); setDeleteShoeConfirm(null); },
+    onError: (e) => toast.error('錯誤: ' + e.message),
+  });
+
+  // Race mutations
+  const addRaceMutation = trpc.running.addRace.useMutation({
+    onSuccess: () => { utils.running.getRaces.invalidate(); utils.running.getPBs.invalidate(); toast.success('賽事已新增'); setShowRaceDialog(false); setRaceForm({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' }); },
+    onError: (e) => toast.error('錯誤: ' + e.message),
+  });
+  const updateRaceMutation = trpc.running.updateRace.useMutation({
+    onSuccess: () => { utils.running.getRaces.invalidate(); utils.running.getPBs.invalidate(); toast.success('賽事已更新'); setShowRaceDialog(false); setEditRace(null); },
+    onError: (e) => toast.error('錯誤: ' + e.message),
+  });
+  const deleteRaceMutation = trpc.running.deleteRace.useMutation({
+    onSuccess: () => { utils.running.getRaces.invalidate(); utils.running.getPBs.invalidate(); toast.success('賽事已刪除'); setDeleteRaceConfirm(null); },
+    onError: (e) => toast.error('錯誤: ' + e.message),
+  });
+  const analyzeRaceMutation = trpc.running.analyzeRace.useMutation({
+    onSuccess: (data, vars) => {
+      setRaceAnalysis(prev => ({ ...prev, [vars.raceId]: typeof data.analysis === 'string' ? data.analysis : '' }));
+      setAnalyzingRace(null);
+    },
+    onError: (e) => { toast.error('分析失敗: ' + e.message); setAnalyzingRace(null); },
   });
 
   // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -263,9 +315,17 @@ export default function Running() {
 
       {/* Tabs */}
       <Tabs defaultValue="charts">
-        <TabsList className="mb-4">
+        <TabsList className="mb-4 flex-wrap h-auto">
           <TabsTrigger value="charts">趨勢</TabsTrigger>
           <TabsTrigger value="log">查看全部</TabsTrigger>
+          <TabsTrigger value="shoes" className="flex items-center gap-1">
+            <Footprints className="w-3.5 h-3.5" />
+            Shoe Locker
+          </TabsTrigger>
+          <TabsTrigger value="races" className="flex items-center gap-1">
+            <Trophy className="w-3.5 h-3.5" />
+            賽事
+          </TabsTrigger>
           <TabsTrigger value="ai" className="flex items-center gap-1">
             <Bot className="w-3.5 h-3.5" />
             AI 教練
@@ -408,6 +468,248 @@ export default function Running() {
               </div>
             )}
           </div>
+        </TabsContent>
+
+        {/* Shoe Locker tab */}
+        <TabsContent value="shoes" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-foreground flex items-center gap-2">
+              <Footprints className="w-4 h-4 text-orange-500" />
+              Shoe Locker
+            </h3>
+            <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditShoe(null); setShoeForm({ shoesName: '', brand: '', model: '', status: 'Active', purchaseDate: '', initialKm: '', notes: '', price: '', firstUseDate: '' }); setShowShoeDialog(true); }}>
+              <Plus className="w-3.5 h-3.5 mr-1" /> 新增跑鞋
+            </Button>
+          </div>
+
+          {/* PB section */}
+          {(pbs as any[]).length > 0 && (
+            <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
+              <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                <Award className="w-4 h-4 text-yellow-500" /> 個人PB記錄
+              </h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {(pbs as any[]).map((pb: any, i: number) => (
+                  <div key={i} className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 text-center">
+                    <p className="text-xs text-muted-foreground">{parseFloat(pb.distance_km).toFixed(1)} km</p>
+                    <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">{pb.finish_time}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{pb.race_name}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Shoe cards */}
+          {(allShoes as any[]).length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground">
+              <Footprints className="w-12 h-12 mx-auto mb-3 opacity-20" />
+              <p className="font-medium">尚無跑鞋記錄</p>
+              <p className="text-sm mt-1">點擊「新增跑鞋」開始管理你的跑鞋</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {(allShoes as any[]).map((shoe: any) => {
+                const totalKm = parseFloat(shoe.total_km || 0);
+                const maxKm = 800;
+                const pct = Math.min(100, (totalKm / maxKm) * 100);
+                const statusColor = shoe.status === 'Active' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                  : shoe.status === 'Retired' ? 'bg-red-500/10 text-red-600 border-red-500/20'
+                  : 'bg-blue-500/10 text-blue-600 border-blue-500/20';
+                return (
+                  <div key={shoe.id} className="bg-card border border-border rounded-2xl p-4 shadow-sm">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-foreground truncate">{shoe.shoes_name}</p>
+                        {(shoe.brand || shoe.model) && (
+                          <p className="text-xs text-muted-foreground">{[shoe.brand, shoe.model].filter(Boolean).join(' ')}</p>
+                        )}
+                      </div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ml-2 shrink-0 ${statusColor}`}>
+                        {shoe.status === 'Active' ? '使用中' : shoe.status === 'Retired' ? '已退役' : '未開封'}
+                      </span>
+                    </div>
+
+                    {/* Mileage bar */}
+                    <div className="mb-3">
+                      <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                        <span>距離</span>
+                        <span className={totalKm > 700 ? 'text-red-500 font-semibold' : totalKm > 500 ? 'text-yellow-500 font-semibold' : 'text-emerald-500 font-semibold'}>
+                          {totalKm.toFixed(0)} km
+                        </span>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full transition-all ${pct > 87.5 ? 'bg-red-500' : pct > 62.5 ? 'bg-yellow-500' : 'bg-emerald-500'}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">建議更換: 800 km</p>
+                    </div>
+
+                    {shoe.purchase_date && (
+                      <p className="text-xs text-muted-foreground mb-1">購買: {shoe.purchase_date}</p>
+                    )}
+                    {shoe.notes && (
+                      <p className="text-xs text-muted-foreground mb-2 italic truncate">{shoe.notes}</p>
+                    )}
+
+                    <div className="flex gap-2 mt-2">
+                      <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => {
+                        setEditShoe(shoe);
+                        setShoeForm({
+                          shoesName: shoe.shoes_name || '',
+                          brand: shoe.brand || '',
+                          model: shoe.model || '',
+                          status: shoe.status || 'Active',
+                          purchaseDate: shoe.purchase_date || '',
+                          initialKm: shoe.initial_km != null ? String(shoe.initial_km) : '',
+                          notes: shoe.notes || '',
+                          price: shoe.price != null ? String(shoe.price) : '',
+                          firstUseDate: shoe.firstusedate || '',
+                        });
+                        setShowShoeDialog(true);
+                      }}>
+                        <Edit2 className="w-3 h-3 mr-1" /> 編輯
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteShoeConfirm(Number(shoe.id))}>
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Race Events tab */}
+        <TabsContent value="races" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-foreground flex items-center gap-2">
+              <Trophy className="w-4 h-4 text-yellow-500" />
+              賽事管理
+            </h3>
+            <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditRace(null); setRaceForm({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' }); setShowRaceDialog(true); }}>
+              <Plus className="w-3.5 h-3.5 mr-1" /> 新增賽事
+            </Button>
+          </div>
+
+          {(races as any[]).length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground">
+              <Trophy className="w-12 h-12 mx-auto mb-3 opacity-20" />
+              <p className="font-medium">尚無賽事記錄</p>
+              <p className="text-sm mt-1">點擊「新增賽事」開始記錄你的賽事</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {(races as any[]).map((race: any) => {
+                const raceDate = new Date(race.date + 'T00:00:00+08:00');
+                const now = new Date();
+                const isUpcoming = raceDate > now;
+                const diffMs = raceDate.getTime() - now.getTime();
+                const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                const analysis = raceAnalysis[Number(race.id)];
+                const isAnalyzing = analyzingRace === Number(race.id);
+
+                return (
+                  <div key={race.id} className={`bg-card border rounded-2xl p-4 shadow-sm ${
+                    isUpcoming ? 'border-blue-500/30' : race.is_pb ? 'border-yellow-500/30' : 'border-border'
+                  }`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-foreground">{race.race_name}</p>
+                          {race.is_pb && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-400 font-bold">PB</span>
+                          )}
+                          {isUpcoming && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 font-medium">即將來臨</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{race.date}</span>
+                          {race.distance_km && <span className="flex items-center gap-1"><Flag className="w-3 h-3" />{parseFloat(race.distance_km).toFixed(1)} km</span>}
+                          {race.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{race.location}</span>}
+                          {race.finish_time && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{race.finish_time}</span>}
+                        </div>
+                        {(race.overall_place || race.gender_group_place || race.age_group_place) && (
+                          <div className="flex gap-2 mt-1 flex-wrap">
+                            {race.overall_place && <span className="text-[10px] text-muted-foreground">總排: #{race.overall_place}</span>}
+                            {race.gender_group_place && <span className="text-[10px] text-muted-foreground">性別: #{race.gender_group_place}</span>}
+                            {race.age_group_place && <span className="text-[10px] text-muted-foreground">年齡: #{race.age_group_place}</span>}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Countdown or finish time */}
+                      <div className="text-right shrink-0">
+                        {isUpcoming ? (
+                          <div className="text-center">
+                            <p className="text-2xl font-bold text-blue-500">{diffDays}</p>
+                            <p className="text-[10px] text-muted-foreground">天後</p>
+                          </div>
+                        ) : race.finish_time ? (
+                          <div className="text-center">
+                            <p className="text-lg font-bold text-foreground">{race.finish_time}</p>
+                            <p className="text-[10px] text-muted-foreground">完賽時間</p>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2 mt-3 flex-wrap">
+                      {!isUpcoming && (
+                        <Button size="sm" variant="outline" className="h-7 text-xs flex items-center gap-1"
+                          disabled={isAnalyzing}
+                          onClick={() => { setAnalyzingRace(Number(race.id)); analyzeRaceMutation.mutate({ raceId: Number(race.id) }); }}>
+                          {isAnalyzing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                          AI 分析
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
+                        setEditRace(race);
+                        setRaceForm({
+                          raceName: race.race_name || '',
+                          date: race.date || todayHKString(),
+                          distanceKm: race.distance_km != null ? String(race.distance_km) : '',
+                          location: race.location || '',
+                          registration: race.registration || '',
+                          bibNo: race.bib_no || '',
+                          isPb: race.is_pb || false,
+                          finishTime: race.finish_time || '',
+                          overallPlace: race.overall_place != null ? String(race.overall_place) : '',
+                          ageGroupPlace: race.age_group_place != null ? String(race.age_group_place) : '',
+                          genderGroupPlace: race.gender_group_place != null ? String(race.gender_group_place) : '',
+                          runningShoes: race.running_shoes || '',
+                          notes: race.notes || '',
+                        });
+                        setShowRaceDialog(true);
+                      }}>
+                        <Edit2 className="w-3 h-3 mr-1" /> 編輯
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteRaceConfirm(Number(race.id))}>
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+
+                    {/* AI Analysis result */}
+                    {analysis && (
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-orange-500" /> AI 分析結果
+                        </p>
+                        <div className="prose prose-sm dark:prose-invert max-w-none text-xs">
+                          <Streamdown>{analysis}</Streamdown>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </TabsContent>
 
         {/* AI Coach tab */}
@@ -598,6 +900,210 @@ export default function Running() {
               disabled={deleteMutation.isPending}>
               {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
               {t("common.delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Shoe Locker Dialog */}
+      <Dialog open={showShoeDialog} onOpenChange={(o) => { setShowShoeDialog(o); if (!o) { setEditShoe(null); } }}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editShoe ? '編輯跑鞋' : '新增跑鞋'}</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-2">
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">跑鞋名稱 *</label>
+              <Input placeholder="例: Nike Vaporfly 3" value={shoeForm.shoesName} onChange={(e) => setShoeForm((p: any) => ({ ...p, shoesName: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">品牌</label>
+              <Input placeholder="例: Nike" value={shoeForm.brand} onChange={(e) => setShoeForm((p: any) => ({ ...p, brand: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">型號</label>
+              <Input placeholder="例: Vaporfly 3" value={shoeForm.model} onChange={(e) => setShoeForm((p: any) => ({ ...p, model: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">狀態</label>
+              <Select value={shoeForm.status} onValueChange={(v) => setShoeForm((p: any) => ({ ...p, status: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Active">使用中</SelectItem>
+                  <SelectItem value="Not Yet Opened">未開封</SelectItem>
+                  <SelectItem value="Retired">已退役</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">購買日期</label>
+              <Input type="date" value={shoeForm.purchaseDate} onChange={(e) => setShoeForm((p: any) => ({ ...p, purchaseDate: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">首次使用日</label>
+              <Input type="date" value={shoeForm.firstUseDate} onChange={(e) => setShoeForm((p: any) => ({ ...p, firstUseDate: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">起始里程 (km)</label>
+              <Input type="number" step="0.1" placeholder="0" value={shoeForm.initialKm} onChange={(e) => setShoeForm((p: any) => ({ ...p, initialKm: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">價格 (HKD)</label>
+              <Input type="number" step="0.01" placeholder="例: 1500" value={shoeForm.price} onChange={(e) => setShoeForm((p: any) => ({ ...p, price: e.target.value }))} />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">備註</label>
+              <Input placeholder="..." value={shoeForm.notes} onChange={(e) => setShoeForm((p: any) => ({ ...p, notes: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowShoeDialog(false)}>取消</Button>
+            <Button className="hero-gradient text-white"
+              disabled={addShoeMutation.isPending || updateShoeMutation.isPending || !shoeForm.shoesName}
+              onClick={() => {
+                const payload = {
+                  shoesName: shoeForm.shoesName,
+                  brand: shoeForm.brand || undefined,
+                  model: shoeForm.model || undefined,
+                  status: shoeForm.status || 'Active',
+                  purchaseDate: shoeForm.purchaseDate || undefined,
+                  initialKm: shoeForm.initialKm ? parseFloat(shoeForm.initialKm) : 0,
+                  notes: shoeForm.notes || undefined,
+                  price: shoeForm.price ? parseFloat(shoeForm.price) : undefined,
+                  firstUseDate: shoeForm.firstUseDate || undefined,
+                };
+                if (editShoe) {
+                  updateShoeMutation.mutate({ id: Number(editShoe.id), ...payload });
+                } else {
+                  addShoeMutation.mutate(payload);
+                }
+              }}>
+              {(addShoeMutation.isPending || updateShoeMutation.isPending) ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              儲存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Shoe Confirm */}
+      <Dialog open={deleteShoeConfirm !== null} onOpenChange={(o) => { if (!o) setDeleteShoeConfirm(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>確認刪除</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">確定要刪除這雙跑鞋？此操作無法復原。</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteShoeConfirm(null)}>取消</Button>
+            <Button variant="destructive" onClick={() => deleteShoeConfirm !== null && deleteShoeMutation.mutate({ id: deleteShoeConfirm })} disabled={deleteShoeMutation.isPending}>
+              {deleteShoeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}刪除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Race Dialog */}
+      <Dialog open={showRaceDialog} onOpenChange={(o) => { setShowRaceDialog(o); if (!o) setEditRace(null); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editRace ? '編輯賽事' : '新增賽事'}</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-2">
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">賽事名稱 *</label>
+              <Input placeholder="例: 2025 香港馬拉松" value={raceForm.raceName} onChange={(e) => setRaceForm((p: any) => ({ ...p, raceName: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">日期 *</label>
+              <Input type="date" value={raceForm.date} onChange={(e) => setRaceForm((p: any) => ({ ...p, date: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">距離 (km)</label>
+              <Input type="number" step="0.1" placeholder="例: 42.195" value={raceForm.distanceKm} onChange={(e) => setRaceForm((p: any) => ({ ...p, distanceKm: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">完賽時間</label>
+              <Input placeholder="例: 3:45:00" value={raceForm.finishTime} onChange={(e) => setRaceForm((p: any) => ({ ...p, finishTime: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">地點</label>
+              <Input placeholder="例: 香港" value={raceForm.location} onChange={(e) => setRaceForm((p: any) => ({ ...p, location: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">總排名</label>
+              <Input type="number" placeholder="例: 1234" value={raceForm.overallPlace} onChange={(e) => setRaceForm((p: any) => ({ ...p, overallPlace: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">性別排名</label>
+              <Input type="number" placeholder="例: 456" value={raceForm.genderGroupPlace} onChange={(e) => setRaceForm((p: any) => ({ ...p, genderGroupPlace: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">年齡組排名</label>
+              <Input type="number" placeholder="例: 78" value={raceForm.ageGroupPlace} onChange={(e) => setRaceForm((p: any) => ({ ...p, ageGroupPlace: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">号碼 (BIB)</label>
+              <Input placeholder="例: A1234" value={raceForm.bibNo} onChange={(e) => setRaceForm((p: any) => ({ ...p, bibNo: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">跑鞋</label>
+              <Select value={raceForm.runningShoes || '__none__'} onValueChange={(v) => setRaceForm((p: any) => ({ ...p, runningShoes: v === '__none__' ? '' : v }))}>
+                <SelectTrigger><SelectValue placeholder="選擇跑鞋..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— 不選擇 —</SelectItem>
+                  {(activeShoes as any[]).map((s: any) => (
+                    <SelectItem key={s.id} value={s.shoes_name}>{s.shoes_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2 col-span-2">
+              <input type="checkbox" id="isPb" checked={raceForm.isPb} onChange={(e) => setRaceForm((p: any) => ({ ...p, isPb: e.target.checked }))} className="w-4 h-4" />
+              <label htmlFor="isPb" className="text-sm font-medium text-foreground">標記為個人PB</label>
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">備註</label>
+              <Input placeholder="..." value={raceForm.notes} onChange={(e) => setRaceForm((p: any) => ({ ...p, notes: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRaceDialog(false)}>取消</Button>
+            <Button className="hero-gradient text-white"
+              disabled={addRaceMutation.isPending || updateRaceMutation.isPending || !raceForm.raceName || !raceForm.date}
+              onClick={() => {
+                const payload = {
+                  raceName: raceForm.raceName,
+                  date: raceForm.date,
+                  distanceKm: raceForm.distanceKm ? parseFloat(raceForm.distanceKm) : undefined,
+                  location: raceForm.location || undefined,
+                  registration: raceForm.registration || undefined,
+                  bibNo: raceForm.bibNo || undefined,
+                  isPb: raceForm.isPb,
+                  finishTime: raceForm.finishTime || undefined,
+                  overallPlace: raceForm.overallPlace ? parseInt(raceForm.overallPlace) : undefined,
+                  ageGroupPlace: raceForm.ageGroupPlace ? parseInt(raceForm.ageGroupPlace) : undefined,
+                  genderGroupPlace: raceForm.genderGroupPlace ? parseInt(raceForm.genderGroupPlace) : undefined,
+                  runningShoes: raceForm.runningShoes || undefined,
+                  notes: raceForm.notes || undefined,
+                };
+                if (editRace) {
+                  updateRaceMutation.mutate({ id: Number(editRace.id), ...payload });
+                } else {
+                  addRaceMutation.mutate(payload);
+                }
+              }}>
+              {(addRaceMutation.isPending || updateRaceMutation.isPending) ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              儲存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Race Confirm */}
+      <Dialog open={deleteRaceConfirm !== null} onOpenChange={(o) => { if (!o) setDeleteRaceConfirm(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>確認刪除</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">確定要刪除這個賽事記錄？此操作無法復原。</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteRaceConfirm(null)}>取消</Button>
+            <Button variant="destructive" onClick={() => deleteRaceConfirm !== null && deleteRaceMutation.mutate({ id: deleteRaceConfirm })} disabled={deleteRaceMutation.isPending}>
+              {deleteRaceMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}刪除
             </Button>
           </DialogFooter>
         </DialogContent>

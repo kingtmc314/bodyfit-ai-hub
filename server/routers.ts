@@ -7,7 +7,7 @@ import { getDb } from "./db";
 import {
   mealLogs, foodItems, workoutSessions, workoutSets, exercises,
   bodyComposition, heartRateLogs, sleepLogs, progressPhotos, aiInsights,
-  healthGoals, runningLogs
+  healthGoals, runningLogs, runningShoes, races, favouriteExercises
 } from "../drizzle/schema";
 import { eq, and, desc, gte, lte, like, or, sql } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -343,6 +343,44 @@ const workoutRouter = router({
       if (!db) throw new Error("DB unavailable");
       await db.delete(workoutSets).where(eq(workoutSets.id, input.id));
       return { success: true };
+    }),
+
+  // ─── Exercise Favourites ────────────────────────────────────────────────────────────
+  getFavourites: publicProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db.execute(sql`
+        SELECT exercise_name FROM favourite_exercises
+        WHERE "userId" = ${OWNER_USER_ID}
+        ORDER BY "createdAt" DESC
+      `);
+      return ((rows as any).rows ?? rows).map((r: any) => r.exercise_name as string);
+    }),
+
+  toggleFavourite: publicProcedure
+    .input(z.object({ exerciseName: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const existing = await db.execute(sql`
+        SELECT id FROM favourite_exercises
+        WHERE "userId" = ${OWNER_USER_ID} AND exercise_name = ${input.exerciseName}
+      `);
+      const rows = (existing as any).rows ?? existing;
+      if (rows.length > 0) {
+        await db.execute(sql`
+          DELETE FROM favourite_exercises
+          WHERE "userId" = ${OWNER_USER_ID} AND exercise_name = ${input.exerciseName}
+        `);
+        return { isFavourite: false };
+      } else {
+        await db.execute(sql`
+          INSERT INTO favourite_exercises ("userId", exercise_name)
+          VALUES (${OWNER_USER_ID}, ${input.exerciseName})
+        `);
+        return { isFavourite: true };
+      }
     }),
 });
 
@@ -1654,6 +1692,263 @@ const runningRouter = router({
         messages: [
           { role: 'system', content: '你是一位專業跑步教練和運動科學分析師。請用繁體中文回答，結構清晰，分段說明。' },
           { role: 'user', content: `請分析我的跑步數據，最近${input.weeks}週共${logs.length}次跑步。\n總距離:${parseFloat(stats?.total_distance||0).toFixed(1)}km，平均配速:${formatPace(parseFloat(stats?.avg_pace||0)*60)}，平均心率:${Math.round(stats?.avg_hr||0)}bpm，平均步頻:${Math.round(stats?.avg_cadence||0)}spm，平均步幅:${parseFloat(stats?.avg_stride||0).toFixed(2)}m，平均垂直比:${parseFloat(stats?.avg_vr||0).toFixed(1)}%，平均振幅:${parseFloat(stats?.avg_vo||0).toFixed(1)}cm\n\n詳細記錄(最近30次):\n${summary}\n\n請提供以下分析:\n1. 跑步表現總結(配速趨勢、距離進展、心率效率)\n2. 步頻與步幅分析(是否達到理想步頻 170-180spm)\n3. 垂直振幅與垂直比分析(跑步經濟性評估)\n4. 訓練負荷與類型分布分析\n5. 具體改進建議(至少 3 項可執行的訓練建議)` },
+        ],
+      });
+      return { analysis: res.choices[0]?.message?.content ?? '分析失敗，請稍後再試。' };
+    }),
+
+  // ─── Shoe Locker CRUD ────────────────────────────────────────────────────────
+  getShoes: publicProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db.execute(sql`
+        SELECT s.*,
+          COALESCE(s.initial_km::numeric, 0) + COALESCE(SUM(r.distance_km::numeric), 0) AS total_km
+        FROM running_shoes s
+        LEFT JOIN running_logs r ON r.shoes_id = s.id
+        GROUP BY s.id
+        ORDER BY s.status ASC, s.shoes_name ASC
+      `);
+      return (rows as any).rows ?? rows;
+    }),
+
+  addShoe: publicProcedure
+    .input(z.object({
+      shoesName: z.string().min(1),
+      brand: z.string().optional(),
+      model: z.string().optional(),
+      status: z.string().optional().default('Active'),
+      purchaseDate: z.string().optional(),
+      retirementDate: z.string().optional(),
+      initialKm: z.number().optional().default(0),
+      notes: z.string().optional(),
+      price: z.number().optional(),
+      firstUseDate: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.execute(sql`
+        INSERT INTO running_shoes (shoes_name, brand, model, status, purchase_date, retirement_date, initial_km, notes, price, firstusedate)
+        VALUES (${input.shoesName}, ${input.brand ?? null}, ${input.model ?? null}, ${input.status ?? 'Active'},
+          ${input.purchaseDate ?? null}, ${input.retirementDate ?? null}, ${input.initialKm ?? 0},
+          ${input.notes ?? null}, ${input.price ?? null}, ${input.firstUseDate ?? null})
+      `);
+      return { success: true };
+    }),
+
+  updateShoe: publicProcedure
+    .input(z.object({
+      id: z.number(),
+      shoesName: z.string().min(1).optional(),
+      brand: z.string().optional(),
+      model: z.string().optional(),
+      status: z.string().optional(),
+      purchaseDate: z.string().optional(),
+      retirementDate: z.string().optional(),
+      initialKm: z.number().optional(),
+      notes: z.string().optional(),
+      price: z.number().optional(),
+      firstUseDate: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { id, ...fields } = input;
+      const sets: string[] = [];
+      const vals: any[] = [];
+      if (fields.shoesName !== undefined) { sets.push(`shoes_name = $${sets.length+1}`); vals.push(fields.shoesName); }
+      if (fields.brand !== undefined) { sets.push(`brand = $${sets.length+1}`); vals.push(fields.brand); }
+      if (fields.model !== undefined) { sets.push(`model = $${sets.length+1}`); vals.push(fields.model); }
+      if (fields.status !== undefined) { sets.push(`status = $${sets.length+1}`); vals.push(fields.status); }
+      if (fields.purchaseDate !== undefined) { sets.push(`purchase_date = $${sets.length+1}`); vals.push(fields.purchaseDate); }
+      if (fields.retirementDate !== undefined) { sets.push(`retirement_date = $${sets.length+1}`); vals.push(fields.retirementDate); }
+      if (fields.initialKm !== undefined) { sets.push(`initial_km = $${sets.length+1}`); vals.push(fields.initialKm); }
+      if (fields.notes !== undefined) { sets.push(`notes = $${sets.length+1}`); vals.push(fields.notes); }
+      if (fields.price !== undefined) { sets.push(`price = $${sets.length+1}`); vals.push(fields.price); }
+      if (fields.firstUseDate !== undefined) { sets.push(`firstusedate = $${sets.length+1}`); vals.push(fields.firstUseDate); }
+      if (sets.length === 0) return { success: true };
+      vals.push(id);
+      const { Client } = (await import('pg')).default as any;
+      const client = new Client({ connectionString: process.env.SUPABASE_DATABASE_URL, ssl: { rejectUnauthorized: false } });
+      await client.connect();
+      await client.query(`UPDATE running_shoes SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${vals.length}`, vals);
+      await client.end();
+      return { success: true };
+    }),
+
+  deleteShoe: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.execute(sql`DELETE FROM running_shoes WHERE id = ${input.id}`);
+      return { success: true };
+    }),
+
+  // ─── Races CRUD ──────────────────────────────────────────────────────────────
+  getRaces: publicProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db.execute(sql`SELECT * FROM races ORDER BY date DESC`);
+      return (rows as any).rows ?? rows;
+    }),
+
+  addRace: publicProcedure
+    .input(z.object({
+      raceName: z.string().min(1),
+      date: z.string(),
+      distanceKm: z.number().optional(),
+      location: z.string().optional(),
+      registration: z.string().optional(),
+      bibNo: z.string().optional(),
+      isPb: z.boolean().optional().default(false),
+      finishTime: z.string().optional(),
+      overallPlace: z.number().optional(),
+      ageGroupPlace: z.number().optional(),
+      genderGroupPlace: z.number().optional(),
+      runningShoes: z.string().optional(),
+      shoesId: z.number().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.execute(sql`
+        INSERT INTO races (race_name, date, distance_km, location, registration, bib_no, is_pb, finish_time,
+          overall_place, age_group_place, gender_group_place, running_shoes, shoes_id, notes)
+        VALUES (${input.raceName}, ${input.date}, ${input.distanceKm ?? null}, ${input.location ?? null},
+          ${input.registration ?? null}, ${input.bibNo ?? null}, ${input.isPb ?? false}, ${input.finishTime ?? null},
+          ${input.overallPlace ?? null}, ${input.ageGroupPlace ?? null}, ${input.genderGroupPlace ?? null},
+          ${input.runningShoes ?? null}, ${input.shoesId ?? null}, ${input.notes ?? null})
+      `);
+      return { success: true };
+    }),
+
+  updateRace: publicProcedure
+    .input(z.object({
+      id: z.number(),
+      raceName: z.string().optional(),
+      date: z.string().optional(),
+      distanceKm: z.number().optional(),
+      location: z.string().optional(),
+      registration: z.string().optional(),
+      bibNo: z.string().optional(),
+      isPb: z.boolean().optional(),
+      finishTime: z.string().optional(),
+      overallPlace: z.number().optional(),
+      ageGroupPlace: z.number().optional(),
+      genderGroupPlace: z.number().optional(),
+      runningShoes: z.string().optional(),
+      shoesId: z.number().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { id, ...f } = input;
+      const sets: string[] = [];
+      const vals: any[] = [];
+      if (f.raceName !== undefined) { sets.push(`race_name = $${sets.length+1}`); vals.push(f.raceName); }
+      if (f.date !== undefined) { sets.push(`date = $${sets.length+1}`); vals.push(f.date); }
+      if (f.distanceKm !== undefined) { sets.push(`distance_km = $${sets.length+1}`); vals.push(f.distanceKm); }
+      if (f.location !== undefined) { sets.push(`location = $${sets.length+1}`); vals.push(f.location); }
+      if (f.registration !== undefined) { sets.push(`registration = $${sets.length+1}`); vals.push(f.registration); }
+      if (f.bibNo !== undefined) { sets.push(`bib_no = $${sets.length+1}`); vals.push(f.bibNo); }
+      if (f.isPb !== undefined) { sets.push(`is_pb = $${sets.length+1}`); vals.push(f.isPb); }
+      if (f.finishTime !== undefined) { sets.push(`finish_time = $${sets.length+1}`); vals.push(f.finishTime); }
+      if (f.overallPlace !== undefined) { sets.push(`overall_place = $${sets.length+1}`); vals.push(f.overallPlace); }
+      if (f.ageGroupPlace !== undefined) { sets.push(`age_group_place = $${sets.length+1}`); vals.push(f.ageGroupPlace); }
+      if (f.genderGroupPlace !== undefined) { sets.push(`gender_group_place = $${sets.length+1}`); vals.push(f.genderGroupPlace); }
+      if (f.runningShoes !== undefined) { sets.push(`running_shoes = $${sets.length+1}`); vals.push(f.runningShoes); }
+      if (f.shoesId !== undefined) { sets.push(`shoes_id = $${sets.length+1}`); vals.push(f.shoesId); }
+      if (f.notes !== undefined) { sets.push(`notes = $${sets.length+1}`); vals.push(f.notes); }
+      if (sets.length === 0) return { success: true };
+      vals.push(id);
+      const { Client } = (await import('pg')).default as any;
+      const client = new Client({ connectionString: process.env.SUPABASE_DATABASE_URL, ssl: { rejectUnauthorized: false } });
+      await client.connect();
+      await client.query(`UPDATE races SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${vals.length}`, vals);
+      await client.end();
+      return { success: true };
+    }),
+
+  deleteRace: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.execute(sql`DELETE FROM races WHERE id = ${input.id}`);
+      return { success: true };
+    }),
+
+  getPBs: publicProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db.execute(sql`
+        SELECT DISTINCT ON (distance_km) distance_km, race_name, date, finish_time, location
+        FROM races
+        WHERE is_pb = true AND finish_time IS NOT NULL
+        ORDER BY distance_km ASC, finish_time ASC
+      `);
+      return (rows as any).rows ?? rows;
+    }),
+
+  analyzeRace: publicProcedure
+    .input(z.object({ raceId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const raceRows = await db.execute(sql`SELECT * FROM races WHERE id = ${input.raceId}`);
+      const race = ((raceRows as any).rows ?? raceRows)[0];
+      if (!race) throw new Error('Race not found');
+      const pbRows = await db.execute(sql`
+        SELECT distance_km, finish_time FROM races
+        WHERE is_pb = true AND finish_time IS NOT NULL
+        ORDER BY distance_km ASC
+      `);
+      const pbs = (pbRows as any).rows ?? pbRows;
+      const trainingRows = await db.execute(sql`
+        SELECT date, distance_km, average_pace, average_heart_rate, running_type
+        FROM running_logs
+        WHERE date >= (${race.date}::date - interval '12 weeks')::text
+          AND date <= ${race.date}
+        ORDER BY date DESC
+        LIMIT 50
+      `);
+      const training = (trainingRows as any).rows ?? trainingRows;
+      const pbSummary = pbs.map((p: any) => `${parseFloat(p.distance_km).toFixed(1)}km: ${p.finish_time}`).join(', ');
+      const trainingSummary = training.map((r: any) =>
+        `${r.date}: ${parseFloat(r.distance_km||0).toFixed(1)}km, 配速${r.average_pace||'N/A'}, 心率${r.average_heart_rate||'N/A'}bpm`
+      ).join('\n');
+      const res = await invokeLLM({
+        messages: [
+          { role: 'system', content: '你是一位專業馬拉松教練和運動科學分析師。請用繁體中文回答，結構清晰。' },
+          { role: 'user', content: `請分析以下賽事表現並提供預測和建議。
+
+賽事: ${race.race_name}
+日期: ${race.date}
+距離: ${race.distance_km}km
+完成時間: ${race.finish_time || '尚未完成'}
+地點: ${race.location || 'N/A'}
+是否PB: ${race.is_pb ? '是' : '否'}
+總排名: ${race.overall_place || 'N/A'}
+性別排名: ${race.gender_group_place || 'N/A'}
+年齡組排名: ${race.age_group_place || 'N/A'}
+
+個人PB記錄: ${pbSummary || '無記錄'}
+
+賽前12週訓練摘要(最近50次):
+${trainingSummary || '無訓練記錄'}
+
+請提供:
+1. 賽事表現分析(與PB比較、配速策略評估)
+2. 訓練充分度評估(賽前準備是否充足)
+3. 下次同距離賽事時間預測(基於訓練數據)
+4. 具體改進建議(3-5項)` },
         ],
       });
       return { analysis: res.choices[0]?.message?.content ?? '分析失敗，請稍後再試。' };

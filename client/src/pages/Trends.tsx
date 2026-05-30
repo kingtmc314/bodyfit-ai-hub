@@ -231,8 +231,7 @@ function BodyCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
   );
 }
 
-// ─── Helper: parse bedtime/waketime string (HH:MM) to decimal hours offset from midnight ─────
-// bedtime like "22:30" → -1.5 (before midnight), "00:30" → 0.5 (after midnight)
+// ─── Helper: parse bedtime/waketime string (HH:MM) to decimal hours ─────────
 function parseBedtime(t: string | null | undefined): number | null {
   if (!t) return null;
   const match = t.match(/^(\d{1,2}):(\d{2})/);
@@ -240,11 +239,8 @@ function parseBedtime(t: string | null | undefined): number | null {
   const h = parseInt(match[1]);
   const m = parseInt(match[2]);
   const decimal = h + m / 60;
-  // Bedtime: if hour >= 18 treat as before midnight (negative offset from midnight)
-  // e.g. 22:30 → 22.5 - 24 = -1.5; 23:00 → -1.0
   return decimal >= 18 ? decimal - 24 : decimal;
 }
-// waketime like "06:30" → 6.5
 function parseWaketime(t: string | null | undefined): number | null {
   if (!t) return null;
   const match = t.match(/^(\d{1,2}):(\d{2})/);
@@ -260,6 +256,94 @@ function fmtDecimalHour(v: number | null): string {
   const m = Math.round((absH - h) * 60);
   const sign = v < 0 ? "-" : "";
   return `${sign}${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+// ─── Sleep Window Chart (陰陽鐲 style) ─────────────────────────────────────────
+// Renders a horizontal range bar per day: from bedtime to waketime
+// Y-axis: time of day (18:00 → 00:00 → 12:00), each bar is a colored band
+type SleepWindowEntry = { label: string; bedtime: number | null; waketime: number | null; bedtimeRaw: string | null; waketimeRaw: string | null };
+
+function SleepWindowChart({ data }: { data: SleepWindowEntry[] }) {
+  const valid = data.filter(d => d.bedtime != null && d.waketime != null);
+  if (!valid.length) return <div className="h-[220px] flex items-center justify-center text-muted-foreground text-sm">No bedtime/waketime data</div>;
+
+  // Y domain: from -6 (22:00 prev day) to 12 (noon)
+  const Y_MIN = -6;
+  const Y_MAX = 12;
+  const Y_RANGE = Y_MAX - Y_MIN;
+
+  // Build bar data: base = bedtime, length = waketime - bedtime (handles midnight crossover)
+  const barData = valid.map(d => {
+    const bed = d.bedtime!;
+    const wake = d.waketime!;
+    const len = wake - bed; // e.g. -1.5 to 7 = 8.5h
+    return { label: d.label, base: bed, len, bedtimeRaw: d.bedtimeRaw, waketimeRaw: d.waketimeRaw };
+  });
+
+  // Average bedtime and waketime for reference lines
+  const avgBed = valid.reduce((s, d) => s + d.bedtime!, 0) / valid.length;
+  const avgWake = valid.reduce((s, d) => s + d.waketime!, 0) / valid.length;
+
+  // Custom tick formatter for Y axis
+  const yTickFmt = (v: number) => {
+    const actual = v < 0 ? v + 24 : v;
+    const h = Math.floor(actual);
+    const m = Math.round((actual - h) * 60);
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  };
+
+  // Custom tooltip
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null;
+    const d = payload[0]?.payload;
+    if (!d) return null;
+    return (
+      <div style={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "hsl(var(--card-foreground))" }}>
+        <p style={{ color: "hsl(var(--muted-foreground))", marginBottom: 4 }}>{label}</p>
+        <p>🌙 就寢: <strong>{d.bedtimeRaw ?? fmtDecimalHour(d.base)}</strong></p>
+        <p>☀️ 起床: <strong>{d.waketimeRaw ?? fmtDecimalHour(d.base + d.len)}</strong></p>
+        <p>⏱ 睡眠: <strong>{d.len?.toFixed(1)}h</strong></p>
+      </div>
+    );
+  };
+
+  return (
+    <ResponsiveContainer width="100%" height={240}>
+      <BarChart data={barData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} barCategoryGap="20%">
+        <defs>
+          <linearGradient id="sleepWindowGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#1e40af" stopOpacity={0.9} />
+            <stop offset="60%" stopColor="#3b82f6" stopOpacity={0.8} />
+            <stop offset="100%" stopColor="#f97316" stopOpacity={0.7} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
+        <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+        <YAxis
+          tick={{ fontSize: 10 }}
+          stroke="hsl(var(--muted-foreground))"
+          domain={[Y_MIN, Y_MAX]}
+          ticks={[-4, -2, 0, 2, 4, 6, 8, 10]}
+          tickFormatter={yTickFmt}
+          width={42}
+        />
+        <Tooltip content={<CustomTooltip />} />
+        {/* Invisible base bar to offset the visible bar */}
+        <Bar dataKey="base" stackId="sleep" fill="transparent" isAnimationActive={false} />
+        {/* Visible sleep window bar */}
+        <Bar dataKey="len" stackId="sleep" fill="url(#sleepWindowGrad)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+        {/* Midnight reference line */}
+        <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="6 3" strokeWidth={1.5}
+          label={{ value: "午夜", fontSize: 9, fill: "#94a3b8", position: "insideTopRight" }} />
+        {/* Average bedtime reference */}
+        <ReferenceLine y={avgBed} stroke="#3b82f6" strokeDasharray="4 2" strokeWidth={1}
+          label={{ value: `平均就寢 ${fmtDecimalHour(avgBed)}`, fontSize: 9, fill: "#3b82f6", position: "insideBottomLeft" }} />
+        {/* Average waketime reference */}
+        <ReferenceLine y={avgWake} stroke="#f97316" strokeDasharray="4 2" strokeWidth={1}
+          label={{ value: `平均起床 ${fmtDecimalHour(avgWake)}`, fontSize: 9, fill: "#f97316", position: "insideTopLeft" }} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
 }
 
 // ─── Sleep Charts ─────────────────────────────────────────────────────────────
@@ -383,42 +467,14 @@ function SleepCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
         </CardContent>
       </Card>
 
-      {/* Bedtime & Waketime Comparison Chart */}
+      {/* Sleep Window Range Chart (陰陽鐲 style) */}
       <Card className="md:col-span-2">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Bedtime &amp; Waketime</CardTitle>
-          <CardDescription className="text-xs">Bedtime (hours before/after midnight) vs Waketime — dashed line = midnight (00:00)</CardDescription>
+          <CardTitle className="text-sm font-medium">就寢時間 &amp; 起床時間對照圖</CardTitle>
+          <CardDescription className="text-xs">每日睡眠窗口（就寢→起床），深藍色帶為睡眠時段，橙色點為起床時間，深藍色點為就寢時間</CardDescription>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={220}>
-            <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: -5, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-              <YAxis
-                tick={{ fontSize: 10 }}
-                stroke="hsl(var(--muted-foreground))"
-                domain={[-6, 10]}
-                tickFormatter={(v: number) => {
-                  const absH = Math.abs(v);
-                  const h = Math.floor(absH);
-                  const m = Math.round((absH - h) * 60);
-                  const sign = v < 0 ? "-" : "";
-                  return `${sign}${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-                }}
-              />
-              <Tooltip
-                {...TooltipStyle}
-                formatter={(v: number, name: string, props: any) => {
-                  const raw = name === "Bedtime" ? props.payload.bedtimeRaw : props.payload.waketimeRaw;
-                  return [raw ?? fmtDecimalHour(v), name];
-                }}
-              />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: "Midnight", fontSize: 9, fill: "#94a3b8", position: "insideTopLeft" }} />
-              <Line type="monotone" dataKey="bedtime" stroke="#3b82f6" strokeWidth={2} dot={false} name="Bedtime" connectNulls />
-              <Line type="monotone" dataKey="waketime" stroke="#f97316" strokeWidth={2} dot={false} name="Waketime" connectNulls />
-            </ComposedChart>
-          </ResponsiveContainer>
+          <SleepWindowChart data={chartData} />
         </CardContent>
       </Card>
 

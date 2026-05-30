@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import {
   Upload, FileText, CheckCircle2, AlertCircle, Info,
   Activity, Moon, Heart, Scale, ChevronRight, Image, Utensils,
-  Loader2, Eye, Save, RefreshCw, Footprints
+  Loader2, Eye, Save, RefreshCw, Footprints, Camera, X
 } from "lucide-react";
 
 type DataType = "body" | "sleep" | "heartrate" | "workout" | "nutrition" | "running";
@@ -404,6 +404,7 @@ function ImageImportTab() {
   const [isDragging, setIsDragging] = useState(false);
   const [saved, setSaved] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const extractMutation = trpc.imageImport.extract.useMutation({
     onSuccess: (data) => {
@@ -522,34 +523,47 @@ function ImageImportTab() {
           <CardDescription>JPG, PNG, HEIC — max 10 MB</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Upload buttons row */}
+          <div className="flex gap-2 mb-3">
+            <Button variant="outline" className="flex-1 gap-2" onClick={() => fileInputRef.current?.click()}>
+              <Image className="w-4 h-4" /> 選擇圖片
+            </Button>
+            <Button variant="outline" className="flex-1 gap-2" onClick={() => cameraInputRef.current?.click()}>
+              <Camera className="w-4 h-4" /> 拍照上傳
+            </Button>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageFile(f); e.target.value = ''; }} />
+            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageFile(f); e.target.value = ''; }} />
+          </div>
+
           <div
-            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
+            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
               isDragging ? "border-primary bg-primary/5" : "border-border/50 hover:border-primary/50 hover:bg-muted/20"
             }`}
             onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => !imagePreview && fileInputRef.current?.click()}
           >
             {imagePreview ? (
               <div className="flex flex-col items-center gap-3">
-                <img src={imagePreview} alt="Preview" className="max-h-48 max-w-full rounded-lg object-contain border border-border/50" />
-                <p className="text-xs text-muted-foreground">{t("import.select_file")}</p>
+                <div className="relative inline-block">
+                  <img src={imagePreview} alt="Preview" className="max-h-56 max-w-full rounded-lg object-contain border border-border/50" />
+                  <button
+                    className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-destructive text-white flex items-center justify-center shadow-md hover:bg-destructive/80 transition-colors"
+                    onClick={(e) => { e.stopPropagation(); setImagePreview(null); setImageBase64(null); setExtracted(null); setSaved(false); }}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">點擊右上角 × 可移除圖片</p>
               </div>
             ) : (
               <>
                 <Image className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                <p className="text-sm font-medium">Drop image here or click to browse</p>
-                <p className="text-xs text-muted-foreground mt-1">Supports screenshots from Garmin, Apple Health, body scales, and more</p>
+                <p className="text-sm font-medium">拖放圖片到此處，或點擊瀏覽</p>
+                <p className="text-xs text-muted-foreground mt-1">支援 Garmin、Apple Health、體重機、睡眠記錄屏幕截圖等</p>
               </>
             )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageFile(f); }}
-            />
           </div>
 
           {imagePreview && !extracted && (

@@ -1,0 +1,12 @@
+import pkg from 'pg';
+const { Client } = pkg;
+const client = new Client({ connectionString: process.env.SUPABASE_DATABASE_URL, ssl: { rejectUnauthorized: false } });
+await client.connect();
+const cols = await client.query(`SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'running_shoes' ORDER BY ordinal_position`);
+console.log('running_shoes columns:');
+cols.rows.forEach(c => console.log(' ', c.column_name, '-', c.data_type));
+const sample = await client.query(`SELECT * FROM running_shoes LIMIT 3`);
+console.log('\nsample rows:', JSON.stringify(sample.rows, null, 2));
+const events = await client.query(`SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND (table_name LIKE '%race%' OR table_name LIKE '%event%')`);
+console.log('\nrace/event tables:', events.rows.map(r => r.table_name));
+await client.end();

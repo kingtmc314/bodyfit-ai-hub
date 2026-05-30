@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Dumbbell, Trash2, Edit2, Search, ChevronRight, Loader2,
-  Flame, Timer, Weight, BarChart2, X, Check, Trophy, Target
+  Flame, Timer, Weight, BarChart2, X, Check, Trophy, Target, Star
 } from "lucide-react";
 import MuscleMap, { MUSCLE_GROUPS } from "@/components/MuscleMap";
 import ExerciseDetailModal from "@/components/ExerciseDetailModal";
@@ -156,6 +156,14 @@ export default function Workout() {
   });
   const deleteSet = trpc.workout.deleteSet.useMutation({
     onSuccess: () => { utils.workout.getSessionWithSets.invalidate(); toast.success("Set deleted"); },
+  });
+
+  const { data: favourites = [] } = trpc.workout.getFavourites.useQuery();
+  const favouriteSet = useMemo(() => new Set(favourites as string[]), [favourites]);
+
+  const toggleFavourite = trpc.workout.toggleFavourite.useMutation({
+    onSuccess: () => { utils.workout.getFavourites.invalidate(); },
+    onError: (e) => toast.error('錯誤: ' + e.message),
   });
 
   const filteredExercises = useMemo(() => {
@@ -410,6 +418,44 @@ export default function Workout() {
                 </Select>
               </div>
 
+              {/* My Favourites section */}
+              {favouriteSet.size > 0 && !searchQuery && !selectedMuscle && selectedEquipment === 'all' && (
+                <div className="mb-4">
+                  <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-1.5">
+                    <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" /> 我的最愛
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {BUILT_IN_EXERCISES.filter(ex => favouriteSet.has(ex.name)).map((ex, i) => (
+                      <div key={`fav-${i}`} className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-3 hover:border-yellow-500/40 transition-colors cursor-pointer"
+                        onClick={() => { setDetailExercise(ex); setShowExerciseDetail(true); }}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-foreground text-sm">{ex.name}</p>
+                            <p className="text-xs text-muted-foreground">{ex.nameZh}</p>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              <Badge variant="secondary" className="text-xs capitalize">{ex.muscleGroup}</Badge>
+                              <Badge variant="outline" className="text-xs">{ex.equipment}</Badge>
+                            </div>
+                          </div>
+                          <div className="flex flex-col gap-1 shrink-0">
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+                              onClick={(e) => { e.stopPropagation(); toggleFavourite.mutate({ exerciseName: ex.name }); }}>
+                              <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
+                            </Button>
+                            {activeSession && (
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+                                onClick={(e) => { e.stopPropagation(); setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
+                                <Plus className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {filteredExercises.map((ex, i) => (
                   <div key={i} className="bg-card border border-border rounded-xl p-4 hover:border-primary/50 transition-colors stagger-item cursor-pointer"
@@ -427,6 +473,10 @@ export default function Workout() {
                         )}
                       </div>
                       <div className="flex flex-col gap-1 shrink-0">
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0"
+                          onClick={(e) => { e.stopPropagation(); toggleFavourite.mutate({ exerciseName: ex.name }); }}>
+                          <Star className={`w-4 h-4 transition-colors ${favouriteSet.has(ex.name) ? 'text-yellow-500 fill-yellow-500' : 'text-muted-foreground'}`} />
+                        </Button>
                         {activeSession && (
                           <Button size="sm" variant="ghost" className="h-8 w-8 p-0"
                             onClick={(e) => { e.stopPropagation(); setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>

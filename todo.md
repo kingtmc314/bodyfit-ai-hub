@@ -363,3 +363,81 @@
 - [x] Implement fuzzy name matching for exercise lookup (case-insensitive, partial, word-based)
 - [x] Dark mode support for all new sections (yellow/red tinted backgrounds)
 - [x] 35/35 tests passing, 0 TypeScript errors
+
+## Phase 42: Exercise Favourites Feature
+- [ ] Add favourite_exercises table to schema.ts (userId, exerciseName, createdAt)
+- [ ] Execute migration SQL to create the table
+- [ ] Add tRPC procedures: toggleFavourite, getFavourites
+- [ ] Add star button to exercise cards in Workout.tsx (toggle on/off, optimistic update)
+- [ ] Add "我的常用動作" section at top of exercise library (shows when user has favourites)
+- [ ] Write vitest tests for favourite procedures
+
+## Phase 42: Exercise Demo Images & Equipment Icons
+- [ ] Build exercise image mapping (free-exercise-db GitHub raw URLs) for all 59 exercises
+- [ ] Add image carousel (before/after position) to ExerciseDetailModal
+- [ ] Add equipment icon illustrations (barbell, dumbbell, cable, machine, bodyweight, etc.)
+- [ ] Lazy-load images with skeleton placeholder
+
+## Phase 43: Running Race Events & PB Cards
+- [ ] Add race_events table to schema.ts (name, date, distance, location, targetTime, notes, result, actualTime)
+- [ ] Execute migration SQL for race_events table
+- [ ] Add running.getRaceEvents, addRaceEvent, updateRaceEvent, deleteRaceEvent tRPC procedures
+- [ ] Add running.getPBs procedure (best time per distance from running_logs)
+- [ ] Add running.getRaceAIAnalysis procedure (LLM analysis of training vs race goals)
+- [ ] Add "賽事" tab to Running.tsx with:
+  - Race schedule table with countdown timer (days to race)
+  - Add/Edit/Delete race event dialog
+  - PB Cards section (5K, 10K, HM, FM best times)
+  - AI Race Analysis button (training readiness, predicted finish time, recommendations)
+
+## Phase 44: Exercise Favourites
+- [ ] Add favourite_exercises table to schema.ts
+- [ ] Execute migration SQL
+- [ ] Add workout.toggleFavourite, getFavourites tRPC procedures
+- [ ] Star button on exercise cards (optimistic toggle)
+- [ ] "我的常用動作" section at top of exercise library
+
+## Phase 45: Sleep Chart - Bedtime/Waketime Range Bar (陰陽鐲 style)
+- [ ] Replace bedtime/waketime line chart with horizontal sleep window range bar chart
+- [ ] Each day shows a bar from bedtime to waketime (handles midnight crossover)
+- [ ] Color gradient: deep blue for sleep, orange for wake transition
+- [ ] Show average bedtime/waketime reference lines
+
+## Phase 46: Running - Shoe Locker Tab
+- [ ] Add "跑鞋" tab to Running.tsx
+- [ ] Show all shoes with photo, name, brand, status badge (In Use / Not Yet Opened / Retired)
+- [ ] Show mileage per shoe (calculated from running_logs where running_shoes matches)
+- [ ] Add/Edit/Delete shoe dialog (shoes_name, brand, model, status, purchase_date, price, photo_url, notes)
+- [ ] Mileage progress bar (warn at 500km, retire at 800km)
+- [ ] Filter by status tabs (All / In Use / Not Yet Opened / Retired)
+
+## Phase 47: Running - Race Events Tab (uses existing races table)
+- [ ] Add "賽事" tab to Running.tsx
+- [ ] Race schedule table: race_name, date, distance_km, location, countdown (days), registration, bib_no
+- [ ] Countdown timer component (days until race, color-coded: red <30d, yellow <90d, green >90d)
+- [ ] Add/Edit/Delete race dialog (uses existing races table columns)
+- [ ] PB Cards section: best finish_time per distance category (5K, 10K, HM, FM) from races table
+- [ ] AI Race Analysis: LLM analysis of upcoming races vs recent training, predicted finish time
+
+## Phase 48: Exercise Demo Images
+- [ ] Build exercise image mapping using free-exercise-db GitHub raw URLs
+- [ ] Add image display (before/after position photos) to ExerciseDetailModal
+- [ ] Lazy-load with skeleton placeholder
+- [ ] Equipment type icon badge (barbell, dumbbell, cable, machine, bodyweight)
+
+## Phase 49: Exercise Favourites
+- [ ] Add favourite_exercises table to schema + migration
+- [ ] Add workout.toggleFavourite, getFavourites tRPC procedures
+- [ ] Star button on exercise cards (optimistic toggle, auth-gated)
+- [ ] "我的常用動作" collapsible section at top of exercise library
+
+## Phase 45: Shoe Locker, Race Events, Exercise Favourites, Demo Images & Import Enhancement
+- [x] Add running_shoes table (shoes CRUD: addShoe, updateShoe, deleteShoe, getShoes, getActiveShoes)
+- [x] Add race_events table (races CRUD: addRace, updateRace, deleteRace, getRaces, getPBs, analyzeRace)
+- [x] Add favourite_exercises table (toggleFavourite, getFavourites procedures)
+- [x] Running.tsx: add Shoe Locker tab with mileage progress bar, status badges, PB cards
+- [x] Running.tsx: add Race Events tab with countdown timer, AI analysis per race, add/edit/delete dialogs
+- [x] Workout.tsx: add star button to exercise cards (toggle favourite), "我的最愛" section at top
+- [x] ExerciseDetailModal: add demo images (Wikimedia Commons) for key exercises (Bench Press, Deadlift, etc.)
+- [x] Import.tsx: add camera capture button, image remove button (×), Chinese UI text, larger preview
+- [x] Version bump to v1.2.0

@@ -59,6 +59,21 @@ const EQUIPMENT_ICONS: Record<string, string> = {
 
 const WGER_BASE = "https://wger.de/static/images/muscles";
 
+// Exercise demo image URLs using Wikimedia Commons / public domain images
+// These are illustrative GIF/image URLs for common exercises
+const EXERCISE_DEMO_IMAGES: Record<string, string> = {
+  "Bench Press": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Bench_press.gif/220px-Bench_press.gif",
+  "Deadlift": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Conventional_deadlift.gif/220px-Conventional_deadlift.gif",
+  "Pull-up": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b5/Pullup_1.jpg/220px-Pullup_1.jpg",
+  "Squat": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0c/Squat_side_view.gif/220px-Squat_side_view.gif",
+  "Overhead Press": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Overhead_press.gif/220px-Overhead_press.gif",
+  "Barbell Curl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/Barbell_curl.gif/220px-Barbell_curl.gif",
+  "Push-up": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f0/Push_up.gif/220px-Push_up.gif",
+  "Plank": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/Plank_position.jpg/220px-Plank_position.jpg",
+  "Dumbbell Curl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/Barbell_curl.gif/220px-Barbell_curl.gif",
+  "Lat Pulldown": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b5/Pullup_1.jpg/220px-Pullup_1.jpg",
+};
+
 interface Exercise {
   name: string;
   nameZh: string;
@@ -227,6 +242,7 @@ export default function ExerciseDetailModal({ exercise, open, onClose, onAddToSe
   const color = MUSCLE_COLORS[exercise.muscleGroup] ?? "#6366f1";
   const equipIcon = EQUIPMENT_ICONS[exercise.equipment] ?? "🏋️";
   const desc = lookupDescription(exercise.name);
+  const demoImage = EXERCISE_DEMO_IMAGES[exercise.name];
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -250,6 +266,18 @@ export default function ExerciseDetailModal({ exercise, open, onClose, onAddToSe
 
         <div className="overflow-y-auto flex-1" style={{ overscrollBehavior: "contain", WebkitOverflowScrolling: "touch" }}>
           <div className="space-y-4 px-6 pb-6 pt-4">
+            {/* Demo image */}
+            {demoImage && (
+              <div className="rounded-xl overflow-hidden border border-border/40 bg-muted/20">
+                <img
+                  src={demoImage}
+                  alt={`${exercise.name} demo`}
+                  className="w-full max-h-48 object-contain"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+              </div>
+            )}
+
             {/* Muscle diagram */}
             <div className="bg-muted/30 rounded-xl p-4">
               <MuscleDiagram muscleGroup={exercise.muscleGroup} />
