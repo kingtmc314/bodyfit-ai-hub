@@ -194,19 +194,19 @@
 - [x] Push to GitHub and deploy to Vercel
 
 ## Phase 25: Inline Import (Photo + CSV) on Body, HeartRate, Sleep Pages
-- [ ] Create shared QuickImportModal component (photo tab + CSV tab, specific to data type)
-- [ ] BodyComposition.tsx: add "匯入" button in header → opens QuickImportModal for body data
-- [ ] HeartRate.tsx: add "匯入" button in header → opens QuickImportModal for heartrate data
-- [ ] Sleep.tsx: add "匯入" button in header → opens QuickImportModal for sleep data
-- [ ] Photo tab: drag-drop image upload → AI vision extracts data → preview → save
-- [ ] CSV tab: paste or upload CSV → auto-detect/force type → preview rows → import
-- [ ] Run tests, save checkpoint, push to GitHub
+- [x] Create shared QuickImportModal component (photo tab + CSV tab, specific to data type)
+- [x] BodyComposition.tsx: add "匯入" button in header → opens QuickImportModal for body data
+- [x] HeartRate.tsx: add "匯入" button in header → opens QuickImportModal for heartrate data
+- [x] Sleep.tsx: add "匯入" button in header → opens QuickImportModal for sleep data
+- [x] Photo tab: drag-drop image upload → AI vision extracts data → preview → save
+- [x] CSV tab: paste or upload CSV → auto-detect/force type → preview rows → import
+- [x] Run tests, save checkpoint, push to GitHub
 
 ## Phase 25b: Fix AI Analysis
-- [ ] Diagnose why AI analysis (Insights page / food photo analysis) fails
-- [ ] Check invokeLLM helper and BUILT_IN_FORGE_API_KEY env var
-- [ ] Fix the LLM call — check image URL format, response parsing, error handling
-- [ ] Test AI analysis end-to-end
+- [x] Diagnose why AI analysis (Insights page / food photo analysis) fails
+- [x] Check invokeLLM helper and BUILT_IN_FORGE_API_KEY env var
+- [x] Fix the LLM call — check image URL format, response parsing, error handling
+- [x] Test AI analysis end-to-end
 
 ## Phase 25: QuickImportModal + Inline Import Buttons
 - [x] Fixed QuickImportModal TS errors (base64 not imageBase64, save uses structured fields not extractedData)
@@ -224,9 +224,13 @@
 - [x] + button still works (stops propagation) to add to active session
 
 ## Phase 27: Hong Kong Timezone Fix
-- [ ] Create shared HK timezone utility (formatHKDate, formatHKDateTime, toHKDateString)
-- [ ] Fix all date displays in Dashboard, BodyComposition, HeartRate, Sleep, Workout, Nutrition, Trends pages
-- [ ] Fix chart X-axis date labels to use HK timezone
-- [ ] Fix server-side date comparisons to use HK timezone for today queries
-- [ ] Fix date input defaults to use HK current date
-- [ ] Run tests, save checkpoint, push to GitHub
+- [x] Create shared HK timezone utility (formatHKDate, formatHKDateTime, toHKDateString)
+- [x] Fix all date displays in Dashboard, BodyComposition, HeartRate, Sleep, Workout, Nutrition, Trends pages
+- [x] Fix chart X-axis date labels to use HK timezone (formatHKChartDate in all chart data)
+- [x] Fix server-side date comparisons to use HK timezone for today queries
+- [x] Fix date input defaults to use HK current date (todayHKString)
+- [x] Fix Insights.tsx date display (weeklyVolume chart, insight history timestamps)
+- [x] Fix ProgressPhotos.tsx default date to use todayHKString
+- [x] Fix QuickImportModal photo tab: render extracted fields from imageImport.extract response correctly
+- [x] Fix QuickImportModal Save button: enabled when any extracted field has non-null value
+- [x] Run tests, save checkpoint, push to GitHub

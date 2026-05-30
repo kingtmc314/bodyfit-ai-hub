@@ -2,8 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { format } from "date-fns";
-import { todayHKString } from "@/lib/hkTime";
+import { todayHKString, formatHKChartDate, formatHKDate } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -102,7 +101,7 @@ export default function Sleep() {
 
   const toHrs = (v: number | null | undefined) => v != null && v > 24 ? Math.round((v / 60) * 10) / 10 : v ?? null;
   const chartData = [...records].reverse().map(r => ({
-    date: r.date.slice(5),
+    date: formatHKChartDate(r.date),
     score: r.sleepScore ?? null,
     duration: toHrs(r.sleepDuration),
     deep: toHrs(r.deepSleep),
@@ -268,7 +267,7 @@ export default function Sleep() {
                 <tbody>
                   {records.map(r => (
                     <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/20">
-                      <td className="px-4 py-3 font-medium whitespace-nowrap">{r.date}</td>
+                      <td className="px-4 py-3 font-medium whitespace-nowrap">{formatHKDate(r.date)}</td>
                       <td className="px-4 py-3">{r.sleepScore ?? "—"}</td>
                       <td className="px-4 py-3">{getQualityBadge(r.sleepQuality)}</td>
                       <td className="px-4 py-3">{r.sleepDuration != null ? `${toHrs(r.sleepDuration)?.toFixed(1)}h` : "—"}</td>

@@ -3,6 +3,7 @@ import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { todayHKString } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +21,7 @@ export default function ProgressPhotos() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [photoMime, setPhotoMime] = useState("image/jpeg");
-  const [form, setForm] = useState({ date: format(new Date(), "yyyy-MM-dd"), angle: "front", notes: "", weight: "" });
+  const [form, setForm] = useState({ date: todayHKString(), angle: "front", notes: "", weight: "" });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -34,7 +35,7 @@ export default function ProgressPhotos() {
     onSuccess: () => { utils.photos.getAll.invalidate(); toast.success("Deleted"); setShowViewDialog(false); },
   });
 
-  const resetForm = () => { setPhotoPreview(null); setPhotoBase64(null); setForm({ date: format(new Date(), "yyyy-MM-dd"), angle: "front", notes: "", weight: "" }); };
+  const resetForm = () => { setPhotoPreview(null); setPhotoBase64(null); setForm({ date: todayHKString(), angle: "front", notes: "", weight: "" }); };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

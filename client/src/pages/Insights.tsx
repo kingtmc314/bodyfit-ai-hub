@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useState } from "react";
-import { format } from "date-fns";
+import { toHKDateString, formatHKChartDate, formatHKDateTime } from "@/lib/hkTime";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -67,7 +67,7 @@ export default function Insights() {
 
   // Weekly workout volume chart
   const weeklyVolume = workoutData.slice(0, 12).reverse().map(s => ({
-    date: format(new Date(s.startTime), 'MM-dd'),
+    date: formatHKChartDate(new Date(s.startTime)),
     volume: s.totalVolume ? Number(s.totalVolume).toFixed(0) : 0,
     duration: s.duration ?? 0,
   }));
@@ -108,7 +108,7 @@ export default function Insights() {
                   </div>
                   <div>
                     <p className="font-semibold text-foreground">{t('insights.latest_analysis')}</p>
-                    <p className="text-xs text-muted-foreground">{latestInsight.createdAt ? new Date(latestInsight.createdAt).toLocaleDateString() : ""}</p>
+                    <p className="text-xs text-muted-foreground">{latestInsight.createdAt ? formatHKDateTime(new Date(latestInsight.createdAt)) : ""}</p>
                   </div>
                 </div>
                 <Badge variant="outline" className="text-xs capitalize">{latestInsight.type || "overall"}</Badge>
@@ -189,7 +189,7 @@ export default function Insights() {
             {sleepData.length > 0 && hrData.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={sleepData.slice(0, 14).reverse().map((s, i) => ({
-                  date: s.date.slice(5),
+                  date: formatHKChartDate(s.date),
                   sleep: s.sleepScore,
                   hr: hrData[i]?.restingHr,
                 }))}>
@@ -222,7 +222,7 @@ export default function Insights() {
                     </div>
                     <div>
                       <p className="font-medium text-sm text-foreground">
-                        {insight.createdAt ? new Date(insight.createdAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : ""}
+                        {insight.createdAt ? formatHKDateTime(new Date(insight.createdAt)) : ""}
                       </p>
                       <Badge variant="outline" className="text-xs capitalize mt-0.5">{insight.type || "overall"}</Badge>
                     </div>

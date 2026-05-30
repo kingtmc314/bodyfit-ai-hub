@@ -1,14 +1,13 @@
 import { useState, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Camera, FileSpreadsheet, Upload, Loader2, CheckCircle2, X, AlertCircle } from "lucide-react";
-import { useTranslation } from "react-i18next";
+import { todayHKString } from "@/lib/hkTime";
 
 export type ImportDataType = "body" | "heartrate" | "sleep";
 
@@ -40,12 +39,21 @@ const CSV_FORMAT_HINTS: Record<ImportDataType, { columns: string[]; example: str
   },
 };
 
+// Field label maps for display
+const FIELD_LABELS: Record<string, string> = {
+  weight: "體重 (kg)", bmi: "BMI", bodyFatPct: "體脂 (%)", muscleMass: "肌肉量 (kg)", visceralFat: "內臟脂肪",
+  sleepScore: "睡眠評分", sleepDuration: "睡眠時長 (h)", deepSleep: "深睡 (h)", remSleep: "REM (h)",
+  bodyBattery: "身體電量", pulseOx: "血氧 (%)", stress: "壓力",
+  restingHr: "靜息心率", highHr: "最高心率", avgHr: "平均心率", hrv: "HRV (ms)",
+  calories: "卡路里", protein: "蛋白質 (g)", carbs: "碳水 (g)", fat: "脂肪 (g)", fiber: "纖維 (g)",
+};
+
 // ─── Photo Import Tab ──────────────────────────────────────────────────────────
 function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportDataType; onSuccess?: () => void; onClose: () => void }) {
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [extractedData, setExtractedData] = useState<any>(null);
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [selectedDate, setSelectedDate] = useState(todayHKString());
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
@@ -53,15 +61,17 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
   const extractMutation = trpc.imageImport.extract.useMutation({
     onSuccess: (data) => {
       setExtractedData(data);
+      // If the AI detected a date, use it
+      if (data.date) setSelectedDate(data.date);
     },
     onError: (err) => {
-      toast.error(`AI extraction failed: ${err.message}`);
+      toast.error(`AI 提取失敗: ${err.message}`);
     },
   });
 
   const saveMutation = trpc.imageImport.save.useMutation({
     onSuccess: () => {
-      toast.success(`✅ Saved record(s) from image!`);
+      toast.success(`✅ 已儲存圖片中的健康數據！`);
       utils.body.getAll.invalidate();
       utils.heartRate.getAll.invalidate();
       utils.sleep.getAll.invalidate();
@@ -69,28 +79,26 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
       onClose();
     },
     onError: (err) => {
-      toast.error(`Save failed: ${err.message}`);
+      toast.error(`儲存失敗: ${err.message}`);
     },
   });
 
   const handleFile = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) {
-      toast.error("Please upload an image file");
+      toast.error("請上傳圖片檔案");
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      toast.error("Image must be under 10MB");
+      toast.error("圖片必須小於 10MB");
       return;
     }
     const reader = new FileReader();
     reader.onload = (e) => {
       const result = e.target?.result as string;
-      // result is "data:image/jpeg;base64,..."
       const base64 = result.split(",")[1];
       setImageBase64(base64);
       setImagePreviewUrl(result);
       setExtractedData(null);
-      // Auto-extract
       extractMutation.mutate({ base64, mimeType: file.type, dataType });
     };
     reader.readAsDataURL(file);
@@ -105,7 +113,7 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
 
   const handleSave = () => {
     if (!extractedData || !imageBase64) return;
-    const dt = (extractedData.detectedType ?? dataType) as "body" | "sleep" | "heartrate" | "nutrition";
+    const dt = (extractedData.detectedType && extractedData.detectedType !== "unknown" ? extractedData.detectedType : dataType) as "body" | "sleep" | "heartrate" | "nutrition";
     saveMutation.mutate({
       dataType: dt,
       date: selectedDate,
@@ -116,40 +124,80 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
     });
   };
 
+  // Determine which section to show based on detectedType or dataType
+  const getRelevantFields = (): Record<string, number | null> => {
+    if (!extractedData) return {};
+    const dt = extractedData.detectedType && extractedData.detectedType !== "unknown" ? extractedData.detectedType : dataType;
+    const section = extractedData[dt] ?? {};
+    return section;
+  };
+
   const renderExtractedFields = () => {
     if (!extractedData) return null;
-    const fields = extractedData.fields ?? {};
-    const entries = Object.entries(fields).filter(([, v]) => v != null && v !== "");
+    const fields = getRelevantFields();
+    const entries = Object.entries(fields).filter(([, v]) => v != null && v !== 0);
+
     if (entries.length === 0) {
-      return (
-        <div className="flex items-center gap-2 text-amber-600 text-sm p-3 bg-amber-50 rounded-lg">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          <span>No data could be extracted. Try a clearer screenshot.</span>
-        </div>
-      );
+      // Try showing all non-null fields across all sections
+      const allFields: [string, number | null][] = [];
+      for (const section of ["body", "sleep", "heartrate", "nutrition"] as const) {
+        if (extractedData[section]) {
+          Object.entries(extractedData[section]).forEach(([k, v]) => {
+            if (v != null && v !== 0) allFields.push([k, v as number]);
+          });
+        }
+      }
+      if (allFields.length === 0) {
+        return (
+          <div className="flex items-center gap-2 text-amber-600 text-sm p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>未能從圖片提取數據，請嘗試更清晰的截圖。</span>
+          </div>
+        );
+      }
+      return renderFieldGrid(allFields);
     }
-    return (
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Extracted Data</p>
-        <div className="grid grid-cols-2 gap-2">
-          {entries.map(([key, value]) => (
-            <div key={key} className="bg-muted/50 rounded-lg p-2.5">
-              <p className="text-xs text-muted-foreground capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</p>
-              <p className="font-semibold text-sm">{String(value)}</p>
-            </div>
-          ))}
-        </div>
-        {extractedData.confidence && (
+    return renderFieldGrid(entries as [string, number | null][]);
+  };
+
+  const renderFieldGrid = (entries: [string, number | null][]) => (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">提取的數據</p>
+        {extractedData?.detectedType && extractedData.detectedType !== "unknown" && (
+          <Badge variant="secondary" className="text-xs capitalize">{extractedData.detectedType}</Badge>
+        )}
+        {extractedData?.confidence && (
           <Badge variant={extractedData.confidence === "high" ? "default" : "secondary"} className="text-xs">
-            Confidence: {extractedData.confidence}
+            信心: {extractedData.confidence === "high" ? "高" : extractedData.confidence === "medium" ? "中" : "低"}
           </Badge>
         )}
-        {extractedData.notes && (
-          <p className="text-xs text-muted-foreground italic">{extractedData.notes}</p>
-        )}
       </div>
-    );
-  };
+      <div className="grid grid-cols-2 gap-2">
+        {entries.map(([key, value]) => (
+          <div key={key} className="bg-muted/50 rounded-lg p-2.5">
+            <p className="text-xs text-muted-foreground">{FIELD_LABELS[key] ?? key.replace(/([A-Z])/g, " $1").trim()}</p>
+            <p className="font-semibold text-sm">{String(value)}</p>
+          </div>
+        ))}
+      </div>
+      {extractedData?.notes && (
+        <p className="text-xs text-muted-foreground italic">{extractedData.notes}</p>
+      )}
+    </div>
+  );
+
+  // Check if there's any extractable data to save
+  const hasExtractedData = (() => {
+    if (!extractedData) return false;
+    for (const section of ["body", "sleep", "heartrate", "nutrition"] as const) {
+      if (extractedData[section]) {
+        const hasValues = Object.values(extractedData[section]).some((v) => v != null && v !== 0);
+        if (hasValues) return true;
+      }
+    }
+    return false;
+  })();
 
   return (
     <div className="space-y-4">
@@ -176,8 +224,8 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
         ) : (
           <div className="space-y-2">
             <Camera className="w-10 h-10 text-muted-foreground mx-auto" />
-            <p className="text-sm font-medium">Drop screenshot or tap to upload</p>
-            <p className="text-xs text-muted-foreground">Supports Garmin, Apple Health, body scale photos</p>
+            <p className="text-sm font-medium">拖放截圖或點擊上傳</p>
+            <p className="text-xs text-muted-foreground">支援 Garmin、Apple Health、體脂秤截圖</p>
           </div>
         )}
         <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
@@ -187,7 +235,7 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
       {extractMutation.isPending && (
         <div className="flex items-center gap-3 p-3 bg-primary/5 rounded-lg">
           <Loader2 className="w-4 h-4 animate-spin text-primary" />
-          <span className="text-sm">AI is analysing your image…</span>
+          <span className="text-sm">AI 正在分析圖片…</span>
         </div>
       )}
 
@@ -198,7 +246,7 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
       {extractedData && (
         <div className="space-y-3 pt-2 border-t border-border">
           <div className="flex items-center gap-3">
-            <label className="text-sm font-medium w-16 flex-shrink-0">Date</label>
+            <label className="text-sm font-medium w-16 flex-shrink-0">日期</label>
             <Input
               type="date"
               value={selectedDate}
@@ -209,11 +257,14 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
           <Button
             className="w-full gap-2"
             onClick={handleSave}
-            disabled={saveMutation.isPending || !extractedData.fields || Object.keys(extractedData.fields ?? {}).length === 0}
+            disabled={saveMutation.isPending || !hasExtractedData}
           >
             {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-            Save to {DATA_TYPE_LABELS[dataType].zh}
+            儲存至 {DATA_TYPE_LABELS[dataType].zh}
           </Button>
+          {!hasExtractedData && (
+            <p className="text-xs text-muted-foreground text-center">未能提取有效數據，無法儲存</p>
+          )}
         </div>
       )}
     </div>
@@ -230,19 +281,19 @@ function CsvImportTab({ dataType, onSuccess, onClose }: { dataType: ImportDataTy
 
   const previewMutation = trpc.csvImport.preview.useMutation({
     onSuccess: (data) => setPreview(data),
-    onError: (err) => toast.error(`Preview failed: ${err.message}`),
+    onError: (err) => toast.error(`預覽失敗: ${err.message}`),
   });
 
   const importMutation = trpc.csvImport.importData.useMutation({
     onSuccess: (data) => {
-      toast.success(`✅ Imported ${data.inserted} records (${data.skipped} skipped)`);
+      toast.success(`✅ 已匯入 ${data.inserted} 筆記錄（跳過 ${data.skipped} 筆）`);
       utils.body.getAll.invalidate();
       utils.heartRate.getAll.invalidate();
       utils.sleep.getAll.invalidate();
       onSuccess?.();
       onClose();
     },
-    onError: (err) => toast.error(`Import failed: ${err.message}`),
+    onError: (err) => toast.error(`匯入失敗: ${err.message}`),
   });
 
   const handleFileUpload = (file: File) => {
@@ -256,7 +307,7 @@ function CsvImportTab({ dataType, onSuccess, onClose }: { dataType: ImportDataTy
   };
 
   const handlePreview = () => {
-    if (!csvText.trim()) { toast.error("Please paste or upload CSV data"); return; }
+    if (!csvText.trim()) { toast.error("請貼上或上傳 CSV 數據"); return; }
     previewMutation.mutate({ csvText, dataType });
   };
 
@@ -269,7 +320,7 @@ function CsvImportTab({ dataType, onSuccess, onClose }: { dataType: ImportDataTy
     <div className="space-y-4">
       {/* Format Hint */}
       <div className="bg-muted/40 rounded-lg p-3 space-y-1">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Expected columns</p>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">欄位格式</p>
         <p className="text-xs text-foreground font-mono">{hint.columns.join(", ")}</p>
         <p className="text-xs text-muted-foreground font-mono">{hint.example}</p>
       </div>
@@ -280,16 +331,16 @@ function CsvImportTab({ dataType, onSuccess, onClose }: { dataType: ImportDataTy
         onClick={() => fileInputRef.current?.click()}
       >
         <FileSpreadsheet className="w-8 h-8 text-muted-foreground mx-auto mb-1" />
-        <p className="text-sm font-medium">Click to upload CSV file</p>
+        <p className="text-sm font-medium">點擊上傳 CSV 檔案</p>
         <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }} />
       </div>
 
       {/* Or paste */}
       <div className="space-y-1">
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Or paste CSV text</label>
+        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">或貼上 CSV 文字</label>
         <textarea
           className="w-full h-28 rounded-lg border border-border bg-muted/30 p-2 text-xs font-mono resize-none focus:outline-none focus:ring-2 focus:ring-primary/40"
-          placeholder={`Paste CSV data here…\n${hint.columns.join(",")}\n${hint.example}`}
+          placeholder={`在此貼上 CSV 數據…\n${hint.columns.join(",")}\n${hint.example}`}
           value={csvText}
           onChange={(e) => { setCsvText(e.target.value); setPreview(null); }}
         />
@@ -299,8 +350,8 @@ function CsvImportTab({ dataType, onSuccess, onClose }: { dataType: ImportDataTy
       {preview && (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <Badge variant="secondary">{preview.validRows} valid rows</Badge>
-            <Badge variant="outline">{preview.totalRows} total</Badge>
+            <Badge variant="secondary">{preview.validRows} 有效行</Badge>
+            <Badge variant="outline">{preview.totalRows} 總行數</Badge>
             {preview.detectedType && <Badge className="bg-primary/10 text-primary border-primary/20">{preview.detectedType}</Badge>}
           </div>
           {preview.preview?.length > 0 && (
@@ -331,16 +382,16 @@ function CsvImportTab({ dataType, onSuccess, onClose }: { dataType: ImportDataTy
         {!preview ? (
           <Button className="flex-1 gap-2" variant="outline" onClick={handlePreview} disabled={previewMutation.isPending || !csvText.trim()}>
             {previewMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            Preview
+            預覽
           </Button>
         ) : (
           <Button className="flex-1 gap-2" onClick={handleImport} disabled={importMutation.isPending || !preview.validRows}>
             {importMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-            Import {preview.validRows} rows
+            匯入 {preview.validRows} 行
           </Button>
         )}
         {preview && (
-          <Button variant="outline" onClick={() => setPreview(null)}>Re-preview</Button>
+          <Button variant="outline" onClick={() => setPreview(null)}>重新預覽</Button>
         )}
       </div>
     </div>
@@ -357,15 +408,15 @@ export default function QuickImportModal({ open, onClose, dataType, onSuccess }:
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span className={`w-2.5 h-2.5 rounded-full ${label.color}`} />
-            匯入{label.zh}數據
+            匯入 {label.zh}
           </DialogTitle>
         </DialogHeader>
         <Tabs defaultValue="photo">
           <TabsList className="w-full">
-            <TabsTrigger value="photo" className="flex-1 gap-2">
-              <Camera className="w-3.5 h-3.5" /> 相片匯入 (AI)
+            <TabsTrigger value="photo" className="flex-1 gap-1.5">
+              <Camera className="w-3.5 h-3.5" /> 照片匯入
             </TabsTrigger>
-            <TabsTrigger value="csv" className="flex-1 gap-2">
+            <TabsTrigger value="csv" className="flex-1 gap-1.5">
               <FileSpreadsheet className="w-3.5 h-3.5" /> CSV 匯入
             </TabsTrigger>
           </TabsList>

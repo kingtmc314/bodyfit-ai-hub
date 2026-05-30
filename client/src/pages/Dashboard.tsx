@@ -15,6 +15,7 @@ import {
   Tooltip, ResponsiveContainer
 } from "recharts";
 import { format, subDays } from "date-fns";
+import { toHKDateString, formatHKChartDate } from "@/lib/hkTime";
 import { useTranslation } from "react-i18next";
 import { Streamdown } from "streamdown";
 
@@ -170,7 +171,7 @@ export default function Dashboard() {
   const weightTrend = useMemo(() => {
     if (!bodyData) return [];
     return [...bodyData].reverse().slice(-10).map(d => ({
-      date: d.date.slice(5),
+      date: formatHKChartDate(d.date),
       weight: d.weight,
       fat: d.bodyFatPct,
       muscle: d.muscleMass,
@@ -180,7 +181,7 @@ export default function Dashboard() {
   const sleepTrend = useMemo(() => {
     if (!sleepData) return [];
     return [...sleepData].reverse().map(d => ({
-      date: d.date.slice(5),
+      date: formatHKChartDate(d.date),
       score: d.sleepScore,
       hr: d.pulseOx,
     }));
@@ -190,11 +191,11 @@ export default function Dashboard() {
     if (!summary?.weekMeals) return [];
     const map: Record<string, number> = {};
     summary.weekMeals.forEach(m => {
-      const dateKey = format(new Date(m.loggedAt), 'yyyy-MM-dd');
+      const dateKey = toHKDateString(new Date(m.loggedAt));
       map[dateKey] = (map[dateKey] || 0) + (m.calories ?? 0);
     });
     return Array.from({ length: 7 }, (_, i) => {
-      const d = format(subDays(new Date(), 6 - i), "yyyy-MM-dd");
+      const d = toHKDateString(subDays(new Date(), 6 - i));
       return { date: format(subDays(new Date(), 6 - i), "EEE"), cal: Math.round(map[d] || 0) };
     });
   }, [summary]);
@@ -449,7 +450,7 @@ export default function Dashboard() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate">{s.name || "Workout Session"}</p>
-                  <p className="text-xs text-muted-foreground">{format(new Date(s.startTime), 'yyyy-MM-dd')}{s.duration ? ` · ${s.duration} min` : ""}</p>
+                  <p className="text-xs text-muted-foreground">{toHKDateString(new Date(s.startTime))}{s.duration ? ` · ${s.duration} min` : ""}</p>
                 </div>
                 {s.totalVolume && (
                   <span className="tag-pill tag-orange">{Math.round(s.totalVolume)} kg</span>

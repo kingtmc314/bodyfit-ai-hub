@@ -2,8 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { format } from "date-fns";
-import { todayHKString } from "@/lib/hkTime";
+import { todayHKString, toHKDateString, formatHKChartDate } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -132,7 +131,7 @@ export default function Workout() {
 
   const utils = trpc.useUtils();
   const { data: sessions = [], isLoading } = trpc.workout.getSessions.useQuery({
-    startDate: format(new Date(Date.now() - 30 * 86400000), "yyyy-MM-dd"),
+    startDate: toHKDateString(new Date(Date.now() - 30 * 86400000)),
     endDate: selectedDate,
   });
   const { data: sessionDetail } = trpc.workout.getSessionWithSets.useQuery(
@@ -192,10 +191,10 @@ export default function Workout() {
 
   const weeklyVolume = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
-      const d = format(new Date(Date.now() - (6 - i) * 86400000), "yyyy-MM-dd");
-      const daySessions = sessions.filter(s => format(new Date(s.startTime), 'yyyy-MM-dd') === d);
+      const d = toHKDateString(new Date(Date.now() - (6 - i) * 86400000));
+      const daySessions = sessions.filter(s => toHKDateString(new Date(s.startTime)) === d);
       return {
-        date: format(new Date(Date.now() - (6 - i) * 86400000), "EEE"),
+        date: new Date(Date.now() - (6 - i) * 86400000).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'Asia/Hong_Kong' }),
         volume: Math.round(daySessions.reduce((s, sess) => s + (sess.totalVolume || 0), 0)),
       };
     });
@@ -477,7 +476,7 @@ export default function Workout() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">{s.name || "Workout"}</p>
-                      <p className="text-xs text-muted-foreground">{format(new Date(s.startTime), 'yyyy-MM-dd')}{s.duration ? ` · ${s.duration} min` : ""}</p>
+                      <p className="text-xs text-muted-foreground">{toHKDateString(new Date(s.startTime))}{s.duration ? ` · ${s.duration} min` : ""}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       {s.totalVolume && <span className="text-xs font-semibold text-primary">{Math.round(s.totalVolume)} kg</span>}

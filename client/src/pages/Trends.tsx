@@ -10,7 +10,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   ReferenceLine, ComposedChart,
 } from "recharts";
-import { format, parseISO } from "date-fns";
+import { formatHKChartDate } from "@/lib/hkTime";
 import { TrendingUp, TrendingDown, Minus, Activity, Scale, Heart, Moon, Utensils } from "lucide-react";
 
 // ─── Date range options ───────────────────────────────────────────────────────
@@ -75,14 +75,7 @@ function EmptyChart({ message }: { message: string }) {
 
 // ─── Format date for X axis (server returns YYYY-MM-DD in HK time) ──────────────────────────────
 function fmtDate(dateStr: string, _days: number) {
-  try {
-    // dateStr is YYYY-MM-DD already in HK timezone from server
-    const parts = dateStr.split("-");
-    if (parts.length === 3) return `${parts[1]}/${parts[2]}`;
-    return dateStr;
-  } catch {
-    return dateStr;
-  }
+  return formatHKChartDate(dateStr) || dateStr;
 }
 
 

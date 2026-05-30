@@ -2,8 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { format } from "date-fns";
-import { todayHKString } from "@/lib/hkTime";
+import { todayHKString, formatHKChartDate, formatHKDate } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -89,7 +88,7 @@ export default function BodyComposition() {
 
 
   const chartData = [...records].reverse().map(r => ({
-    date: r.date.slice(5),
+    date: formatHKChartDate(r.date),
     weight: r.weight,
     fat: r.bodyFatPct,
     muscle: r.muscleMass,
@@ -263,7 +262,7 @@ export default function BodyComposition() {
                 <tbody>
                   {records.map(r => (
                     <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/20">
-                      <td className="px-4 py-3 font-medium whitespace-nowrap">{r.date}</td>
+                      <td className="px-4 py-3 font-medium whitespace-nowrap">{formatHKDate(r.date)}</td>
                       <td className="px-4 py-3">{r.weight != null ? `${Number(r.weight).toFixed(1)} kg` : "—"}</td>
                       <td className="px-4 py-3">{r.bodyFatPct != null ? `${Number(r.bodyFatPct).toFixed(1)}%` : "—"}</td>
                       <td className="px-4 py-3">{r.muscleMass != null ? `${Number(r.muscleMass).toFixed(1)} kg` : "—"}</td>

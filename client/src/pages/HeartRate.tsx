@@ -2,8 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { format } from "date-fns";
-import { todayHKString } from "@/lib/hkTime";
+import { todayHKString, formatHKChartDate, formatHKDate } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -87,7 +86,7 @@ export default function HeartRate() {
 
 
   const chartData = [...records].reverse().map(r => ({
-    date: r.date.slice(5),
+    date: formatHKChartDate(r.date),
     resting: r.restingHr,
     high: r.highHr,
     hrv: r.hrv,
@@ -231,7 +230,7 @@ export default function HeartRate() {
                 <tbody>
                   {records.map(r => (
                     <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/20">
-                      <td className="px-4 py-3 font-medium">{r.date}</td>
+                      <td className="px-4 py-3 font-medium">{formatHKDate(r.date)}</td>
                       <td className="px-4 py-3">{r.restingHr ? `${r.restingHr} bpm` : "—"}</td>
                       <td className="px-4 py-3">{r.highHr ? `${r.highHr} bpm` : "—"}</td>
                       <td className="px-4 py-3">{r.avgHr ? `${r.avgHr} bpm` : "—"}</td>

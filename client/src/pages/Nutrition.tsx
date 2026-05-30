@@ -2,8 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { format } from "date-fns";
-import { todayHKString } from "@/lib/hkTime";
+import { todayHKString, toHKDateString } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -70,7 +69,7 @@ export default function Nutrition() {
   const utils = trpc.useUtils();
   const { data: meals = [], isLoading } = trpc.nutrition.getMealLogs.useQuery({ date: selectedDate });
   const { data: weekMeals = [] } = trpc.nutrition.getMealLogsRange.useQuery({
-    startDate: format(new Date(Date.now() - 6 * 86400000), "yyyy-MM-dd"),
+    startDate: toHKDateString(new Date(Date.now() - 6 * 86400000)),
     endDate: selectedDate,
   });
   const { data: searchResults = [] } = trpc.nutrition.searchFoods.useQuery(
@@ -110,7 +109,7 @@ export default function Nutrition() {
   const weekChartData = (() => {
     const map: Record<string, { cal: number; protein: number; carbs: number; fat: number }> = {};
     weekMeals.forEach(m => {
-      const dateKey = format(new Date(m.loggedAt), 'yyyy-MM-dd');
+      const dateKey = toHKDateString(new Date(m.loggedAt));
       if (!map[dateKey]) map[dateKey] = { cal: 0, protein: 0, carbs: 0, fat: 0 };
       map[dateKey].cal += (m.calories ?? 0);
       map[dateKey].protein += (m.protein ?? 0);
@@ -118,8 +117,8 @@ export default function Nutrition() {
       map[dateKey].fat += (m.fat ?? 0);
     });
     return Array.from({ length: 7 }, (_, i) => {
-      const d = format(new Date(Date.now() - (6 - i) * 86400000), "yyyy-MM-dd");
-      const day = format(new Date(Date.now() - (6 - i) * 86400000), "EEE");
+      const d = toHKDateString(new Date(Date.now() - (6 - i) * 86400000));
+      const day = new Date(Date.now() - (6 - i) * 86400000).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'Asia/Hong_Kong' });
       return { date: day, ...(map[d] || { cal: 0, protein: 0, carbs: 0, fat: 0 }) };
     });
   })();
