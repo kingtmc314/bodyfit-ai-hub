@@ -754,7 +754,7 @@ const csvImportRouter = router({
   preview: publicProcedure
     .input(z.object({
       csvText: z.string().max(5_000_000), // 5 MB limit
-      dataType: z.enum(["body", "sleep", "heartrate", "workout", "auto"]).default("auto"),
+      dataType: z.enum(["body", "sleep", "heartrate", "workout", "nutrition", "auto"]).default("auto"),
     }))
     .mutation(async ({ input }) => {
       const parsed = Papa.parse<Record<string, string>>(input.csvText, {
@@ -788,7 +788,7 @@ const csvImportRouter = router({
   importData: publicProcedure
     .input(z.object({
       csvText: z.string().max(5_000_000),
-      dataType: z.enum(["body", "sleep", "heartrate", "workout"]),
+      dataType: z.enum(["body", "sleep", "heartrate", "workout", "nutrition"]),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -874,6 +874,26 @@ const csvImportRouter = router({
               ].filter(Boolean).join(" | ") || undefined,
             }).returning();
             if (session) inserted++;
+          } catch { skipped++; }
+        }
+      } else if (input.dataType === "nutrition") {
+        for (const r of rows as import("./csvImport").ParsedNutritionRow[]) {
+          try {
+            const validMealType = ["breakfast", "lunch", "dinner", "snack"].includes(r.mealType ?? "") ? r.mealType as "breakfast" | "lunch" | "dinner" | "snack" : "snack";
+            await db.insert(mealLogs).values({
+              userId: OWNER_USER_ID,
+              foodName: r.foodName ?? "Imported Entry",
+              mealType: validMealType,
+              servings: r.servings ?? 1,
+              calories: r.calories,
+              protein: r.protein,
+              carbs: r.carbs,
+              fat: r.fat,
+              fiber: r.fiber,
+              loggedAt: new Date(r.date + "T12:00:00Z"),
+              notes: "Imported from CSV",
+            });
+            inserted++;
           } catch { skipped++; }
         }
       }
@@ -1067,6 +1087,223 @@ const goalsRouter = router({
     }),
 });
 
+// ─── Image Import Router ────────────────────────────────────────────────────
+const imageImportRouter = router({
+  /**
+   * Upload an image and extract health data using AI vision.
+   * Returns extracted fields for user review before saving.
+   */
+  extract: publicProcedure
+    .input(z.object({
+      base64: z.string(),
+      mimeType: z.string().default("image/jpeg"),
+      dataType: z.enum(["body", "sleep", "heartrate", "nutrition", "auto"]).default("auto"),
+    }))
+    .mutation(async ({ input }) => {
+      // Upload image to storage
+      const buffer = Buffer.from(input.base64, "base64");
+      const ext = input.mimeType.includes("png") ? "png" : "jpg";
+      const key = `import-images/${OWNER_USER_ID}/${nanoid()}.${ext}`;
+      const { url: imageUrl } = await storagePut(key, buffer, input.mimeType);
+
+      // Build the absolute URL for LLM vision
+      const absoluteUrl = `${process.env.VITE_FRONTEND_FORGE_API_URL ?? ""}/manus-storage/${key}`.replace(/\/\/manus/, "/manus");
+
+      const systemPrompt = `You are a health data extraction AI. Analyze the health-related screenshot or photo and extract all numeric health metrics visible. Respond only with valid JSON matching the schema exactly. Use null for any field not visible in the image.`;
+
+      const userPrompt = `Extract all health metrics from this image. The image may be a Garmin Connect screenshot, Apple Health screenshot, body scale display, sleep tracker, or any health app. Return a JSON object with these fields:
+{
+  "detectedType": "body" | "sleep" | "heartrate" | "nutrition" | "unknown",
+  "date": "YYYY-MM-DD or null",
+  "body": { "weight": number|null, "bmi": number|null, "bodyFatPct": number|null, "muscleMass": number|null, "visceralFat": number|null },
+  "sleep": { "sleepScore": number|null, "sleepDuration": number|null, "deepSleep": number|null, "remSleep": number|null, "bodyBattery": number|null, "pulseOx": number|null, "stress": number|null },
+  "heartrate": { "restingHr": number|null, "highHr": number|null, "avgHr": number|null, "hrv": number|null },
+  "nutrition": { "calories": number|null, "protein": number|null, "carbs": number|null, "fat": number|null, "fiber": number|null },
+  "confidence": "high" | "medium" | "low",
+  "notes": "brief description of what was detected"
+}`;
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: [
+              { type: "image_url", image_url: { url: imageUrl, detail: "high" } },
+              { type: "text", text: userPrompt },
+            ],
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "health_extraction",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                detectedType: { type: "string" },
+                date: { type: ["string", "null"] },
+                body: {
+                  type: "object",
+                  properties: {
+                    weight: { type: ["number", "null"] },
+                    bmi: { type: ["number", "null"] },
+                    bodyFatPct: { type: ["number", "null"] },
+                    muscleMass: { type: ["number", "null"] },
+                    visceralFat: { type: ["number", "null"] },
+                  },
+                  required: ["weight", "bmi", "bodyFatPct", "muscleMass", "visceralFat"],
+                  additionalProperties: false,
+                },
+                sleep: {
+                  type: "object",
+                  properties: {
+                    sleepScore: { type: ["number", "null"] },
+                    sleepDuration: { type: ["number", "null"] },
+                    deepSleep: { type: ["number", "null"] },
+                    remSleep: { type: ["number", "null"] },
+                    bodyBattery: { type: ["number", "null"] },
+                    pulseOx: { type: ["number", "null"] },
+                    stress: { type: ["number", "null"] },
+                  },
+                  required: ["sleepScore", "sleepDuration", "deepSleep", "remSleep", "bodyBattery", "pulseOx", "stress"],
+                  additionalProperties: false,
+                },
+                heartrate: {
+                  type: "object",
+                  properties: {
+                    restingHr: { type: ["number", "null"] },
+                    highHr: { type: ["number", "null"] },
+                    avgHr: { type: ["number", "null"] },
+                    hrv: { type: ["number", "null"] },
+                  },
+                  required: ["restingHr", "highHr", "avgHr", "hrv"],
+                  additionalProperties: false,
+                },
+                nutrition: {
+                  type: "object",
+                  properties: {
+                    calories: { type: ["number", "null"] },
+                    protein: { type: ["number", "null"] },
+                    carbs: { type: ["number", "null"] },
+                    fat: { type: ["number", "null"] },
+                    fiber: { type: ["number", "null"] },
+                  },
+                  required: ["calories", "protein", "carbs", "fat", "fiber"],
+                  additionalProperties: false,
+                },
+                confidence: { type: "string" },
+                notes: { type: "string" },
+              },
+              required: ["detectedType", "date", "body", "sleep", "heartrate", "nutrition", "confidence", "notes"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const rawMsg = response.choices[0]?.message?.content;
+      const contentStr = typeof rawMsg === "string" ? rawMsg : "{}";
+      const extracted = JSON.parse(contentStr);
+      return { ...extracted, imageUrl };
+    }),
+
+  /**
+   * Save extracted image data to the database after user confirms.
+   */
+  save: publicProcedure
+    .input(z.object({
+      date: z.string(),
+      dataType: z.enum(["body", "sleep", "heartrate", "nutrition"]),
+      body: z.object({
+        weight: z.number().nullable().optional(),
+        bmi: z.number().nullable().optional(),
+        bodyFatPct: z.number().nullable().optional(),
+        muscleMass: z.number().nullable().optional(),
+        visceralFat: z.number().nullable().optional(),
+      }).optional(),
+      sleep: z.object({
+        sleepScore: z.number().nullable().optional(),
+        sleepDuration: z.number().nullable().optional(),
+        deepSleep: z.number().nullable().optional(),
+        remSleep: z.number().nullable().optional(),
+        bodyBattery: z.number().nullable().optional(),
+        pulseOx: z.number().nullable().optional(),
+        stress: z.number().nullable().optional(),
+      }).optional(),
+      heartrate: z.object({
+        restingHr: z.number().nullable().optional(),
+        highHr: z.number().nullable().optional(),
+        avgHr: z.number().nullable().optional(),
+        hrv: z.number().nullable().optional(),
+      }).optional(),
+      nutrition: z.object({
+        calories: z.number().nullable().optional(),
+        protein: z.number().nullable().optional(),
+        carbs: z.number().nullable().optional(),
+        fat: z.number().nullable().optional(),
+        fiber: z.number().nullable().optional(),
+      }).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+
+      if (input.dataType === "body" && input.body) {
+        await db.insert(bodyComposition).values({
+          userId: OWNER_USER_ID,
+          date: input.date,
+          weight: input.body.weight ?? undefined,
+          bmi: input.body.bmi ?? undefined,
+          bodyFatPct: input.body.bodyFatPct ?? undefined,
+          muscleMass: input.body.muscleMass ?? undefined,
+          visceralFat: input.body.visceralFat ?? undefined,
+          source: "image",
+        }).onConflictDoNothing();
+      } else if (input.dataType === "sleep" && input.sleep) {
+        await db.insert(sleepLogs).values({
+          userId: OWNER_USER_ID,
+          date: input.date,
+          sleepScore: input.sleep.sleepScore ?? undefined,
+          sleepDuration: input.sleep.sleepDuration ?? undefined,
+          deepSleep: input.sleep.deepSleep ?? undefined,
+          remSleep: input.sleep.remSleep ?? undefined,
+          bodyBattery: input.sleep.bodyBattery ?? undefined,
+          pulseOx: input.sleep.pulseOx ?? undefined,
+          stress: input.sleep.stress ?? undefined,
+          source: "image",
+        }).onConflictDoNothing();
+      } else if (input.dataType === "heartrate" && input.heartrate) {
+        await db.insert(heartRateLogs).values({
+          userId: OWNER_USER_ID,
+          date: input.date,
+          restingHr: input.heartrate.restingHr ?? undefined,
+          highHr: input.heartrate.highHr ?? undefined,
+          avgHr: input.heartrate.avgHr ?? undefined,
+          hrv: input.heartrate.hrv ?? undefined,
+          source: "image",
+        }).onConflictDoNothing();
+      } else if (input.dataType === "nutrition" && input.nutrition) {
+        await db.insert(mealLogs).values({
+          userId: OWNER_USER_ID,
+          foodName: "Image Import",
+          mealType: "snack",
+          servings: 1,
+          calories: input.nutrition.calories ?? undefined,
+          protein: input.nutrition.protein ?? undefined,
+          carbs: input.nutrition.carbs ?? undefined,
+          fat: input.nutrition.fat ?? undefined,
+          fiber: input.nutrition.fiber ?? undefined,
+          loggedAt: new Date(input.date + "T12:00:00Z"),
+          notes: "Imported from image",
+        });
+      }
+
+      return { success: true };
+    }),
+});
+
 // ─── App Router ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
@@ -1089,6 +1326,7 @@ export const appRouter = router({
   csvImport: csvImportRouter,
   charts: chartsRouter,
   goals: goalsRouter,
+  imageImport: imageImportRouter,
 });
 
 export type AppRouter = typeof appRouter;

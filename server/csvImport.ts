@@ -1,9 +1,9 @@
 /**
  * CSV Import utilities for Garmin Connect, Apple Health, and generic formats.
- * Supports: body composition, sleep, heart rate, workout/activity data.
+ * Supports: body composition, sleep, heart rate, workout/activity data, nutrition.
  */
 
-export type ImportDataType = "body" | "sleep" | "heartrate" | "workout";
+export type ImportDataType = "body" | "sleep" | "heartrate" | "workout" | "nutrition";
 
 export interface ParsedBodyRow {
   date: string;
@@ -50,7 +50,19 @@ export interface ParsedWorkoutRow {
   notes?: string;
 }
 
-export type ParsedRow = ParsedBodyRow | ParsedSleepRow | ParsedHeartRateRow | ParsedWorkoutRow;
+export interface ParsedNutritionRow {
+  date: string;
+  mealType?: string;
+  foodName?: string;
+  calories?: number;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+  fiber?: number;
+  servings?: number;
+}
+
+export type ParsedRow = ParsedBodyRow | ParsedSleepRow | ParsedHeartRateRow | ParsedWorkoutRow | ParsedNutritionRow;
 
 /** Normalize a column header: lowercase, remove spaces/special chars */
 function normalizeKey(k: string): string {
@@ -309,6 +321,65 @@ export function parseWorkoutRow(row: Record<string, string>): ParsedWorkoutRow |
   };
 }
 
+// ─── Nutrition / Meal Log ───────────────────────────────────────────────────────
+
+/**
+ * Generic daily nutrition summary or meal log CSV.
+ * Supports: MyFitnessPal, Cronometer, Garmin daily nutrition summary.
+ */
+export function parseNutritionRow(row: Record<string, string>): ParsedNutritionRow | null {
+  const keys: Record<string, string> = {};
+  for (const [k, v] of Object.entries(row)) {
+    keys[normalizeKey(k)] = v;
+  }
+
+  const rawDate =
+    keys["date"] ??
+    keys["datetime"] ??
+    keys["day"] ??
+    keys["calendardate"];
+  const date = rawDate ? parseDate(rawDate) : null;
+  if (!date) return null;
+
+  const calories = toNum(
+    keys["calories"] ?? keys["kcal"] ?? keys["energy"] ??
+    keys["totalcalories"] ?? keys["energykcal"] ?? keys["calorieskcal"]
+  );
+  const protein = toNum(
+    keys["protein"] ?? keys["proteing"] ?? keys["proteingrams"] ?? keys["totalprotein"]
+  );
+  const carbs = toNum(
+    keys["carbs"] ?? keys["carbohydrates"] ?? keys["carbohydratesg"] ??
+    keys["totalcarbs"] ?? keys["netcarbs"]
+  );
+  const fat = toNum(
+    keys["fat"] ?? keys["totalfat"] ?? keys["fatg"] ?? keys["fatgrams"]
+  );
+  const fiber = toNum(keys["fiber"] ?? keys["dietaryfiber"] ?? keys["fibeg"]);
+
+  // Require at least calories or protein to be a valid row
+  if (calories === undefined && protein === undefined) return null;
+
+  const mealType = (
+    keys["meal"] ?? keys["mealtype"] ?? keys["mealname"] ?? keys["category"]
+  )?.trim()?.toLowerCase() ?? "snack";
+  const foodName = (
+    keys["food"] ?? keys["foodname"] ?? keys["name"] ?? keys["item"] ?? keys["description"]
+  )?.trim();
+
+  return {
+    date,
+    mealType,
+    foodName: foodName || "Imported Entry",
+    calories,
+    protein,
+    carbs,
+    fat,
+    fiber,
+    servings: toNum(keys["servings"] ?? keys["quantity"] ?? keys["amount"]) ?? 1,
+  };
+}
+
 // ─── Auto-detect format ───────────────────────────────────────────────────────
 
 /**
@@ -330,6 +401,12 @@ export function detectDataType(headers: string[]): ImportDataType | null {
   // Workout: has activity type or duration with calories
   if (hasAny("activitytype", "workoutactivitytype", "sport") || (hasAny("calories", "activekilocalories") && hasAny("time", "duration", "durationinseconds"))) {
     return "workout";
+  }
+  // Nutrition: has calories/protein/carbs/fat (but not workout-specific columns)
+  if (hasAny("calories", "kcal", "energy", "totalcalories") && hasAny("protein", "carbs", "carbohydrates", "fat")) {
+    if (!hasAny("activitytype", "workoutactivitytype", "sport")) {
+      return "nutrition";
+    }
   }
   // Body: has weight or body fat
   if (hasAny("weight", "weightkg", "bmi", "bodyfat", "bodyfatpct", "skeletalmusclemass", "musclemass")) {
@@ -354,6 +431,7 @@ export function parseRows(
     else if (type === "sleep") parsed = parseSleepRow(row);
     else if (type === "heartrate") parsed = parseHeartRateRow(row);
     else if (type === "workout") parsed = parseWorkoutRow(row);
+    else if (type === "nutrition") parsed = parseNutritionRow(row);
 
     if (parsed) results.push(parsed);
   }

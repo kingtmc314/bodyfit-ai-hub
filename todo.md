@@ -181,3 +181,14 @@
 - [x] Fixed Sleep.tsx chartData, stat card, log table to normalize duration display
 - [x] Added stress field to sleepHistory chart procedure and Trends.tsx SleepCharts data mapping
 - [x] 35/35 tests passing, 0 TypeScript errors
+
+## Phase 24: Image Import & Enhanced CSV Import
+- [x] Added Nutrition CSV import type to csvImport.ts (ParsedNutritionRow, parseNutritionRow, detectDataType update)
+- [x] Added nutrition to importData and preview procedures in routers.ts
+- [x] Added imageImport router to routers.ts (extract + save procedures using LLM vision)
+- [x] Rewrote Import.tsx with two tabs: CSV Import and Image Import (AI)
+- [x] Image Import: drag-drop upload, base64 to LLM vision, structured JSON extraction, preview grid, date/type selector, save to Supabase
+- [x] CSV Import: added Nutrition tab to format guide, added nutrition to dataType selector
+- [x] Fixed preview dataType enum to include nutrition
+- [x] 35/35 tests passing, 0 TypeScript errors
+- [x] Push to GitHub and deploy to Vercel
