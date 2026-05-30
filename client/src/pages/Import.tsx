@@ -383,7 +383,7 @@ type ExtractedData = {
   detectedType: string;
   date: string | null;
   body: { weight: number | null; bmi: number | null; bodyFatPct: number | null; muscleMass: number | null; visceralFat: number | null };
-  sleep: { sleepScore: number | null; sleepDuration: number | null; deepSleep: number | null; remSleep: number | null; bodyBattery: number | null; pulseOx: number | null; stress: number | null };
+  sleep: { sleepScore: number | null; sleepDuration: number | null; deepSleep: number | null; remSleep: number | null; bodyBattery: number | null; pulseOx: number | null; hrv: number | null };
   heartrate: { restingHr: number | null; highHr: number | null; avgHr: number | null; hrv: number | null };
   nutrition: { calories: number | null; protein: number | null; carbs: number | null; fat: number | null; fiber: number | null };
   confidence: string;

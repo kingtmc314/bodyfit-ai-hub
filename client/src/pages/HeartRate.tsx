@@ -29,7 +29,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-const defaultForm = { date: todayHKString(), restingHr: "", highHr: "", maxHr: "", hrv: "", notes: "" };
+const defaultForm = { date: todayHKString(), restingHr: "", highHr: "", notes: "" };
 
 export default function HeartRate() {
   const { t } = useTranslation();
@@ -109,8 +109,6 @@ export default function HeartRate() {
       date: form.date,
       restingHr: form.restingHr ? Number(form.restingHr) : undefined,
       highHr: form.highHr ? Number(form.highHr) : undefined,
-      maxHr: form.maxHr ? Number(form.maxHr) : undefined,
-      hrv: form.hrv ? Number(form.hrv) : undefined,
       notes: form.notes || undefined,
     };
     if (editEntry) {
@@ -222,7 +220,7 @@ export default function HeartRate() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
-                    {["Date", "Resting HR", "High HR", "Max HR", "HRV", "Notes", ""].map(h => (
+                    {["Date", "Resting HR", "High HR", "Avg HR", "HRV (Sleep)", "Notes", ""].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs text-muted-foreground font-medium whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -240,7 +238,7 @@ export default function HeartRate() {
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => {
                             setEditEntry(r);
-                            setForm({ date: r.date, restingHr: r.restingHr ?? "", highHr: r.highHr ?? "", avgHr: r.avgHr ?? "", hrv: r.hrv ?? "", notes: r.notes ?? "" });
+                            setForm({ date: r.date, restingHr: r.restingHr ?? "", highHr: r.highHr ?? "", notes: r.notes ?? "" });
                             setShowDialog(true);
                           }}><Edit2 className="w-3.5 h-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: r.id })}><Trash2 className="w-3.5 h-3.5" /></Button>
@@ -269,8 +267,6 @@ export default function HeartRate() {
             {[
               { key: "restingHr", label: "Resting HR (bpm)" },
               { key: "highHr", label: "High HR (bpm)" },
-              { key: "maxHr", label: "Max HR (bpm)" },
-              { key: "hrv", label: "HRV (ms)" },
             ].map(f => (
               <div key={f.key}>
                 <label className="text-xs text-muted-foreground mb-1 block">{f.label}</label>

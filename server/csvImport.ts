@@ -27,7 +27,6 @@ export interface ParsedSleepRow {
   bodyBattery?: number;
   pulseOx?: number;
   respiration?: number;
-  stress?: number;
   sleepQuality?: "Poor" | "Fair" | "Good" | "Excellent";
   restingHr?: number;
   hrv?: number; // Heart Rate Variability (ms)
@@ -240,7 +239,6 @@ export function parseSleepRow(row: Record<string, string>): ParsedSleepRow | nul
     bodyBattery: toNum(keys["bodybattery"] ?? keys["bodybatteryend"]),
     pulseOx: toNum(keys["pulseox"] ?? keys["spo2"] ?? keys["bloodoxygen"]),
     respiration: toNum(keys["respiration"] ?? keys["breathingrate"] ?? keys["avgrespirationrate"]),
-    stress: toNum(keys["stress"] ?? keys["avgstress"] ?? keys["stresslevel"]),
     sleepQuality,
     restingHr: toNum(keys["restinghr"] ?? keys["restingheartrate"] ?? keys["avgrestinghr"]),
     hrv: toNum(keys["hrv"] ?? keys["heartratevariability"] ?? keys["hrvscore"] ?? keys["avghrv"]),

@@ -322,3 +322,18 @@
 - [x] 6 stat cards: score, duration, HRV, resting HR, body battery, pulse ox
 - [x] heartRateHistory procedure: HRV from sleep_logs.hrv (merged with HR data by date)
 - [x] 35/35 tests pass, 0 TypeScript errors
+
+## Phase 39: Comprehensive Bug Fix
+- [x] Remove stress field from drizzle/schema.ts (sleepLogs)
+- [x] Remove stress from server/routers.ts (sleep add, update, bulkImport, CSV import, image import AI schema - 7 locations)
+- [x] Fix bulkImport syntax error (missing closing parenthesis for z.array())
+- [x] Remove stress from server/csvImport.ts (ParsedSleepRow interface + parseSleepRow function)
+- [x] Remove stress from server/sheetsService.ts (SLEEP_COLUMNS, readSheetData, writeRowToSheet) - replace with HRV
+- [x] Remove stress from client/src/pages/Trends.tsx (sleep chartData mapping)
+- [x] Remove stress from client/src/components/QuickImportModal.tsx (FIELD_LABELS)
+- [x] Remove stress from client/src/pages/Import.tsx (ExtractedData type)
+- [x] HeartRate.tsx: removed Max HR column from table and dialog form
+- [x] Confirmed sleep_logs columns are camelCase (sleepScore, sleepDuration, hrv, restingHr etc.)
+- [x] Confirmed sleep.getAll correctly normalizes sleepDuration (minutes to hours when > 24)
+- [x] HRV chart uses sleep_logs.hrv via heartRateHistory JOIN
+- [x] 35/35 tests pass, 0 TypeScript errors

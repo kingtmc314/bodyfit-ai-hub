@@ -190,7 +190,6 @@ export const sleepLogs = pgTable("sleep_logs", {
   bodyBattery: integer("bodyBattery"),
   pulseOx: real("pulseOx"),
   respiration: real("respiration"),
-  stress: integer("stress"),
   sleepQuality: varchar("sleepQuality", { length: 50 }),
   sleepDuration: real("sleepDuration"),
   deepSleep: real("deepSleep"),

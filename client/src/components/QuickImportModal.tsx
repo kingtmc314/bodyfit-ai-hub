@@ -43,7 +43,7 @@ const CSV_FORMAT_HINTS: Record<ImportDataType, { columns: string[]; example: str
 const FIELD_LABELS: Record<string, string> = {
   weight: "體重 (kg)", bmi: "BMI", bodyFatPct: "體脂 (%)", muscleMass: "肌肉量 (kg)", visceralFat: "內臟脂肪",
   sleepScore: "睡眠評分", sleepDuration: "睡眠時長 (h)", deepSleep: "深睡 (h)", remSleep: "REM (h)",
-  bodyBattery: "身體電量", pulseOx: "血氧 (%)", stress: "壓力",
+  bodyBattery: "身體電量", pulseOx: "血氧 (%)",
   restingHr: "靜息心率", highHr: "最高心率", avgHr: "平均心率", hrv: "HRV (ms)",
   calories: "卡路里", protein: "蛋白質 (g)", carbs: "碳水 (g)", fat: "脂肪 (g)", fiber: "纖維 (g)",
 };

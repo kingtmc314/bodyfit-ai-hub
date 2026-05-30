@@ -11,7 +11,7 @@ const SHEET_TABS = {
 
 // Column mappings for Body Fitness sheet (kingsrunai naming convention)
 const BODY_COLUMNS = ["Date", "Weight (kg)", "BMI", "Body Fat %", "Fat Mass (kg)", "Muscle Mass (kg)", "BMR", "Visceral Fat", "Source", "Notes"];
-const SLEEP_COLUMNS = ["Date", "Sleep Score", "Resting HR", "Body Battery", "Pulse Ox (%)", "Respiration", "Stress", "Quality", "Duration (h)", "Source"];
+const SLEEP_COLUMNS = ["Date", "Sleep Score", "Resting HR", "Body Battery", "Pulse Ox (%)", "Respiration", "HRV", "Quality", "Duration (h)", "Source"];
 const HR_COLUMNS = ["Date", "Resting HR", "High HR", "HRV", "Source", "Notes"];
 
 function getAuth() {
@@ -71,7 +71,7 @@ export async function readSheetData(type: keyof typeof SHEET_TABS): Promise<Reco
           bodyBattery: parseFloat(String(obj["Body Battery"] ?? "")) || undefined,
           pulseOx: parseFloat(String(obj["Pulse Ox (%)"] ?? "")) || undefined,
           respiration: parseFloat(String(obj["Respiration"] ?? "")) || undefined,
-          stress: parseFloat(String(obj["Stress"] ?? "")) || undefined,
+          hrv: parseFloat(String(obj["HRV"] ?? "")) || undefined,
           quality: String(obj["Quality"] ?? "") || undefined,
           duration: parseFloat(String(obj["Duration (h)"] ?? "")) || undefined,
           source: "sheets",
@@ -124,7 +124,7 @@ export async function writeRowToSheet(type: keyof typeof SHEET_TABS, rowData: Re
         rowData.bodyBattery !== undefined ? Number(rowData.bodyBattery) : "",
         rowData.pulseOx !== undefined ? Number(rowData.pulseOx) : "",
         rowData.respiration !== undefined ? Number(rowData.respiration) : "",
-        rowData.stress !== undefined ? Number(rowData.stress) : "",
+        rowData.hrv !== undefined ? Number(rowData.hrv) : "",
         String(rowData.quality ?? ""),
         rowData.duration !== undefined ? Number(rowData.duration) : "",
         String(rowData.source ?? "app"),
