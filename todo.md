@@ -264,3 +264,17 @@
 - [x] Execute SQL migration: ALTER TABLE ... ALTER COLUMN date TYPE text USING TO_CHAR(date, 'YYYY-MM-DD')
 - [x] Verify existing data is preserved correctly after migration (heart_rate_logs shows '2026-05-23' etc.)
 - [x] Run tests (35/35 pass), save checkpoint, push to GitHub
+
+## Phase 32: Running Log Page (Manual Entry)
+- [x] Add running.addLog, running.updateLog, running.deleteLog tRPC procedures to routers.ts
+- [x] Create Running.tsx page with: stat cards (total distance, avg pace, avg HR, total runs), trend chart, log table with CRUD
+- [x] Add 記錄跑步 button to open add/edit dialog (date, distance, duration, pace, HR, cadence, notes)
+- [x] Add 跑步記錄 nav item to AppLayout sidebar (with Footprints icon)
+- [x] Register /running route in App.tsx
+- [x] Fix getStats monthly query to work with text date type
+- [x] 35/35 tests pass
+
+## Phase 33: Fix AI Food Photo Analysis
+- [x] Update analyzeFoodPhoto in routers.ts to use structured image_url content block instead of [IMAGE:url] placeholder
+- [x] TypeScript check: 0 errors
+- [x] 35/35 tests pass

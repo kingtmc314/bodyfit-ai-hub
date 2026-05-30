@@ -126,7 +126,16 @@ const nutritionRouter = router({
           },
           {
             role: "user",
-            content: `[IMAGE:${input.imageUrl}] Identify all food items visible in this image and estimate their nutritional content. Provide the response as JSON with this exact structure: {"foods":[{"name":"Food Name","nameZh":"食物中文名","quantity":150,"unit":"g","calories":250,"protein":15,"carbs":30,"fat":8,"fiber":2}],"totalCalories":250,"totalProtein":15,"totalCarbs":30,"totalFat":8,"confidence":"high","notes":"Brief description"}`
+            content: [
+              {
+                type: "image_url" as const,
+                image_url: { url: input.imageUrl, detail: "high" as const }
+              },
+              {
+                type: "text" as const,
+                text: `Identify all food items visible in this image and estimate their nutritional content. Provide the response as JSON with this exact structure: {"foods":[{"name":"Food Name","nameZh":"食物中文名","quantity":150,"unit":"g","calories":250,"protein":15,"carbs":30,"fat":8,"fiber":2}],"totalCalories":250,"totalProtein":15,"totalCarbs":30,"totalFat":8,"confidence":"high","notes":"Brief description"}`
+              }
+            ]
           }
         ],
         response_format: {
@@ -1343,14 +1352,14 @@ const runningRouter = router({
       `);
       const monthlyRows = await db.execute(sql`
         SELECT
-          TO_CHAR(date, 'YYYY-MM') as month,
+          SUBSTRING(date, 1, 7) as month,
           COUNT(*) as runs,
           SUM(distance_km::numeric) as distance,
           AVG(average_pace::numeric) as avg_pace,
           AVG(average_heart_rate::numeric) as avg_hr
         FROM running_logs
-        WHERE date >= NOW() - INTERVAL '12 months'
-        GROUP BY TO_CHAR(date, 'YYYY-MM')
+        WHERE date >= TO_CHAR(NOW() - INTERVAL '12 months', 'YYYY-MM-DD')
+        GROUP BY SUBSTRING(date, 1, 7)
         ORDER BY month ASC
       `);
       return {
@@ -1358,6 +1367,91 @@ const runningRouter = router({
         byType: (typeRows as any).rows ?? typeRows,
         monthly: (monthlyRows as any).rows ?? monthlyRows,
       };
+    }),
+
+  addLog: publicProcedure
+    .input(z.object({
+      date: z.string(),
+      runningType: z.string().optional(),
+      runningShoes: z.string().optional(),
+      distanceKm: z.number().optional(),
+      hour: z.number().optional(),
+      minutes: z.number().optional(),
+      second: z.number().optional(),
+      averagePace: z.string().optional(),
+      bestPace: z.string().optional(),
+      averageHeartRate: z.number().optional(),
+      maximumHeartRate: z.number().optional(),
+      averageCadence: z.number().optional(),
+      calories: z.number().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.execute(sql`
+        INSERT INTO running_logs (date, running_type, running_shoes, distance_km, hour, minutes, second,
+          average_pace, best_pace, average_heart_rate, maximum_heart_rate, average_cadence, calories, notes)
+        VALUES (
+          ${input.date},
+          ${input.runningType ?? null},
+          ${input.runningShoes ?? null},
+          ${input.distanceKm ?? null},
+          ${input.hour ?? null},
+          ${input.minutes ?? null},
+          ${input.second ?? null},
+          ${input.averagePace ?? null},
+          ${input.bestPace ?? null},
+          ${input.averageHeartRate ?? null},
+          ${input.maximumHeartRate ?? null},
+          ${input.averageCadence ?? null},
+          ${input.calories ?? null},
+          ${input.notes ?? null}
+        )
+      `);
+      return { success: true };
+    }),
+
+  updateLog: publicProcedure
+    .input(z.object({
+      id: z.number(),
+      date: z.string().optional(),
+      runningType: z.string().optional(),
+      runningShoes: z.string().optional(),
+      distanceKm: z.number().optional(),
+      hour: z.number().optional(),
+      minutes: z.number().optional(),
+      second: z.number().optional(),
+      averagePace: z.string().optional(),
+      bestPace: z.string().optional(),
+      averageHeartRate: z.number().optional(),
+      maximumHeartRate: z.number().optional(),
+      averageCadence: z.number().optional(),
+      calories: z.number().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { id, ...fields } = input;
+      const setClauses = Object.entries(fields)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => {
+          const col = k.replace(/([A-Z])/g, '_$1').toLowerCase();
+          return sql`${sql.raw(col)} = ${v}`;
+        });
+      if (!setClauses.length) return { success: true };
+      await db.execute(sql`UPDATE running_logs SET ${sql.join(setClauses, sql`, `)} WHERE id = ${id}`);
+      return { success: true };
+    }),
+
+  deleteLog: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.execute(sql`DELETE FROM running_logs WHERE id = ${input.id}`);
+      return { success: true };
     }),
 
   getAIAnalysis: publicProcedure
@@ -1389,7 +1483,7 @@ const runningRouter = router({
           AVG(avg_vertical_ratio::numeric) as avg_vr,
           AVG(vertical_oscillation_cm::numeric) as avg_vo
         FROM running_logs
-        WHERE date >= NOW() - INTERVAL '${sql.raw(String(input.weeks))} weeks'
+        WHERE date >= TO_CHAR(NOW() - (${input.weeks} * INTERVAL '1 week'), 'YYYY-MM-DD')
       `);
       const stats = ((statsRows as any).rows ?? statsRows)[0];
 

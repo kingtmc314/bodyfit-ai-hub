@@ -16,6 +16,7 @@ import Insights from "./pages/Insights";
 import Import from "./pages/Import";
 import Trends from "./pages/Trends";
 import Goals from "./pages/Goals";
+import Running from "./pages/Running";
 
 function Router() {
   return (
@@ -31,6 +32,7 @@ function Router() {
       <Route path="/import" component={() => <AppLayout><Import /></AppLayout>} />
       <Route path="/trends" component={() => <AppLayout><Trends /></AppLayout>} />
       <Route path="/goals" component={() => <AppLayout><Goals /></AppLayout>} />
+      <Route path="/running" component={() => <AppLayout><Running /></AppLayout>} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

@@ -18,6 +18,7 @@ import {
   Upload,
   TrendingUp,
   Target,
+  Footprints,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
@@ -35,6 +36,7 @@ const navItems = [
   { path: "/import",     key: "import",     icon: Upload,          badgeClass: "icon-badge-green"  },
   { path: "/trends",     key: "trends",     icon: TrendingUp,      badgeClass: "icon-badge-blue"   },
   { path: "/goals",      key: "goals",      icon: Target,          badgeClass: "icon-badge-orange" },
+  { path: "/running",    key: "running",    icon: Footprints,      badgeClass: "icon-badge-red"    },
 ];
 
 interface AppLayoutProps {
