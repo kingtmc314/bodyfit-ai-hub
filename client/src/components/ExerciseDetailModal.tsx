@@ -230,7 +230,7 @@ export default function ExerciseDetailModal({ exercise, open, onClose, onAddToSe
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg flex flex-col" style={{ maxHeight: "90vh" }}>
+      <DialogContent className="max-w-lg !grid-rows-[auto_1fr] overflow-hidden" style={{ maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <span className="text-lg">{equipIcon}</span>
@@ -248,7 +248,7 @@ export default function ExerciseDetailModal({ exercise, open, onClose, onAddToSe
           </DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 min-h-0">
+        <ScrollArea className="flex-1 overflow-hidden" style={{ minHeight: 0 }}>
           <div className="space-y-4 pr-2 pb-1">
             {/* Muscle diagram */}
             <div className="bg-muted/30 rounded-xl p-4">
