@@ -511,10 +511,21 @@ const sleepRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      return db.select().from(sleepLogs)
+      const rows = await db.select().from(sleepLogs)
         .where(eq(sleepLogs.userId, OWNER_USER_ID))
         .orderBy(desc(sleepLogs.date))
         .limit(input?.limit || 200);
+      // Normalize sleepDuration from minutes to hours if > 24
+      const toHrs = (v: number | null | undefined) =>
+        v != null && v > 24 ? Math.round((v / 60) * 10) / 10 : v ?? null;
+      return rows.map(r => ({
+        ...r,
+        sleepDuration: toHrs(r.sleepDuration),
+        deepSleep: toHrs(r.deepSleep),
+        remSleep: toHrs(r.remSleep),
+        lightSleep: toHrs(r.lightSleep),
+        awakeDuration: toHrs(r.awakeDuration),
+      }));
     }),
 
   add: publicProcedure
@@ -1015,7 +1026,10 @@ const chartsRouter = router({
         remSleep: sleepLogs.remSleep,
         lightSleep: sleepLogs.lightSleep,
         bodyBattery: sleepLogs.bodyBattery,
-        stress: sleepLogs.stress,
+        hrv: sleepLogs.hrv,
+        restingHr: sleepLogs.restingHr,
+        pulseOx: sleepLogs.pulseOx,
+        respiration: sleepLogs.respiration,
       }).from(sleepLogs)
         .where(and(
           eq(sleepLogs.userId, OWNER_USER_ID),
@@ -1034,24 +1048,51 @@ const chartsRouter = router({
     }),
 
   // Fetch heart rate history for charting
+  // HRV comes from sleep_logs (Garmin measures HRV during sleep)
   heartRateHistory: publicProcedure
     .input(z.object({ days: z.number().int().min(7).max(365).default(90) }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
       const sinceStr = daysAgoHK(input.days);
-      return db.select({
+      // Get heart rate data
+      const hrRows = await db.select({
         date: heartRateLogs.date,
         restingHr: heartRateLogs.restingHr,
         highHr: heartRateLogs.highHr,
         avgHr: heartRateLogs.avgHr,
-        hrv: heartRateLogs.hrv,
       }).from(heartRateLogs)
         .where(and(
           eq(heartRateLogs.userId, OWNER_USER_ID),
           sql`${heartRateLogs.date} >= ${sinceStr}`
         ))
         .orderBy(heartRateLogs.date);
+      // Get HRV from sleep_logs (same date range)
+      const sleepHrvRows = await db.select({
+        date: sleepLogs.date,
+        hrv: sleepLogs.hrv,
+      }).from(sleepLogs)
+        .where(and(
+          eq(sleepLogs.userId, OWNER_USER_ID),
+          sql`${sleepLogs.date} >= ${sinceStr}`,
+          sql`${sleepLogs.hrv} IS NOT NULL`
+        ))
+        .orderBy(sleepLogs.date);
+      // Build HRV map by date
+      const hrvByDate = new Map(sleepHrvRows.map(r => [r.date, r.hrv]));
+      // Merge: use HR rows as base, attach HRV from sleep
+      const allDates = new Set([...hrRows.map(r => r.date), ...sleepHrvRows.map(r => r.date)]);
+      const merged = Array.from(allDates).sort().map(date => {
+        const hr = hrRows.find(r => r.date === date);
+        return {
+          date,
+          restingHr: hr?.restingHr ?? null,
+          highHr: hr?.highHr ?? null,
+          avgHr: hr?.avgHr ?? null,
+          hrv: hrvByDate.get(date) ?? null,
+        };
+      });
+      return merged;
     }),
 
   // Fetch workout history for charting

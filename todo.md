@@ -309,3 +309,16 @@
 - [x] Updated sleep bulkImport CSV handler to include hrv, lightSleep, awakeDuration
 - [x] Running.tsx dialog form now includes maxCadence, avgStrideLengthM, avgVerticalRatio, verticalOscillationCm
 - [x] 35/35 tests passing, 0 TypeScript errors
+
+## Phase 38: Sleep Page Full Update
+- [x] Rewrite Sleep.tsx with all DB fields (hrv, restingHr, pulseOx, respiration, bodyBattery, bedtime, waketime)
+- [x] Remove Sleep Stages chart (no data in DB: deepSleep/remSleep all null)
+- [x] Add Bedtime & Waketime comparison chart with midnight reference line (ComposedChart)
+- [x] Add Sleep Score & Duration dual-axis comparison chart
+- [x] Add Body Battery & HRV chart
+- [x] Add Blood Ox & Respiration chart
+- [x] Update log table to show all 11 columns (date, score, quality, duration, HRV, resting HR, blood ox, respiration, body battery, bedtime, waketime)
+- [x] Update dialog form: removed deepSleep/remSleep/stress, added HRV field
+- [x] 6 stat cards: score, duration, HRV, resting HR, body battery, pulse ox
+- [x] heartRateHistory procedure: HRV from sleep_logs.hrv (merged with HR data by date)
+- [x] 35/35 tests pass, 0 TypeScript errors
