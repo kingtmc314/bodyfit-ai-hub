@@ -234,3 +234,9 @@
 - [x] Fix QuickImportModal photo tab: render extracted fields from imageImport.extract response correctly
 - [x] Fix QuickImportModal Save button: enabled when any extracted field has non-null value
 - [x] Run tests, save checkpoint, push to GitHub
+
+## Phase 28: Date Verification, Server HK Today Fix, Version Number
+- [ ] Verify date display on Vercel: HeartRate, Sleep, BodyComposition pages show correct dates
+- [ ] Fix server-side today queries to use HK timezone (Dashboard calorie/workout today boundary)
+- [ ] Add version number v1.0.1 to sidebar footer
+- [ ] Run tests, save checkpoint, push to GitHub
