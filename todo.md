@@ -192,3 +192,33 @@
 - [x] Fixed preview dataType enum to include nutrition
 - [x] 35/35 tests passing, 0 TypeScript errors
 - [x] Push to GitHub and deploy to Vercel
+
+## Phase 25: Inline Import (Photo + CSV) on Body, HeartRate, Sleep Pages
+- [ ] Create shared QuickImportModal component (photo tab + CSV tab, specific to data type)
+- [ ] BodyComposition.tsx: add "匯入" button in header → opens QuickImportModal for body data
+- [ ] HeartRate.tsx: add "匯入" button in header → opens QuickImportModal for heartrate data
+- [ ] Sleep.tsx: add "匯入" button in header → opens QuickImportModal for sleep data
+- [ ] Photo tab: drag-drop image upload → AI vision extracts data → preview → save
+- [ ] CSV tab: paste or upload CSV → auto-detect/force type → preview rows → import
+- [ ] Run tests, save checkpoint, push to GitHub
+
+## Phase 25b: Fix AI Analysis
+- [ ] Diagnose why AI analysis (Insights page / food photo analysis) fails
+- [ ] Check invokeLLM helper and BUILT_IN_FORGE_API_KEY env var
+- [ ] Fix the LLM call — check image URL format, response parsing, error handling
+- [ ] Test AI analysis end-to-end
+
+## Phase 25: QuickImportModal + Inline Import Buttons
+- [x] Fixed QuickImportModal TS errors (base64 not imageBase64, save uses structured fields not extractedData)
+- [x] Added 匯入 button to BodyComposition.tsx header (opens QuickImportModal with dataType="body")
+- [x] Added 匯入 button to HeartRate.tsx header (opens QuickImportModal with dataType="heartrate")
+- [x] Added 匯入 button to Sleep.tsx header (opens QuickImportModal with dataType="sleep")
+- [x] Fixed AI analysis DB errors (added missing columns via migrate-v2.mjs script)
+- [x] 35/35 tests passing, 0 TypeScript errors
+
+## Phase 26: Exercise Library - Images & Muscle Diagrams
+- [ ] Add imageUrl and muscleGroups display to exercise library cards
+- [ ] Source exercise action images (from wger API or similar open-source fitness API)
+- [ ] Add primary/secondary muscle group badges with muscle diagram
+- [ ] Add equipment image/icon to each exercise card
+- [ ] Show exercise detail modal with full image, instructions, and muscle diagram on card click

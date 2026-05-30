@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Scale, Trash2, Edit2, Loader2, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Plus, Scale, Trash2, Edit2, Loader2, TrendingUp, TrendingDown, Minus, Upload } from "lucide-react";
+import QuickImportModal from "@/components/QuickImportModal";
 import {
   AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, ComposedChart, Bar, BarChart
@@ -33,6 +34,7 @@ const defaultForm = { date: format(new Date(), "yyyy-MM-dd"), weight: "", bodyFa
 export default function BodyComposition() {
   const { t } = useTranslation();
   const [showDialog, setShowDialog] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
 
@@ -139,12 +141,16 @@ export default function BodyComposition() {
             <p className="text-white/70 text-sm mt-0.5">{t('body.subtitle')}</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="gap-2 bg-white/20 border-white/40 text-white hover:bg-white/30" onClick={() => setShowImport(true)}>
+              <Upload className="w-4 h-4" /> 匯入
+            </Button>
             <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
               <Plus className="w-4 h-4" /> {t('body.add_record')}
             </Button>
           </div>
         </div>
       </div>
+      <QuickImportModal open={showImport} onClose={() => setShowImport(false)} dataType="body" onSuccess={() => utils.body.getAll.invalidate()} />
 
       {/* Latest Metrics Cards */}
       {latest && (

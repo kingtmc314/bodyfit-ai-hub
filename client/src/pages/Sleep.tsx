@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Moon, Trash2, Edit2, Loader2, Star } from "lucide-react";
+import { Plus, Moon, Trash2, Edit2, Loader2, Star, Upload } from "lucide-react";
+import QuickImportModal from "@/components/QuickImportModal";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, LineChart, Line
@@ -47,6 +48,7 @@ const defaultForm = {
 export default function Sleep() {
   const { t } = useTranslation();
   const [showDialog, setShowDialog] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
 
@@ -148,12 +150,16 @@ export default function Sleep() {
             <p className="text-white/70 text-sm mt-0.5">{t('sleep.subtitle')}</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="gap-2 bg-white/20 border-white/40 text-white hover:bg-white/30" onClick={() => setShowImport(true)}>
+              <Upload className="w-4 h-4" /> 匯入
+            </Button>
             <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
               <Plus className="w-4 h-4" /> {t('sleep.add_record')}
             </Button>
           </div>
         </div>
       </div>
+      <QuickImportModal open={showImport} onClose={() => setShowImport(false)} dataType="sleep" onSuccess={() => utils.sleep.getAll.invalidate()} />
 
       {/* Latest Stats */}
       {latest && (
