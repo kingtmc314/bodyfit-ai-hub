@@ -1,9 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   LayoutDashboard,
   Utensils,
@@ -14,17 +11,16 @@ import {
   Camera,
   Sparkles,
   Menu,
-  LogOut,
   Sun,
   ChevronRight,
   Activity,
   Languages,
   Upload,
   TrendingUp,
+  Target,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
-import { trpc } from "@/lib/trpc";
 import { useTranslation } from "react-i18next";
 
 const navItems = [
@@ -38,6 +34,7 @@ const navItems = [
   { path: "/insights",   key: "insights",   icon: Sparkles,        badgeClass: "icon-badge-orange" },
   { path: "/import",     key: "import",     icon: Upload,          badgeClass: "icon-badge-green"  },
   { path: "/trends",     key: "trends",     icon: TrendingUp,      badgeClass: "icon-badge-blue"   },
+  { path: "/goals",      key: "goals",      icon: Target,          badgeClass: "icon-badge-orange" },
 ];
 
 interface AppLayoutProps {
@@ -47,12 +44,8 @@ interface AppLayoutProps {
 export default function AppLayout({ children }: AppLayoutProps) {
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { user, loading, isAuthenticated, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { t, i18n } = useTranslation();
-  const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => { window.location.href = "/login"; }
-  });
 
   const toggleLanguage = () => {
     const next = i18n.language === 'zh' ? 'en' : 'zh';
@@ -60,29 +53,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
     localStorage.setItem('bf-lang', next);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl hero-gradient flex items-center justify-center shadow-lg">
-            <Activity className="w-8 h-8 text-white animate-pulse" />
-          </div>
-          <p className="text-muted-foreground text-sm font-medium">{t('common.loading')}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    window.location.href = getLoginUrl();
-    return null;
-  }
-
-  const initials = user?.name?.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) || "BF";
-
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
-      {/* Logo — sunny gradient */}
+      {/* Logo */}
       <div className="px-5 py-5 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl hero-gradient flex items-center justify-center shadow-md">
@@ -118,15 +91,15 @@ export default function AppLayout({ children }: AppLayoutProps) {
         })}
       </nav>
 
-      {/* User section */}
+      {/* Bottom controls */}
       <div className="border-t border-sidebar-border p-3">
         <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl bg-secondary/50">
-          <Avatar className="w-8 h-8 shrink-0">
-            <AvatarFallback className="text-xs font-bold text-white hero-gradient">{initials}</AvatarFallback>
-          </Avatar>
+          <div className="w-8 h-8 rounded-full hero-gradient flex items-center justify-center shrink-0">
+            <Activity className="w-4 h-4 text-white" />
+          </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-foreground truncate">{user?.name || "User"}</p>
-            <p className="text-xs text-muted-foreground truncate">{user?.email || ""}</p>
+            <p className="text-sm font-semibold text-foreground truncate">kingmath</p>
+            <p className="text-xs text-muted-foreground truncate">BodyFit AI Hub</p>
           </div>
           <div className="flex items-center gap-0.5">
             {/* Language toggle */}
@@ -145,14 +118,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
               onClick={toggleTheme}
             >
               {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-            </Button>
-            {/* Logout */}
-            <Button
-              variant="ghost" size="icon"
-              className="w-7 h-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
-              onClick={() => logoutMutation.mutate()}
-            >
-              <LogOut className="w-3.5 h-3.5" />
             </Button>
           </div>
         </div>

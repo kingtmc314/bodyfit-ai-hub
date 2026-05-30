@@ -15,6 +15,13 @@
       "when": 1780065099185,
       "tag": "0001_broken_lyja",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1780112815510,
+      "tag": "0002_clumsy_vector",
+      "breakpoints": true
     }
   ]
 }

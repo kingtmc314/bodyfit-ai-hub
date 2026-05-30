@@ -231,3 +231,32 @@ export const aiInsights = pgTable("ai_insights", {
 
 export type AiInsight = typeof aiInsights.$inferSelect;
 export type InsertAiInsight = typeof aiInsights.$inferInsert;
+
+// ─── Health Goals ─────────────────────────────────────────────────────────────
+export const goalTypeEnum = pgEnum("goal_type", [
+  "weight",
+  "body_fat_pct",
+  "muscle_mass",
+  "sleep_duration",
+  "sleep_score",
+  "resting_hr",
+  "hrv",
+  "daily_calories",
+  "daily_protein",
+  "workout_duration",
+]);
+
+export const healthGoals = pgTable("health_goals", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  goalType: goalTypeEnum("goalType").notNull(),
+  targetValue: real("targetValue").notNull(),
+  unit: varchar("unit", { length: 30 }),
+  notes: text("notes"),
+  isActive: boolean("isActive").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type HealthGoal = typeof healthGoals.$inferSelect;
+export type InsertHealthGoal = typeof healthGoals.$inferInsert;

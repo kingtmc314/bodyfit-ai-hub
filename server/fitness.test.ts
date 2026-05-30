@@ -90,14 +90,16 @@ describe("nutrition.getMealLogs", () => {
     expect(Array.isArray(result)).toBe(true);
   });
 
-  it("throws UNAUTHORIZED when not logged in", async () => {
+  it("returns empty array even when user is null (public procedure)", async () => {
     const ctx: TrpcContext = {
       user: null,
       req: { protocol: "https", headers: {} } as TrpcContext["req"],
       res: { clearCookie: vi.fn() } as unknown as TrpcContext["res"],
     };
     const caller = appRouter.createCaller(ctx);
-    await expect(caller.nutrition.getMealLogs({ date: "2026-05-29" })).rejects.toThrow();
+    // Auth removed — all procedures are public, hardcoded to OWNER_USER_ID=2
+    const result = await caller.nutrition.getMealLogs({ date: "2026-05-29" });
+    expect(Array.isArray(result)).toBe(true);
   });
 });
 

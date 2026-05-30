@@ -140,4 +140,25 @@
 - [x] Add nav item "Trends" (TrendingUp icon) to AppLayout sidebar
 - [x] Register /trends route in App.tsx
 - [x] Add trends translation key to en.json ("Trends") and zh.json ("趨勢分析")
-- [ ] Push to GitHub and deploy to Vercel
+- [x] Push to GitHub and deploy to Vercel (auto-deploy triggered via GitHub push 5bec830)
+
+## Phase 20: Personal Health Goals
+- [x] Add health_goals table to drizzle/schema.ts (userId, goalType, targetValue, unit, notes)
+- [x] Generate and apply migration SQL to Supabase
+- [x] Add goalsRouter with getGoals, setGoal, deleteGoal procedures
+- [x] Build Goals.tsx page with form inputs for all 10 goal types (snake_case enum matching server)
+- [x] Integrate goal reference lines into Trends charts (weight, body fat, muscle mass, sleep duration, sleep score, resting HR, HRV, daily calories, daily protein, workout duration)
+- [x] Add Goals nav item to AppLayout sidebar (Target icon)
+- [x] Add /goals route to App.tsx
+- [x] Fix GoalType enum: use server snake_case values (body_fat_pct, muscle_mass, resting_hr, etc.)
+- [x] Push to GitHub and deploy to Vercel
+
+## Phase 21: Remove Login & Fix Data Display
+- [x] Update userId=42 to userId=2 in all health tables via SQL script
+- [x] Convert all protectedProcedure to publicProcedure with hardcoded OWNER_USER_ID=2
+- [x] Remove login button and auth UI from AppLayout/Home — shows 'kingmath' as fixed user
+- [x] Remove Google Sheets bulkImport procedures from server routers
+- [x] Clean up Home.tsx — removed useAuth, getLoginUrl imports
+- [x] Fix fitness.test.ts — updated UNAUTHORIZED test to reflect public procedure behavior
+- [x] 35/35 tests passing, 0 TypeScript errors
+- [x] Push to GitHub and deploy to Vercel

@@ -1,12 +1,13 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { getDb } from "./db";
 import {
   mealLogs, foodItems, workoutSessions, workoutSets, exercises,
-  bodyComposition, heartRateLogs, sleepLogs, progressPhotos, aiInsights
+  bodyComposition, heartRateLogs, sleepLogs, progressPhotos, aiInsights,
+  healthGoals
 } from "../drizzle/schema";
 import { eq, and, desc, gte, lte, like, or, sql } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -14,11 +15,14 @@ import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import { parseRows, detectDataType, type ImportDataType } from "./csvImport";
 import Papa from "papaparse";
+// Fixed owner user ID - no login required
+const OWNER_USER_ID = 2;
+
 
 // ─── Nutrition Router ─────────────────────────────────────────────────────────
 const nutritionRouter = router({
   // Search food database
-  searchFoods: protectedProcedure
+  searchFoods: publicProcedure
     .input(z.object({ query: z.string().min(1) }))
     .query(async ({ input }) => {
       const db = await getDb();
@@ -29,25 +33,25 @@ const nutritionRouter = router({
     }),
 
   // Get meal logs for a date
-  getMealLogs: protectedProcedure
+  getMealLogs: publicProcedure
     .input(z.object({ date: z.string() }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
       return db.select().from(mealLogs)
-        .where(and(eq(mealLogs.userId, ctx.user.id), sql`${mealLogs.loggedAt} >= ${new Date(input.date + "T00:00:00")}`, sql`${mealLogs.loggedAt} <= ${new Date(input.date + "T23:59:59")}`))
+        .where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.loggedAt} >= ${new Date(input.date + "T00:00:00")}`, sql`${mealLogs.loggedAt} <= ${new Date(input.date + "T23:59:59")}`))
         .orderBy(mealLogs.createdAt);
     }),
 
   // Get meal logs for date range
-  getMealLogsRange: protectedProcedure
+  getMealLogsRange: publicProcedure
     .input(z.object({ startDate: z.string(), endDate: z.string() }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
       return db.select().from(mealLogs)
         .where(and(
-          eq(mealLogs.userId, ctx.user.id),
+          eq(mealLogs.userId, OWNER_USER_ID),
           sql`${mealLogs.loggedAt} >= ${new Date(input.startDate)}`,
           sql`${mealLogs.loggedAt} <= ${new Date(input.endDate)}`
         ))
@@ -55,7 +59,7 @@ const nutritionRouter = router({
     }),
 
   // Add meal log
-  addMealLog: protectedProcedure
+  addMealLog: publicProcedure
     .input(z.object({
       date: z.string(),
       mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
@@ -74,12 +78,12 @@ const nutritionRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(mealLogs).values({ ...input, userId: ctx.user.id });
+      await db.insert(mealLogs).values({ ...input, userId: OWNER_USER_ID });
       return { success: true };
     }),
 
   // Update meal log
-  updateMealLog: protectedProcedure
+  updateMealLog: publicProcedure
     .input(z.object({
       id: z.number(),
       foodName: z.string().optional(),
@@ -95,22 +99,22 @@ const nutritionRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const { id, ...data } = input;
-      await db.update(mealLogs).set(data).where(and(eq(mealLogs.id, id), eq(mealLogs.userId, ctx.user.id)));
+      await db.update(mealLogs).set(data).where(and(eq(mealLogs.id, id), eq(mealLogs.userId, OWNER_USER_ID)));
       return { success: true };
     }),
 
   // Delete meal log
-  deleteMealLog: protectedProcedure
+  deleteMealLog: publicProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.delete(mealLogs).where(and(eq(mealLogs.id, input.id), eq(mealLogs.userId, ctx.user.id)));
+      await db.delete(mealLogs).where(and(eq(mealLogs.id, input.id), eq(mealLogs.userId, OWNER_USER_ID)));
       return { success: true };
     }),
 
   // AI food photo analysis
-  analyzeFoodPhoto: protectedProcedure
+  analyzeFoodPhoto: publicProcedure
     .input(z.object({ imageUrl: z.string(), imageBase64: z.string().optional() }))
     .mutation(async ({ input }) => {
       const response = await invokeLLM({
@@ -170,11 +174,11 @@ const nutritionRouter = router({
     }),
 
   // Upload food photo to storage
-  uploadFoodPhoto: protectedProcedure
+  uploadFoodPhoto: publicProcedure
     .input(z.object({ base64: z.string(), mimeType: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const buffer = Buffer.from(input.base64, "base64");
-      const key = `food-photos/${ctx.user.id}/${nanoid()}.jpg`;
+      const key = `food-photos/${OWNER_USER_ID}/${nanoid()}.jpg`;
       const { url } = await storagePut(key, buffer, input.mimeType);
       return { url, key };
     }),
@@ -183,13 +187,13 @@ const nutritionRouter = router({
 // ─── Workout Router ───────────────────────────────────────────────────────────
 const workoutRouter = router({
   // Get all exercises (built-in + user's custom)
-  getExercises: protectedProcedure
+  getExercises: publicProcedure
     .input(z.object({ muscleGroup: z.string().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
       const conditions = [
-        or(eq(exercises.isCustom, false), eq(exercises.userId, ctx.user.id))
+        or(eq(exercises.isCustom, false), eq(exercises.userId, OWNER_USER_ID))
       ];
       if (input?.muscleGroup) {
         conditions.push(eq(exercises.muscleGroup, input.muscleGroup));
@@ -198,7 +202,7 @@ const workoutRouter = router({
     }),
 
   // Add custom exercise
-  addExercise: protectedProcedure
+  addExercise: publicProcedure
     .input(z.object({
       name: z.string(),
       nameZh: z.string().optional(),
@@ -209,30 +213,30 @@ const workoutRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(exercises).values({ ...input, isCustom: true, userId: ctx.user.id });
+      await db.insert(exercises).values({ ...input, isCustom: true, userId: OWNER_USER_ID });
       return { success: true };
     }),
 
   // Get workout sessions
-  getSessions: protectedProcedure
+  getSessions: publicProcedure
     .input(z.object({ startDate: z.string().optional(), endDate: z.string().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      const conditions = [eq(workoutSessions.userId, ctx.user.id)];
+      const conditions = [eq(workoutSessions.userId, OWNER_USER_ID)];
       if (input?.startDate) conditions.push(sql`${workoutSessions.startTime} >= ${new Date(input.startDate)}`);
       if (input?.endDate) conditions.push(sql`${workoutSessions.startTime} <= ${new Date(input.endDate)}`);
       return db.select().from(workoutSessions).where(and(...conditions)).orderBy(desc(workoutSessions.startTime));
     }),
 
   // Get session with sets
-  getSessionWithSets: protectedProcedure
+  getSessionWithSets: publicProcedure
     .input(z.object({ sessionId: z.number() }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return null;
       const sessions = await db.select().from(workoutSessions)
-        .where(and(eq(workoutSessions.id, input.sessionId), eq(workoutSessions.userId, ctx.user.id)))
+        .where(and(eq(workoutSessions.id, input.sessionId), eq(workoutSessions.userId, OWNER_USER_ID)))
         .limit(1);
       if (!sessions[0]) return null;
       const sets = await db.select().from(workoutSets)
@@ -242,7 +246,7 @@ const workoutRouter = router({
     }),
 
   // Create workout session
-  createSession: protectedProcedure
+  createSession: publicProcedure
     .input(z.object({
       date: z.string(),
       name: z.string().optional(),
@@ -252,12 +256,12 @@ const workoutRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const result = await db.insert(workoutSessions).values({ ...input, userId: ctx.user.id }).returning({ id: workoutSessions.id });
+      const result = await db.insert(workoutSessions).values({ ...input, userId: OWNER_USER_ID }).returning({ id: workoutSessions.id });
       return { success: true, id: result[0]?.id ?? 0 };
     }),
 
   // Update session
-  updateSession: protectedProcedure
+  updateSession: publicProcedure
     .input(z.object({
       id: z.number(),
       name: z.string().optional(),
@@ -269,23 +273,23 @@ const workoutRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const { id, ...data } = input;
-      await db.update(workoutSessions).set(data).where(and(eq(workoutSessions.id, id), eq(workoutSessions.userId, ctx.user.id)));
+      await db.update(workoutSessions).set(data).where(and(eq(workoutSessions.id, id), eq(workoutSessions.userId, OWNER_USER_ID)));
       return { success: true };
     }),
 
   // Delete session
-  deleteSession: protectedProcedure
+  deleteSession: publicProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       await db.delete(workoutSets).where(eq(workoutSets.sessionId, input.id));
-      await db.delete(workoutSessions).where(and(eq(workoutSessions.id, input.id), eq(workoutSessions.userId, ctx.user.id)));
+      await db.delete(workoutSessions).where(and(eq(workoutSessions.id, input.id), eq(workoutSessions.userId, OWNER_USER_ID)));
       return { success: true };
     }),
 
   // Add workout set
-  addSet: protectedProcedure
+  addSet: publicProcedure
     .input(z.object({
       sessionId: z.number(),
       exerciseId: z.number(),
@@ -305,7 +309,7 @@ const workoutRouter = router({
     }),
 
   // Update set
-  updateSet: protectedProcedure
+  updateSet: publicProcedure
     .input(z.object({
       id: z.number(),
       reps: z.number().optional(),
@@ -322,7 +326,7 @@ const workoutRouter = router({
     }),
 
   // Delete set
-  deleteSet: protectedProcedure
+  deleteSet: publicProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -334,18 +338,18 @@ const workoutRouter = router({
 
 // ─── Body Metrics Router ──────────────────────────────────────────────────────
 const bodyRouter = router({
-  getAll: protectedProcedure
+  getAll: publicProcedure
     .input(z.object({ limit: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
       return db.select().from(bodyComposition)
-        .where(eq(bodyComposition.userId, ctx.user.id))
+        .where(eq(bodyComposition.userId, OWNER_USER_ID))
         .orderBy(desc(bodyComposition.date))
         .limit(input?.limit || 100);
     }),
 
-  add: protectedProcedure
+  add: publicProcedure
     .input(z.object({
       date: z.string(),
       weight: z.number().optional(),
@@ -361,11 +365,11 @@ const bodyRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(bodyComposition).values({ ...input, userId: ctx.user.id });
+      await db.insert(bodyComposition).values({ ...input, userId: OWNER_USER_ID });
       return { success: true };
     }),
 
-  update: protectedProcedure
+  update: publicProcedure
     .input(z.object({
       id: z.number(),
       date: z.string().optional(),
@@ -382,21 +386,21 @@ const bodyRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const { id, ...data } = input;
-      await db.update(bodyComposition).set(data).where(and(eq(bodyComposition.id, id), eq(bodyComposition.userId, ctx.user.id)));
+      await db.update(bodyComposition).set(data).where(and(eq(bodyComposition.id, id), eq(bodyComposition.userId, OWNER_USER_ID)));
       return { success: true };
     }),
 
-  delete: protectedProcedure
+  delete: publicProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.delete(bodyComposition).where(and(eq(bodyComposition.id, input.id), eq(bodyComposition.userId, ctx.user.id)));
+      await db.delete(bodyComposition).where(and(eq(bodyComposition.id, input.id), eq(bodyComposition.userId, OWNER_USER_ID)));
       return { success: true };
     }),
 
   // Bulk import from Google Sheets
-  bulkImport: protectedProcedure
+  bulkImport: publicProcedure
     .input(z.array(z.object({
       date: z.string(),
       weight: z.number().optional(),
@@ -411,7 +415,7 @@ const bodyRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       for (const row of input) {
-        await db.insert(bodyComposition).values({ ...row, userId: ctx.user.id, source: "sheets" })
+        await db.insert(bodyComposition).values({ ...row, userId: OWNER_USER_ID, source: "sheets" })
           .onConflictDoNothing().catch(() => {});
       }
       return { success: true, count: input.length };
@@ -420,18 +424,18 @@ const bodyRouter = router({
 
 // ─── Heart Rate Router ────────────────────────────────────────────────────────
 const heartRateRouter = router({
-  getAll: protectedProcedure
+  getAll: publicProcedure
     .input(z.object({ limit: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
       return db.select().from(heartRateLogs)
-        .where(eq(heartRateLogs.userId, ctx.user.id))
+        .where(eq(heartRateLogs.userId, OWNER_USER_ID))
         .orderBy(desc(heartRateLogs.date))
         .limit(input?.limit || 200);
     }),
 
-  add: protectedProcedure
+  add: publicProcedure
     .input(z.object({
       date: z.string(),
       restingHr: z.number().optional(),
@@ -444,11 +448,11 @@ const heartRateRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(heartRateLogs).values({ ...input, userId: ctx.user.id });
+      await db.insert(heartRateLogs).values({ ...input, userId: OWNER_USER_ID });
       return { success: true };
     }),
 
-  update: protectedProcedure
+  update: publicProcedure
     .input(z.object({
       id: z.number(),
       date: z.string().optional(),
@@ -461,20 +465,20 @@ const heartRateRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const { id, ...data } = input;
-      await db.update(heartRateLogs).set(data).where(and(eq(heartRateLogs.id, id), eq(heartRateLogs.userId, ctx.user.id)));
+      await db.update(heartRateLogs).set(data).where(and(eq(heartRateLogs.id, id), eq(heartRateLogs.userId, OWNER_USER_ID)));
       return { success: true };
     }),
 
-  delete: protectedProcedure
+  delete: publicProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.delete(heartRateLogs).where(and(eq(heartRateLogs.id, input.id), eq(heartRateLogs.userId, ctx.user.id)));
+      await db.delete(heartRateLogs).where(and(eq(heartRateLogs.id, input.id), eq(heartRateLogs.userId, OWNER_USER_ID)));
       return { success: true };
     }),
 
-  bulkImport: protectedProcedure
+  bulkImport: publicProcedure
     .input(z.array(z.object({
       date: z.string(),
       restingHr: z.number().optional(),
@@ -484,7 +488,7 @@ const heartRateRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       for (const row of input) {
-        await db.insert(heartRateLogs).values({ ...row, userId: ctx.user.id, source: "sheets" }).catch(() => {});
+        await db.insert(heartRateLogs).values({ ...row, userId: OWNER_USER_ID, source: "sheets" }).catch(() => {});
       }
       return { success: true, count: input.length };
     }),
@@ -492,18 +496,18 @@ const heartRateRouter = router({
 
 // ─── Sleep Router ─────────────────────────────────────────────────────────────
 const sleepRouter = router({
-  getAll: protectedProcedure
+  getAll: publicProcedure
     .input(z.object({ limit: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
       return db.select().from(sleepLogs)
-        .where(eq(sleepLogs.userId, ctx.user.id))
+        .where(eq(sleepLogs.userId, OWNER_USER_ID))
         .orderBy(desc(sleepLogs.date))
         .limit(input?.limit || 200);
     }),
 
-  add: protectedProcedure
+  add: publicProcedure
     .input(z.object({
       date: z.string(),
       score: z.number().optional(),
@@ -525,14 +529,14 @@ const sleepRouter = router({
       const { score, quality, duration, restingHr: _rhr, ...rest } = input;
       await db.insert(sleepLogs).values({
         ...rest,
-        userId: ctx.user.id,
+        userId: OWNER_USER_ID,
         sleepScore: score,
         sleepQuality: quality,
         sleepDuration: duration,
       });
       return { success: true };
     }),
-  update: protectedProcedure
+  update: publicProcedure
     .input(z.object({
       id: z.number(),
       date: z.string().optional(),
@@ -550,20 +554,20 @@ const sleepRouter = router({
       if (!db) throw new Error("DB unavailable");
       const { id, score, quality, duration, restingHr: _rhr, ...rest } = input;
       const data = { ...rest, sleepScore: score, sleepQuality: quality, sleepDuration: duration };
-      await db.update(sleepLogs).set(data).where(and(eq(sleepLogs.id, id), eq(sleepLogs.userId, ctx.user.id)));
+      await db.update(sleepLogs).set(data).where(and(eq(sleepLogs.id, id), eq(sleepLogs.userId, OWNER_USER_ID)));
       return { success: true };
     }),
 
-  delete: protectedProcedure
+  delete: publicProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.delete(sleepLogs).where(and(eq(sleepLogs.id, input.id), eq(sleepLogs.userId, ctx.user.id)));
+      await db.delete(sleepLogs).where(and(eq(sleepLogs.id, input.id), eq(sleepLogs.userId, OWNER_USER_ID)));
       return { success: true };
     }),
 
-  bulkImport: protectedProcedure
+  bulkImport: publicProcedure
     .input(z.array(z.object({
       date: z.string(),
       score: z.number().optional(),
@@ -578,7 +582,7 @@ const sleepRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       for (const row of input) {
-        await db.insert(sleepLogs).values({ ...row, userId: ctx.user.id, source: "sheets" }).catch(() => {});
+        await db.insert(sleepLogs).values({ ...row, userId: OWNER_USER_ID, source: "sheets" }).catch(() => {});
       }
       return { success: true, count: input.length };
     }),
@@ -586,15 +590,15 @@ const sleepRouter = router({
 
 // ─── Progress Photos Router ───────────────────────────────────────────────────
 const photosRouter = router({
-  getAll: protectedProcedure.query(async ({ ctx }) => {
+  getAll: publicProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
     return db.select().from(progressPhotos)
-      .where(eq(progressPhotos.userId, ctx.user.id))
+      .where(eq(progressPhotos.userId, OWNER_USER_ID))
       .orderBy(desc(progressPhotos.date));
   }),
 
-  upload: protectedProcedure
+  upload: publicProcedure
     .input(z.object({
       base64: z.string(),
       mimeType: z.string(),
@@ -605,12 +609,12 @@ const photosRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const buffer = Buffer.from(input.base64, "base64");
-      const key = `progress-photos/${ctx.user.id}/${nanoid()}.jpg`;
+      const key = `progress-photos/${OWNER_USER_ID}/${nanoid()}.jpg`;
       const { url } = await storagePut(key, buffer, input.mimeType);
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       await db.insert(progressPhotos).values({
-        userId: ctx.user.id,
+        userId: OWNER_USER_ID,
         date: input.date,
         photoUrl: url,
         fileKey: key,
@@ -621,29 +625,29 @@ const photosRouter = router({
       return { success: true, url };
     }),
 
-  delete: protectedProcedure
+  delete: publicProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.delete(progressPhotos).where(and(eq(progressPhotos.id, input.id), eq(progressPhotos.userId, ctx.user.id)));
+      await db.delete(progressPhotos).where(and(eq(progressPhotos.id, input.id), eq(progressPhotos.userId, OWNER_USER_ID)));
       return { success: true };
     }),
 });
 
 // ─── AI Insights Router ───────────────────────────────────────────────────────
 const insightsRouter = router({
-  getLatest: protectedProcedure.query(async ({ ctx }) => {
+  getLatest: publicProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return null;
     const results = await db.select().from(aiInsights)
-      .where(eq(aiInsights.userId, ctx.user.id))
+      .where(eq(aiInsights.userId, OWNER_USER_ID))
       .orderBy(desc(aiInsights.weekStart))
       .limit(4);
     return results;
   }),
 
-  generate: protectedProcedure
+  generate: publicProcedure
     .input(z.object({ type: z.enum(["nutrition", "workout", "recovery", "overall"]).optional() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -656,11 +660,11 @@ const insightsRouter = router({
       const todayStr = today.toISOString().split("T")[0];
 
       const [meals, sessions, body, sleep, hr] = await Promise.all([
-        db.select().from(mealLogs).where(and(eq(mealLogs.userId, ctx.user.id), sql`${mealLogs.loggedAt} >= ${weekAgo}`)).limit(50),
-        db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, ctx.user.id), sql`${workoutSessions.startTime} >= ${weekAgo}`)),
-        db.select().from(bodyComposition).where(eq(bodyComposition.userId, ctx.user.id)).orderBy(desc(bodyComposition.date)).limit(5),
-        db.select().from(sleepLogs).where(and(eq(sleepLogs.userId, ctx.user.id), gte(sleepLogs.date, weekAgoStr))),
-        db.select().from(heartRateLogs).where(and(eq(heartRateLogs.userId, ctx.user.id), gte(heartRateLogs.date, weekAgoStr))),
+        db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.loggedAt} >= ${weekAgo}`)).limit(50),
+        db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, OWNER_USER_ID), sql`${workoutSessions.startTime} >= ${weekAgo}`)),
+        db.select().from(bodyComposition).where(eq(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc(bodyComposition.date)).limit(5),
+        db.select().from(sleepLogs).where(and(eq(sleepLogs.userId, OWNER_USER_ID), gte(sleepLogs.date, weekAgoStr))),
+        db.select().from(heartRateLogs).where(and(eq(heartRateLogs.userId, OWNER_USER_ID), gte(heartRateLogs.date, weekAgoStr))),
       ]);
 
       const dataContext = JSON.stringify({ meals, sessions, body, sleep, hr }, null, 2);
@@ -683,7 +687,7 @@ const insightsRouter = router({
       const weekStart = weekAgoStr;
 
       await db.insert(aiInsights).values({
-        userId: ctx.user.id,
+        userId: OWNER_USER_ID,
         weekStart,
         content,
         period: input.type || "overall",
@@ -695,7 +699,7 @@ const insightsRouter = router({
 
 // ─── Dashboard Router ─────────────────────────────────────────────────────────
 const dashboardRouter = router({
-  getSummary: protectedProcedure.query(async ({ ctx }) => {
+  getSummary: publicProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return null;
 
@@ -705,12 +709,12 @@ const dashboardRouter = router({
     const weekAgoDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const weekAgoStr = weekAgoDate.toISOString().split("T")[0];
     const [todayMeals, recentSessions, latestBody, latestSleep, latestHr, weekMeals] = await Promise.all([
-      db.select().from(mealLogs).where(and(eq(mealLogs.userId, ctx.user.id), sql`${mealLogs.loggedAt} >= ${todayStart}`, sql`${mealLogs.loggedAt} <= ${todayEnd}`)),
-      db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, ctx.user.id), sql`${workoutSessions.startTime} >= ${weekAgoDate}`)).orderBy(desc(workoutSessions.startTime)).limit(7),
-      db.select().from(bodyComposition).where(eq(bodyComposition.userId, ctx.user.id)).orderBy(desc(bodyComposition.date)).limit(2),
-      db.select().from(sleepLogs).where(eq(sleepLogs.userId, ctx.user.id)).orderBy(desc(sleepLogs.date)).limit(1),
-      db.select().from(heartRateLogs).where(eq(heartRateLogs.userId, ctx.user.id)).orderBy(desc(heartRateLogs.date)).limit(1),
-      db.select().from(mealLogs).where(and(eq(mealLogs.userId, ctx.user.id), sql`${mealLogs.loggedAt} >= ${weekAgoDate}`)),
+      db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.loggedAt} >= ${todayStart}`, sql`${mealLogs.loggedAt} <= ${todayEnd}`)),
+      db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, OWNER_USER_ID), sql`${workoutSessions.startTime} >= ${weekAgoDate}`)).orderBy(desc(workoutSessions.startTime)).limit(7),
+      db.select().from(bodyComposition).where(eq(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc(bodyComposition.date)).limit(2),
+      db.select().from(sleepLogs).where(eq(sleepLogs.userId, OWNER_USER_ID)).orderBy(desc(sleepLogs.date)).limit(1),
+      db.select().from(heartRateLogs).where(eq(heartRateLogs.userId, OWNER_USER_ID)).orderBy(desc(heartRateLogs.date)).limit(1),
+      db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.loggedAt} >= ${weekAgoDate}`)),
     ]);
 
     const todayCalories = todayMeals.reduce((s, m) => s + (m.calories ?? 0), 0);
@@ -747,7 +751,7 @@ const csvImportRouter = router({
    * Parse a CSV string and return a preview (first 5 rows) + detected type.
    * No data is written to the DB at this stage.
    */
-  preview: protectedProcedure
+  preview: publicProcedure
     .input(z.object({
       csvText: z.string().max(5_000_000), // 5 MB limit
       dataType: z.enum(["body", "sleep", "heartrate", "workout", "auto"]).default("auto"),
@@ -781,7 +785,7 @@ const csvImportRouter = router({
    * Import all rows from a CSV string into the database.
    * Returns counts of inserted / skipped rows.
    */
-  importData: protectedProcedure
+  importData: publicProcedure
     .input(z.object({
       csvText: z.string().max(5_000_000),
       dataType: z.enum(["body", "sleep", "heartrate", "workout"]),
@@ -804,7 +808,7 @@ const csvImportRouter = router({
         for (const r of rows as import("./csvImport").ParsedBodyRow[]) {
           try {
             await db.insert(bodyComposition).values({
-              userId: ctx.user.id,
+              userId: OWNER_USER_ID,
               date: r.date,
               weight: r.weight,
               bmi: r.bmi,
@@ -822,7 +826,7 @@ const csvImportRouter = router({
         for (const r of rows as import("./csvImport").ParsedSleepRow[]) {
           try {
             await db.insert(sleepLogs).values({
-              userId: ctx.user.id,
+              userId: OWNER_USER_ID,
               date: r.date,
               sleepScore: r.sleepScore,
               sleepDuration: r.sleepDuration,
@@ -843,7 +847,7 @@ const csvImportRouter = router({
         for (const r of rows as import("./csvImport").ParsedHeartRateRow[]) {
           try {
             await db.insert(heartRateLogs).values({
-              userId: ctx.user.id,
+              userId: OWNER_USER_ID,
               date: r.date,
               restingHr: r.restingHr,
               highHr: r.highHr,
@@ -858,7 +862,7 @@ const csvImportRouter = router({
         for (const r of rows as import("./csvImport").ParsedWorkoutRow[]) {
           try {
             const [session] = await db.insert(workoutSessions).values({
-              userId: ctx.user.id,
+              userId: OWNER_USER_ID,
               name: r.activityName ?? r.activityType ?? "Imported Workout",
               startTime: new Date(r.date + "T00:00:00Z"),
               duration: r.durationMinutes,
@@ -882,7 +886,7 @@ const csvImportRouter = router({
 const COOKIE_NAME_CONST = "bf_session";
 const chartsRouter = router({
   // Fetch body composition history for charting
-  bodyHistory: protectedProcedure
+  bodyHistory: publicProcedure
     .input(z.object({ days: z.number().int().min(7).max(365).default(90) }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
@@ -897,14 +901,14 @@ const chartsRouter = router({
         bmi: bodyComposition.bmi,
       }).from(bodyComposition)
         .where(and(
-          eq(bodyComposition.userId, ctx.user.id),
+          eq(bodyComposition.userId, OWNER_USER_ID),
           sql`${bodyComposition.date} >= ${since.toISOString().slice(0, 10)}`
         ))
         .orderBy(bodyComposition.date);
     }),
 
   // Fetch sleep history for charting
-  sleepHistory: protectedProcedure
+  sleepHistory: publicProcedure
     .input(z.object({ days: z.number().int().min(7).max(365).default(90) }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
@@ -921,14 +925,14 @@ const chartsRouter = router({
         bodyBattery: sleepLogs.bodyBattery,
       }).from(sleepLogs)
         .where(and(
-          eq(sleepLogs.userId, ctx.user.id),
+          eq(sleepLogs.userId, OWNER_USER_ID),
           sql`${sleepLogs.date} >= ${since.toISOString().slice(0, 10)}`
         ))
         .orderBy(sleepLogs.date);
     }),
 
   // Fetch heart rate history for charting
-  heartRateHistory: protectedProcedure
+  heartRateHistory: publicProcedure
     .input(z.object({ days: z.number().int().min(7).max(365).default(90) }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
@@ -943,14 +947,14 @@ const chartsRouter = router({
         hrv: heartRateLogs.hrv,
       }).from(heartRateLogs)
         .where(and(
-          eq(heartRateLogs.userId, ctx.user.id),
+          eq(heartRateLogs.userId, OWNER_USER_ID),
           sql`${heartRateLogs.date} >= ${since.toISOString().slice(0, 10)}`
         ))
         .orderBy(heartRateLogs.date);
     }),
 
   // Fetch workout history for charting
-  workoutHistory: protectedProcedure
+  workoutHistory: publicProcedure
     .input(z.object({ days: z.number().int().min(7).max(365).default(90) }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
@@ -964,14 +968,14 @@ const chartsRouter = router({
         name: workoutSessions.name,
       }).from(workoutSessions)
         .where(and(
-          eq(workoutSessions.userId, ctx.user.id),
+          eq(workoutSessions.userId, OWNER_USER_ID),
           sql`${workoutSessions.startTime} >= ${since}`
         ))
         .orderBy(workoutSessions.startTime);
     }),
 
   // Fetch daily calorie totals for charting
-  calorieHistory: protectedProcedure
+  calorieHistory: publicProcedure
     .input(z.object({ days: z.number().int().min(7).max(365).default(30) }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
@@ -986,12 +990,70 @@ const chartsRouter = router({
         totalFat: sql<number>`COALESCE(SUM(${mealLogs.fat}), 0)`.as("totalFat"),
       }).from(mealLogs)
         .where(and(
-          eq(mealLogs.userId, ctx.user.id),
+          eq(mealLogs.userId, OWNER_USER_ID),
           sql`${mealLogs.loggedAt} >= ${since}`
         ))
         .groupBy(sql`DATE(${mealLogs.loggedAt})`)
         .orderBy(sql`DATE(${mealLogs.loggedAt})`);
       return rows;
+    }),
+});
+
+// ─── Goals Router ───────────────────────────────────────────────────────────
+const goalsRouter = router({
+  getGoals: publicProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(healthGoals)
+      .where(and(eq(healthGoals.userId, OWNER_USER_ID), eq(healthGoals.isActive, true)))
+      .orderBy(healthGoals.goalType);
+  }),
+
+  setGoal: publicProcedure
+    .input(z.object({
+      goalType: z.enum([
+        "weight", "body_fat_pct", "muscle_mass",
+        "sleep_duration", "sleep_score",
+        "resting_hr", "hrv",
+        "daily_calories", "daily_protein",
+        "workout_duration",
+      ]),
+      targetValue: z.number(),
+      unit: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db.update(healthGoals)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(eq(healthGoals.userId, OWNER_USER_ID), eq(healthGoals.goalType, input.goalType)));
+      const [goal] = await db.insert(healthGoals).values({
+        userId: OWNER_USER_ID,
+        goalType: input.goalType,
+        targetValue: input.targetValue,
+        unit: input.unit,
+        notes: input.notes,
+        isActive: true,
+      }).returning();
+      return goal;
+    }),
+
+  deleteGoal: publicProcedure
+    .input(z.object({ goalType: z.enum([
+      "weight", "body_fat_pct", "muscle_mass",
+      "sleep_duration", "sleep_score",
+      "resting_hr", "hrv",
+      "daily_calories", "daily_protein",
+      "workout_duration",
+    ]) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db.update(healthGoals)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(eq(healthGoals.userId, OWNER_USER_ID), eq(healthGoals.goalType, input.goalType)));
+      return { success: true };
     }),
 });
 
@@ -1016,6 +1078,7 @@ export const appRouter = router({
   dashboard: dashboardRouter,
   csvImport: csvImportRouter,
   charts: chartsRouter,
+  goals: goalsRouter,
 });
 
 export type AppRouter = typeof appRouter;

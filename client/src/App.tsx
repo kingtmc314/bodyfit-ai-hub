@@ -13,14 +13,13 @@ import HeartRate from "./pages/HeartRate";
 import Sleep from "./pages/Sleep";
 import ProgressPhotos from "./pages/ProgressPhotos";
 import Insights from "./pages/Insights";
-import Login from "./pages/Login";
 import Import from "./pages/Import";
 import Trends from "./pages/Trends";
+import Goals from "./pages/Goals";
 
 function Router() {
   return (
     <Switch>
-      <Route path="/login" component={Login} />
       <Route path="/" component={() => <AppLayout><Dashboard /></AppLayout>} />
       <Route path="/nutrition" component={() => <AppLayout><Nutrition /></AppLayout>} />
       <Route path="/workout" component={() => <AppLayout><Workout /></AppLayout>} />
@@ -31,6 +30,7 @@ function Router() {
       <Route path="/insights" component={() => <AppLayout><Insights /></AppLayout>} />
       <Route path="/import" component={() => <AppLayout><Import /></AppLayout>} />
       <Route path="/trends" component={() => <AppLayout><Trends /></AppLayout>} />
+      <Route path="/goals" component={() => <AppLayout><Goals /></AppLayout>} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

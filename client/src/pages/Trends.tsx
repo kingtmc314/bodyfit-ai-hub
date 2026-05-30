@@ -94,8 +94,11 @@ function ErrorChart({ message, onRetry }: { message: string; onRetry: () => void
   );
 }
 
+// ─── Goal type (matches server enum) ────────────────────────────────────────
+type GoalRecord = { goalType: string; targetValue: number | string; unit?: string | null };
+
 // ─── Body Composition Charts ──────────────────────────────────────────────────
-function BodyCharts({ days }: { days: number }) {
+function BodyCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
   const { data, isLoading, error, refetch } = trpc.charts.bodyHistory.useQuery({ days });
   const chartData = useMemo(() =>
     (data ?? []).map(r => ({
@@ -113,6 +116,9 @@ function BodyCharts({ days }: { days: number }) {
 
   const weights = chartData.map(d => d.weight);
   const fats = chartData.map(d => d.bodyFat);
+  const weightGoal = goals.find(g => g.goalType === "weight");
+  const fatGoal = goals.find(g => g.goalType === "body_fat_pct");
+  const muscleGoal = goals.find(g => g.goalType === "muscle_mass");
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -133,6 +139,8 @@ function BodyCharts({ days }: { days: number }) {
               <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" domain={["auto", "auto"]} />
               <Tooltip {...TooltipStyle} formatter={(v: number) => [`${v?.toFixed(1)} kg`]} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
+              {weightGoal && <ReferenceLine y={Number(weightGoal.targetValue)} stroke="#f97316" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `Goal: ${weightGoal.targetValue}kg`, fontSize: 9, fill: "#f97316", position: "insideTopRight" }} />}
+              {muscleGoal && <ReferenceLine y={Number(muscleGoal.targetValue)} stroke="#22c55e" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `Goal: ${muscleGoal.targetValue}kg`, fontSize: 9, fill: "#22c55e", position: "insideBottomRight" }} />}
               <Line type="monotone" dataKey="weight" stroke="#f97316" strokeWidth={2} dot={false} name="Weight (kg)" connectNulls />
               <Line type="monotone" dataKey="muscle" stroke="#22c55e" strokeWidth={2} dot={false} name="Muscle (kg)" connectNulls strokeDasharray="4 2" />
             </ComposedChart>
@@ -162,6 +170,7 @@ function BodyCharts({ days }: { days: number }) {
               <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
               <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" domain={["auto", "auto"]} unit="%" />
               <Tooltip {...TooltipStyle} formatter={(v: number) => [`${v?.toFixed(1)}%`, "Body Fat"]} />
+              {fatGoal && <ReferenceLine y={Number(fatGoal.targetValue)} stroke="#f43f5e" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `Goal: ${fatGoal.targetValue}%`, fontSize: 9, fill: "#f43f5e", position: "insideTopRight" }} />}
               <Area type="monotone" dataKey="bodyFat" stroke="#f43f5e" strokeWidth={2} fill="url(#fatGrad)" name="Body Fat %" connectNulls />
             </AreaChart>
           </ResponsiveContainer>
@@ -194,7 +203,7 @@ function BodyCharts({ days }: { days: number }) {
 }
 
 // ─── Sleep Charts ─────────────────────────────────────────────────────────────
-function SleepCharts({ days }: { days: number }) {
+function SleepCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
   const { data, isLoading, error, refetch } = trpc.charts.sleepHistory.useQuery({ days });
   const chartData = useMemo(() =>
     (data ?? []).map(r => ({
@@ -214,6 +223,8 @@ function SleepCharts({ days }: { days: number }) {
 
   const scores = chartData.map(d => d.score);
   const durations = chartData.map(d => d.duration);
+  const sleepScoreGoal = goals.find(g => g.goalType === "sleep_score");
+  const sleepDurGoal = goals.find(g => g.goalType === "sleep_duration");
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -240,6 +251,7 @@ function SleepCharts({ days }: { days: number }) {
               <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" domain={[0, 100]} />
               <Tooltip {...TooltipStyle} formatter={(v: number) => [v, "Sleep Score"]} />
               <ReferenceLine y={80} stroke="#22c55e" strokeDasharray="4 2" label={{ value: "Good", fontSize: 9, fill: "#22c55e" }} />
+              {sleepScoreGoal && <ReferenceLine y={Number(sleepScoreGoal.targetValue)} stroke="#8b5cf6" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `Goal: ${sleepScoreGoal.targetValue}`, fontSize: 9, fill: "#8b5cf6", position: "insideTopRight" }} />}
               <Area type="monotone" dataKey="score" stroke="#8b5cf6" strokeWidth={2} fill="url(#scoreGrad)" name="Sleep Score" connectNulls />
             </AreaChart>
           </ResponsiveContainer>
@@ -264,6 +276,7 @@ function SleepCharts({ days }: { days: number }) {
               <Tooltip {...TooltipStyle} formatter={(v: number) => [`${v?.toFixed(1)}h`, "Duration"]} />
               <ReferenceLine y={7} stroke="#22c55e" strokeDasharray="4 2" label={{ value: "7h", fontSize: 9, fill: "#22c55e" }} />
               <ReferenceLine y={9} stroke="#f97316" strokeDasharray="4 2" label={{ value: "9h", fontSize: 9, fill: "#f97316" }} />
+              {sleepDurGoal && <ReferenceLine y={Number(sleepDurGoal.targetValue)} stroke="#06b6d4" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `Goal: ${sleepDurGoal.targetValue}h`, fontSize: 9, fill: "#06b6d4", position: "insideTopRight" }} />}
               <Line type="monotone" dataKey="duration" stroke="#06b6d4" strokeWidth={2} dot={false} name="Duration (h)" connectNulls />
             </LineChart>
           </ResponsiveContainer>
@@ -296,7 +309,7 @@ function SleepCharts({ days }: { days: number }) {
 }
 
 // ─── Heart Rate Charts ────────────────────────────────────────────────────────
-function HeartRateCharts({ days }: { days: number }) {
+function HeartRateCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
   const { data, isLoading, error, refetch } = trpc.charts.heartRateHistory.useQuery({ days });
   const chartData = useMemo(() =>
     (data ?? []).map(r => ({
@@ -314,6 +327,8 @@ function HeartRateCharts({ days }: { days: number }) {
 
   const restings = chartData.map(d => d.resting);
   const hrvs = chartData.map(d => d.hrv);
+  const restingHrGoal = goals.find(g => g.goalType === "resting_hr");
+  const hrvGoal = goals.find(g => g.goalType === "hrv");
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -335,6 +350,7 @@ function HeartRateCharts({ days }: { days: number }) {
               <Tooltip {...TooltipStyle} formatter={(v: number) => [`${v} bpm`, "Resting HR"]} />
               <ReferenceLine y={60} stroke="#22c55e" strokeDasharray="4 2" label={{ value: "60", fontSize: 9, fill: "#22c55e" }} />
               <ReferenceLine y={100} stroke="#f43f5e" strokeDasharray="4 2" label={{ value: "100", fontSize: 9, fill: "#f43f5e" }} />
+              {restingHrGoal && <ReferenceLine y={Number(restingHrGoal.targetValue)} stroke="#f43f5e" strokeDasharray="6 3" strokeWidth={2} label={{ value: `Goal: ${restingHrGoal.targetValue}bpm`, fontSize: 9, fill: "#f43f5e", position: "insideTopRight" }} />}
               <Line type="monotone" dataKey="resting" stroke="#f43f5e" strokeWidth={2} dot={false} name="Resting HR" connectNulls />
               <Line type="monotone" dataKey="avg" stroke="#fb923c" strokeWidth={1.5} dot={false} name="Avg HR" connectNulls strokeDasharray="4 2" />
             </LineChart>
@@ -364,6 +380,7 @@ function HeartRateCharts({ days }: { days: number }) {
               <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
               <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" domain={["auto", "auto"]} unit=" ms" />
               <Tooltip {...TooltipStyle} formatter={(v: number) => [`${v} ms`, "HRV"]} />
+              {hrvGoal && <ReferenceLine y={Number(hrvGoal.targetValue)} stroke="#22c55e" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `Goal: ${hrvGoal.targetValue}ms`, fontSize: 9, fill: "#22c55e", position: "insideTopRight" }} />}
               <Area type="monotone" dataKey="hrv" stroke="#22c55e" strokeWidth={2} fill="url(#hrvGrad)" name="HRV (ms)" connectNulls />
             </AreaChart>
           </ResponsiveContainer>
@@ -395,7 +412,7 @@ function HeartRateCharts({ days }: { days: number }) {
 }
 
 // ─── Workout Charts ───────────────────────────────────────────────────────────
-function WorkoutCharts({ days }: { days: number }) {
+function WorkoutCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
   const { data, isLoading, error, refetch } = trpc.charts.workoutHistory.useQuery({ days });
   const chartData = useMemo(() =>
     (data ?? []).map(r => ({
@@ -411,6 +428,7 @@ function WorkoutCharts({ days }: { days: number }) {
   if (!chartData.length) return <EmptyChart message="No workout data for this period. Log workouts or import CSV data to see trends." />;
 
   const durations = chartData.map(d => d.duration);
+  const workoutDurGoal = goals.find(g => g.goalType === "workout_duration");
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -430,6 +448,7 @@ function WorkoutCharts({ days }: { days: number }) {
               <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
               <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" unit=" min" />
               <Tooltip {...TooltipStyle} formatter={(v: number) => [`${v} min`, "Duration"]} />
+              {workoutDurGoal && <ReferenceLine y={Number(workoutDurGoal.targetValue)} stroke="#3b82f6" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `Goal: ${workoutDurGoal.targetValue}min`, fontSize: 9, fill: "#3b82f6", position: "insideTopRight" }} />}
               <Bar dataKey="duration" fill="#3b82f6" name="Duration (min)" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -465,7 +484,7 @@ function WorkoutCharts({ days }: { days: number }) {
 }
 
 // ─── Nutrition Charts ─────────────────────────────────────────────────────────
-function NutritionCharts({ days }: { days: number }) {
+function NutritionCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
   const { data, isLoading, error, refetch } = trpc.charts.calorieHistory.useQuery({ days });
   const chartData = useMemo(() =>
     (data ?? []).map(r => ({
@@ -482,6 +501,8 @@ function NutritionCharts({ days }: { days: number }) {
   if (!chartData.length) return <EmptyChart message="No nutrition data for this period. Log meals to see calorie trends." />;
 
   const cals = chartData.map(d => d.calories);
+  const calGoal = goals.find(g => g.goalType === "daily_calories");
+  const proteinGoal = goals.find(g => g.goalType === "daily_protein");
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -501,7 +522,10 @@ function NutritionCharts({ days }: { days: number }) {
               <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
               <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" unit=" kcal" />
               <Tooltip {...TooltipStyle} formatter={(v: number) => [`${Math.round(v)} kcal`, "Calories"]} />
-              <ReferenceLine y={2000} stroke="#f97316" strokeDasharray="4 2" label={{ value: "2000", fontSize: 9, fill: "#f97316" }} />
+              {calGoal
+                ? <ReferenceLine y={Number(calGoal.targetValue)} stroke="#f97316" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `Goal: ${calGoal.targetValue}kcal`, fontSize: 9, fill: "#f97316", position: "insideTopRight" }} />
+                : <ReferenceLine y={2000} stroke="#f97316" strokeDasharray="4 2" label={{ value: "2000", fontSize: 9, fill: "#f97316" }} />
+              }
               <Bar dataKey="calories" fill="#f97316" name="Calories" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -522,6 +546,7 @@ function NutritionCharts({ days }: { days: number }) {
               <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" unit="g" />
               <Tooltip {...TooltipStyle} formatter={(v: number) => [`${Math.round(v)}g`]} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
+              {proteinGoal && <ReferenceLine y={Number(proteinGoal.targetValue)} stroke="#22c55e" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `Protein Goal: ${proteinGoal.targetValue}g`, fontSize: 9, fill: "#22c55e", position: "insideTopRight" }} />}
               <Bar dataKey="protein" stackId="macro" fill="#22c55e" name="Protein" />
               <Bar dataKey="carbs" stackId="macro" fill="#f97316" name="Carbs" />
               <Bar dataKey="fat" stackId="macro" fill="#f43f5e" name="Fat" radius={[3, 3, 0, 0]} />
@@ -537,6 +562,8 @@ function NutritionCharts({ days }: { days: number }) {
 export default function Trends() {
   const { t } = useTranslation();
   const [days, setDays] = useState<number>(30);
+  const { data: goalsData } = trpc.goals.getGoals.useQuery();
+  const goals: GoalRecord[] = goalsData ?? [];
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto">
@@ -583,19 +610,19 @@ export default function Trends() {
         </TabsList>
 
         <TabsContent value="body" className="mt-4">
-          <BodyCharts days={days} />
+          <BodyCharts days={days} goals={goals} />
         </TabsContent>
         <TabsContent value="sleep" className="mt-4">
-          <SleepCharts days={days} />
+          <SleepCharts days={days} goals={goals} />
         </TabsContent>
         <TabsContent value="heart" className="mt-4">
-          <HeartRateCharts days={days} />
+          <HeartRateCharts days={days} goals={goals} />
         </TabsContent>
         <TabsContent value="workout" className="mt-4">
-          <WorkoutCharts days={days} />
+          <WorkoutCharts days={days} goals={goals} />
         </TabsContent>
         <TabsContent value="nutrition" className="mt-4">
-          <NutritionCharts days={days} />
+          <NutritionCharts days={days} goals={goals} />
         </TabsContent>
       </Tabs>
     </div>
