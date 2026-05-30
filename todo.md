@@ -236,7 +236,13 @@
 - [x] Run tests, save checkpoint, push to GitHub
 
 ## Phase 28: Date Verification, Server HK Today Fix, Version Number
-- [ ] Verify date display on Vercel: HeartRate, Sleep, BodyComposition pages show correct dates
-- [ ] Fix server-side today queries to use HK timezone (Dashboard calorie/workout today boundary)
-- [ ] Add version number v1.0.1 to sidebar footer
-- [ ] Run tests, save checkpoint, push to GitHub
+- [x] Verify date display on Vercel: HeartRate page confirmed showing correct dates (23/05/2026 etc)
+- [x] Server-side today queries already use HK timezone (todayHK() + T00:00:00+08:00 from Phase 27)
+- [x] Add version number v1.0.1 to sidebar footer (hidden when sidebar collapsed)
+- [x] Set GitHub repo to public so Vercel auto-deploy works for all future pushes
+- [x] Run tests, save checkpoint, push to GitHub
+
+## Phase 29: Mobile Nav Sticky Fix & Workout Records Display
+- [x] Fix mobile top nav bar to be sticky: added overflow-y-auto h-svh to SidebarInset so sticky top-0 works correctly
+- [x] Investigated workout records: only 1 session in DB (Leg Day today), Dashboard correctly shows it; screenshot was from a different app (lifemanage)
+- [x] Run tests, save checkpoint, push to GitHub
