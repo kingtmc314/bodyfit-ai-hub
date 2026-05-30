@@ -124,3 +124,11 @@
 - [x] Remove trpc.sheets references from Sleep.tsx, HeartRate.tsx, BodyComposition.tsx
 - [x] Remove unused syncing state and RefreshCw imports from all three pages
 - [x] All data now flows exclusively through Supabase (write → Supabase → read from Supabase)
+
+## Phase 18: CSV Bulk Import (Garmin / Apple Health)
+- [x] Research Garmin and Apple Health CSV export column formats
+- [x] Add server-side CSV parse + import tRPC procedures (body, sleep, heartrate, workout)
+- [x] Build Import UI page with file upload, auto-detect format, column preview, progress bar
+- [x] Add Import nav item to sidebar
+- [x] Write vitest tests for CSV parsing logic (35/35 passing)
+- [ ] Deploy to Vercel

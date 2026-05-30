@@ -12,6 +12,8 @@ import { eq, and, desc, gte, lte, like, or, sql } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
+import { parseRows, detectDataType, type ImportDataType } from "./csvImport";
+import Papa from "papaparse";
 
 // ─── Nutrition Router ─────────────────────────────────────────────────────────
 const nutritionRouter = router({
@@ -739,6 +741,143 @@ const dashboardRouter = router({
 });
 
 
+// ─── CSV Import Router ───────────────────────────────────────────────────────
+const csvImportRouter = router({
+  /**
+   * Parse a CSV string and return a preview (first 5 rows) + detected type.
+   * No data is written to the DB at this stage.
+   */
+  preview: protectedProcedure
+    .input(z.object({
+      csvText: z.string().max(5_000_000), // 5 MB limit
+      dataType: z.enum(["body", "sleep", "heartrate", "workout", "auto"]).default("auto"),
+    }))
+    .mutation(async ({ input }) => {
+      const parsed = Papa.parse<Record<string, string>>(input.csvText, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h) => h.trim(),
+      });
+
+      const headers = parsed.meta.fields ?? [];
+      const detectedType: ImportDataType | null =
+        input.dataType === "auto" ? detectDataType(headers) : input.dataType as ImportDataType;
+
+      if (!detectedType) {
+        return { detectedType: null, headers, preview: [], totalRows: parsed.data.length };
+      }
+
+      const allRows = parseRows(parsed.data, detectedType);
+      return {
+        detectedType,
+        headers,
+        preview: allRows.slice(0, 5),
+        totalRows: parsed.data.length,
+        validRows: allRows.length,
+      };
+    }),
+
+  /**
+   * Import all rows from a CSV string into the database.
+   * Returns counts of inserted / skipped rows.
+   */
+  importData: protectedProcedure
+    .input(z.object({
+      csvText: z.string().max(5_000_000),
+      dataType: z.enum(["body", "sleep", "heartrate", "workout"]),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+
+      const parsed = Papa.parse<Record<string, string>>(input.csvText, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h) => h.trim(),
+      });
+
+      const rows = parseRows(parsed.data, input.dataType);
+      let inserted = 0;
+      let skipped = 0;
+
+      if (input.dataType === "body") {
+        for (const r of rows as import("./csvImport").ParsedBodyRow[]) {
+          try {
+            await db.insert(bodyComposition).values({
+              userId: ctx.user.id,
+              date: r.date,
+              weight: r.weight,
+              bmi: r.bmi,
+              bodyFatPct: r.bodyFatPct,
+              muscleMass: r.muscleMass,
+              fatMass: r.fatMass,
+              bmr: r.bmr,
+              visceralFat: r.visceralFat,
+              source: "csv",
+            }).onConflictDoNothing();
+            inserted++;
+          } catch { skipped++; }
+        }
+      } else if (input.dataType === "sleep") {
+        for (const r of rows as import("./csvImport").ParsedSleepRow[]) {
+          try {
+            await db.insert(sleepLogs).values({
+              userId: ctx.user.id,
+              date: r.date,
+              sleepScore: r.sleepScore,
+              sleepDuration: r.sleepDuration,
+              deepSleep: r.deepSleep,
+              remSleep: r.remSleep,
+              bodyBattery: r.bodyBattery,
+              pulseOx: r.pulseOx,
+              respiration: r.respiration,
+              stress: r.stress,
+              sleepQuality: r.sleepQuality,
+              notes: r.restingHr ? `Resting HR: ${r.restingHr} bpm` : undefined,
+              source: "csv",
+            }).onConflictDoNothing();
+            inserted++;
+          } catch { skipped++; }
+        }
+      } else if (input.dataType === "heartrate") {
+        for (const r of rows as import("./csvImport").ParsedHeartRateRow[]) {
+          try {
+            await db.insert(heartRateLogs).values({
+              userId: ctx.user.id,
+              date: r.date,
+              restingHr: r.restingHr,
+              highHr: r.highHr,
+              avgHr: r.avgHr,
+              hrv: r.hrv,
+              source: "csv",
+            }).onConflictDoNothing();
+            inserted++;
+          } catch { skipped++; }
+        }
+      } else if (input.dataType === "workout") {
+        for (const r of rows as import("./csvImport").ParsedWorkoutRow[]) {
+          try {
+            const [session] = await db.insert(workoutSessions).values({
+              userId: ctx.user.id,
+              name: r.activityName ?? r.activityType ?? "Imported Workout",
+              startTime: new Date(r.date + "T00:00:00Z"),
+              duration: r.durationMinutes,
+              notes: [
+                r.notes,
+                r.calories ? `Calories: ${r.calories} kcal` : null,
+                r.avgHr ? `Avg HR: ${r.avgHr} bpm` : null,
+                r.distanceKm ? `Distance: ${r.distanceKm.toFixed(2)} km` : null,
+              ].filter(Boolean).join(" | ") || undefined,
+            }).returning();
+            if (session) inserted++;
+          } catch { skipped++; }
+        }
+      }
+
+      return { success: true, inserted, skipped, total: rows.length };
+    }),
+});
+
 // ─── App Router ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
@@ -758,6 +897,7 @@ export const appRouter = router({
   photos: photosRouter,
   insights: insightsRouter,
   dashboard: dashboardRouter,
+  csvImport: csvImportRouter,
 });
 
 export type AppRouter = typeof appRouter;

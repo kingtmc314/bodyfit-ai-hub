@@ -14,6 +14,7 @@ import Sleep from "./pages/Sleep";
 import ProgressPhotos from "./pages/ProgressPhotos";
 import Insights from "./pages/Insights";
 import Login from "./pages/Login";
+import Import from "./pages/Import";
 
 function Router() {
   return (
@@ -27,6 +28,7 @@ function Router() {
       <Route path="/sleep" component={() => <AppLayout><Sleep /></AppLayout>} />
       <Route path="/photos" component={() => <AppLayout><ProgressPhotos /></AppLayout>} />
       <Route path="/insights" component={() => <AppLayout><Insights /></AppLayout>} />
+      <Route path="/import" component={() => <AppLayout><Import /></AppLayout>} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

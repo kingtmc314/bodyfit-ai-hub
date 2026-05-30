@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Activity,
   Languages,
+  Upload,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,7 @@ const navItems = [
   { path: "/sleep",      key: "sleep",      icon: Moon,            badgeClass: "icon-badge-purple" },
   { path: "/photos",     key: "photos",     icon: Camera,          badgeClass: "icon-badge-blue"   },
   { path: "/insights",   key: "insights",   icon: Sparkles,        badgeClass: "icon-badge-orange" },
+  { path: "/import",     key: "import",     icon: Upload,          badgeClass: "icon-badge-green"  },
 ];
 
 interface AppLayoutProps {
