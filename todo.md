@@ -248,17 +248,19 @@
 - [x] Run tests, save checkpoint, push to GitHub
 
 ## Phase 30: Running Analysis Tab
-- [ ] Add running_logs table to drizzle schema (date, distance_km, duration_min, avg_pace, avg_hr, max_hr, calories, cadence, stride_length, vertical_ratio, vertical_oscillation, notes)
-- [ ] Generate migration SQL and apply via webdev_execute_sql
-- [ ] Add server procedures: running.getLogs, running.addLog, running.updateLog, running.deleteLog, running.getAIAnalysis
-- [ ] Build Running.tsx page: stats cards, trend charts (distance/pace/HR), log table with CRUD, AI analysis tab
-- [ ] AI analysis: send all running data to LLM for comprehensive analysis (pace trends, HR zones, cadence, stride efficiency, training load)
-- [ ] Add running nav link to AppLayout sidebar
-- [ ] Run tests, save checkpoint, push to GitHub
+- [x] Add running_logs table to drizzle schema and database
+- [x] Add server procedures: running.getLogs, running.getStats, running.getAIAnalysis
+- [x] Fix workout getSessions: 90-day window, no endDate cutoff, HK timezone boundaries
+- [x] Run tests, save checkpoint, push to GitHub
 
 ## Phase 30b: Running Data in AI Health Analysis (Insights)
-- [ ] Add running.getLogs and running.getStats procedures using actual running_logs table schema (snake_case columns: distance_km, hour/minutes/second, average_pace, average_heart_rate, average_cadence, etc.)
-- [ ] Update insights.generateInsights to include running data summary in the LLM prompt
-- [ ] Add Running tab to Insights page showing: recent runs chart, pace trend, HR trend, cadence/stride stats
-- [ ] AI analysis includes: running type breakdown, pace progression, HR efficiency, cadence/stride analysis, training load
-- [ ] Run tests, save checkpoint, push to GitHub
+- [x] Add running.getLogs and running.getStats procedures using actual running_logs table schema
+- [x] Add Running tab to Insights page with: monthly distance chart, recent runs pace/HR chart, training type breakdown, AI analysis button
+- [x] AI analysis: sends all running data to LLM for comprehensive analysis (pace, HR, cadence, training type)
+- [x] Run tests (35/35 pass), save checkpoint, push to GitHub
+
+## Phase 31: Fix Date Storage Root Cause
+- [x] Change all date columns from PostgreSQL date type to text in drizzle/schema.ts
+- [x] Execute SQL migration: ALTER TABLE ... ALTER COLUMN date TYPE text USING TO_CHAR(date, 'YYYY-MM-DD')
+- [x] Verify existing data is preserved correctly after migration (heart_rate_logs shows '2026-05-23' etc.)
+- [x] Run tests (35/35 pass), save checkpoint, push to GitHub

@@ -8,7 +8,6 @@ import {
   real,
   boolean,
   json,
-  date,
   serial,
   decimal,
 } from "drizzle-orm/pg-core";
@@ -137,7 +136,7 @@ export type InsertWorkoutSet = typeof workoutSets.$inferInsert;
 export const bodyComposition = pgTable("body_composition", {
   id: serial("id").primaryKey(),
   userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  date: date("date").notNull(),
+  date: text("date").notNull(),
   weight: real("weight"),
   bodyFatPct: real("bodyFatPct"),
   muscleMass: real("muscleMass"),
@@ -158,7 +157,7 @@ export type InsertBodyComposition = typeof bodyComposition.$inferInsert;
 export const heartRateLogs = pgTable("heart_rate_logs", {
   id: serial("id").primaryKey(),
   userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  date: date("date").notNull(),
+  date: text("date").notNull(),
   restingHr: integer("restingHr"),
   highHr: integer("highHr"),
   hrv: integer("hrv"),
@@ -181,7 +180,7 @@ export type InsertHeartRateLog = typeof heartRateLogs.$inferInsert;
 export const sleepLogs = pgTable("sleep_logs", {
   id: serial("id").primaryKey(),
   userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  date: date("date").notNull(),
+  date: text("date").notNull(),
   sleepScore: integer("sleepScore"),
   bodyBattery: integer("bodyBattery"),
   pulseOx: real("pulseOx"),
@@ -206,7 +205,7 @@ export type InsertSleepLog = typeof sleepLogs.$inferInsert;
 export const progressPhotos = pgTable("progress_photos", {
   id: serial("id").primaryKey(),
   userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  date: date("date").notNull(),
+  date: text("date").notNull(),
   photoUrl: text("photoUrl").notNull(),
   fileKey: text("fileKey").notNull(),
   angle: varchar("angle", { length: 50 }).default("front"),
@@ -225,8 +224,8 @@ export const aiInsights = pgTable("ai_insights", {
   period: varchar("period", { length: 50 }).notNull().default("weekly"),
   content: text("content").notNull(),
   generatedAt: timestamp("generatedAt").defaultNow().notNull(),
-  weekStart: date("weekStart"),
-  weekEnd: date("weekEnd"),
+  weekStart: text("weekStart"),
+  weekEnd: text("weekEnd"),
 });
 
 export type AiInsight = typeof aiInsights.$inferSelect;
@@ -236,7 +235,7 @@ export type InsertAiInsight = typeof aiInsights.$inferInsert;
 export const runningLogs = pgTable("running_logs", {
   id: serial("id").primaryKey(),
   userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  date: date("date").notNull(),
+  date: text("date").notNull(),
   distanceKm: real("distanceKm"),                  // km
   durationMin: real("durationMin"),                 // minutes
   avgPaceSecPerKm: integer("avgPaceSecPerKm"),       // seconds per km
