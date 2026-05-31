@@ -447,9 +447,10 @@ export default function Running() {
         </div>
       </div>
 
-      {/* 4 Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* 5 Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
+          { labelKey: 'running.total_distance', value: totalDist, unit: 'km', icon: MapPin, badgeClass: 'icon-badge-orange' },
           { labelKey: 'running.total_shoes', value: totalShoesCount, unit: '', icon: Package, badgeClass: 'icon-badge-purple' },
           { labelKey: 'running.finished_races', value: finishedRacesCount, unit: '', icon: Trophy, badgeClass: 'icon-badge-yellow' },
           { labelKey: 'running.total_activities', value: totalRuns, unit: '', icon: Activity, badgeClass: 'icon-badge-green' },
