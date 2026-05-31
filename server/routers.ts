@@ -3225,8 +3225,29 @@ const supplementsRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
-      const { id, ...rest } = input;
-      const [row] = await db.update(supplements).set({ ...rest, updatedAt: new Date() })
+      // Explicitly destructure to exclude id and userId from the set clause
+      const { id, name, brand, category, servingSize, currentStock, lowStockThreshold,
+        purchaseDate, expiryDate, notes, isActive, reminderEnabled, reminderTime,
+        description, descriptionZh, iherbUrl, dailyDose, timeOfDay } = input;
+      const updateData: Record<string, unknown> = { updatedAt: new Date() };
+      if (name !== undefined) updateData.name = name;
+      if (brand !== undefined) updateData.brand = brand;
+      if (category !== undefined) updateData.category = category;
+      if (servingSize !== undefined) updateData.servingSize = servingSize;
+      if (currentStock !== undefined) updateData.currentStock = currentStock;
+      if (lowStockThreshold !== undefined) updateData.lowStockThreshold = lowStockThreshold;
+      if (purchaseDate !== undefined) updateData.purchaseDate = purchaseDate;
+      if (expiryDate !== undefined) updateData.expiryDate = expiryDate;
+      if (notes !== undefined) updateData.notes = notes;
+      if (isActive !== undefined) updateData.isActive = isActive;
+      if (reminderEnabled !== undefined) updateData.reminderEnabled = reminderEnabled;
+      if (reminderTime !== undefined) updateData.reminderTime = reminderTime;
+      if (description !== undefined) updateData.description = description;
+      if (descriptionZh !== undefined) updateData.descriptionZh = descriptionZh;
+      if (iherbUrl !== undefined) updateData.iherbUrl = iherbUrl;
+      if (dailyDose !== undefined) updateData.dailyDose = dailyDose;
+      if (timeOfDay !== undefined) updateData.timeOfDay = timeOfDay;
+      const [row] = await db.update(supplements).set(updateData)
         .where(and(eq(supplements.id, id), eq(supplements.userId, OWNER_USER_ID))).returning();
       return row;
     }),
