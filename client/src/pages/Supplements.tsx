@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Pill, Trash2, Edit2, Loader2, ArrowUpDown, AlertTriangle, Package, RefreshCw, Download } from "lucide-react";
+import { Plus, Pill, Trash2, Edit2, Loader2, ArrowUpDown, AlertTriangle, Package, RefreshCw, Download, ShoppingCart, History, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 const CATEGORIES = ['protein', 'vitamin', 'mineral', 'omega3', 'pre_workout', 'post_workout', 'probiotic', 'collagen', 'creatine', 'bcaa', 'electrolyte', 'other'] as const;
@@ -33,6 +33,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 const defaultSupplementForm = { name: '', brand: '', category: 'vitamin', servingSize: '', currentStock: '', lowStockThreshold: '30', purchaseDate: '', expiryDate: '', notes: '', isActive: true, reminderEnabled: false, reminderTime: '08:00' };
 const defaultLogForm = { supplementId: '', date: todayHKString(), quantity: '1', timeOfDay: 'morning', notes: '' };
 const defaultRestockForm = { supplementId: '', quantity: '' };
+const defaultPurchaseForm = { supplementId: '', purchaseDate: '', quantity: '', unitPrice: '', totalPrice: '', currency: 'USD', source: 'iHerb', orderNo: '', notes: '', addToStock: true };
 
 export default function Supplements() {
   const { t } = useTranslation();
@@ -47,10 +48,18 @@ export default function Supplements() {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [logSort, setLogSort] = useState<'date_desc' | 'date_asc' | 'qty_desc'>('date_desc');
   const [logSearch, setLogSearch] = useState('');
+  const [showPurchaseDialog, setShowPurchaseDialog] = useState(false);
+  const [editPurchase, setEditPurchase] = useState<any>(null);
+  const [purchaseForm, setPurchaseForm] = useState<any>(defaultPurchaseForm);
+  const [purchaseFilter, setPurchaseFilter] = useState<string>('all');
+  const [stockFilter, setStockFilter] = useState<string>('all');
+  const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
 
   const utils = trpc.useUtils();
   const { data: supplements = [], isLoading } = trpc.supplements.getAll.useQuery();
   const { data: logs = [] } = trpc.supplements.getLogs.useQuery({ limit: 200 });
+  const { data: purchases = [] } = trpc.supplements.getPurchases.useQuery({ supplementId: undefined });
+  const { data: stockHistory = [] } = trpc.supplements.getStockHistory.useQuery({ limit: 300 });
 
   const addSupplement = trpc.supplements.add.useMutation({
     onSuccess: () => { utils.supplements.getAll.invalidate(); toast.success(t('supplements.added')); setShowSupplementDialog(false); setSupplementForm(defaultSupplementForm); },
@@ -73,9 +82,38 @@ export default function Supplements() {
     onError: (e) => toast.error(e.message),
   });
   const restock = trpc.supplements.restockSupplement.useMutation({
-    onSuccess: () => { utils.supplements.getAll.invalidate(); toast.success(t('supplements.restocked')); setShowRestockDialog(false); setRestockForm(defaultRestockForm); },
+    onSuccess: () => { utils.supplements.getAll.invalidate(); utils.supplements.getStockHistory.invalidate(); toast.success(t('supplements.restocked')); setShowRestockDialog(false); setRestockForm(defaultRestockForm); },
     onError: (e) => toast.error(e.message),
   });
+  const addPurchase = trpc.supplements.addPurchase.useMutation({
+    onSuccess: () => { utils.supplements.getPurchases.invalidate(); utils.supplements.getAll.invalidate(); utils.supplements.getStockHistory.invalidate(); toast.success(t('supplements.purchase_added')); setShowPurchaseDialog(false); setPurchaseForm(defaultPurchaseForm); },
+    onError: (e) => toast.error(e.message),
+  });
+  const updatePurchase = trpc.supplements.updatePurchase.useMutation({
+    onSuccess: () => { utils.supplements.getPurchases.invalidate(); toast.success(t('supplements.purchase_updated')); setShowPurchaseDialog(false); setEditPurchase(null); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deletePurchase = trpc.supplements.deletePurchase.useMutation({
+    onSuccess: () => { utils.supplements.getPurchases.invalidate(); toast.success(t('supplements.purchase_deleted')); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // Toggle card expansion
+  const toggleCard = (id: number) => setExpandedCards(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  // Filtered purchases
+  const displayPurchases = useMemo(() => {
+    let list = [...purchases];
+    if (purchaseFilter !== 'all') list = list.filter((p: any) => p.supplementId === Number(purchaseFilter));
+    return list;
+  }, [purchases, purchaseFilter]);
+
+  // Filtered stock history
+  const displayStockHistory = useMemo(() => {
+    let list = [...stockHistory];
+    if (stockFilter !== 'all') list = list.filter((h: any) => h.supplementId === Number(stockFilter));
+    return list;
+  }, [stockHistory, stockFilter]);
 
   // Low stock alerts
   const lowStock = supplements.filter((s: any) => s.isActive && (s.currentStock ?? 0) <= (s.lowStockThreshold ?? 30));
@@ -178,9 +216,11 @@ export default function Supplements() {
       </div>
 
       <Tabs defaultValue="inventory">
-        <TabsList>
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="inventory">{t('supplements.inventory')}</TabsTrigger>
           <TabsTrigger value="log">{t('supplements.intake_log')}</TabsTrigger>
+          <TabsTrigger value="purchases" className="gap-1"><ShoppingCart className="w-3 h-3" />{t('supplements.purchases')}</TabsTrigger>
+          <TabsTrigger value="stock" className="gap-1"><History className="w-3 h-3" />{t('supplements.stock_history')}</TabsTrigger>
         </TabsList>
 
         {/* Inventory Tab */}
@@ -223,13 +263,20 @@ export default function Supplements() {
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-semibold text-foreground text-sm truncate">{s.name}</h3>
+                          <h3 className="font-semibold text-foreground text-sm">{s.name}</h3>
                           {!s.isActive && <Badge variant="outline" className="text-xs">{t('supplements.inactive')}</Badge>}
                         </div>
                         {s.brand && <p className="text-xs text-muted-foreground">{s.brand}</p>}
-                        <span className={`text-xs px-2 py-0.5 rounded-full mt-1 inline-block ${CATEGORY_COLORS[s.category] || CATEGORY_COLORS.other}`}>
-                          {t(`supplements.cat_${s.category}`)}
-                        </span>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${CATEGORY_COLORS[s.category] || CATEGORY_COLORS.other}`}>
+                            {t(`supplements.cat_${s.category}`)}
+                          </span>
+                          {s.iherbUrl && (
+                            <a href={s.iherbUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary flex items-center gap-0.5 hover:underline">
+                              <ExternalLink className="w-3 h-3" /> iHerb
+                            </a>
+                          )}
+                        </div>
                       </div>
                       <div className="flex gap-1 shrink-0">
                         <Button variant="ghost" size="icon" className="w-6 h-6" onClick={() => {
@@ -259,8 +306,21 @@ export default function Supplements() {
                     {/* Meta */}
                     <div className="text-xs text-muted-foreground space-y-0.5">
                       {s.servingSize && <p>{t('supplements.serving')}: {s.servingSize}</p>}
+                      {s.dailyDose && <p>{t('supplements.daily_dose')}: {s.dailyDose} {t('supplements.units')}</p>}
                       {s.expiryDate && <p className={new Date(s.expiryDate) < new Date() ? 'text-red-400' : ''}>{t('supplements.expiry')}: {formatHKDate(s.expiryDate)}</p>}
                     </div>
+                    {/* Description expand */}
+                    {s.description && (
+                      <div className="mt-2">
+                        <button onClick={() => toggleCard(s.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                          {expandedCards.has(s.id) ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          {t('supplements.description')}
+                        </button>
+                        {expandedCards.has(s.id) && (
+                          <p className="text-xs text-muted-foreground mt-1 leading-relaxed border-t border-border pt-2">{s.description}</p>
+                        )}
+                      </div>
+                    )}
 
                     {/* Actions */}
                     <div className="flex gap-2 mt-3">
@@ -335,6 +395,113 @@ export default function Supplements() {
                   })}
                   {displayLogs.length === 0 && (
                     <tr><td colSpan={6} className="text-center py-8 text-muted-foreground text-sm">{t('common.no_records')}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* Purchase Records Tab */}
+        <TabsContent value="purchases" className="mt-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={purchaseFilter} onValueChange={setPurchaseFilter}>
+              <SelectTrigger className="h-8 w-48 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('common.all')}</SelectItem>
+                {supplements.map((s: any) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <span className="text-xs text-muted-foreground">{displayPurchases.length} {t('common.records')}</span>
+            <Button className="ml-auto gap-1 h-8 text-xs" onClick={() => { setEditPurchase(null); setPurchaseForm(defaultPurchaseForm); setShowPurchaseDialog(true); }}>
+              <Plus className="w-3 h-3" /> {t('supplements.add_purchase')}
+            </Button>
+          </div>
+          <div className="bg-card border border-border rounded-2xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    {[t('common.date'), t('supplements.supplement'), t('supplements.quantity'), t('supplements.unit_price'), t('supplements.total_price'), t('supplements.source'), t('supplements.order_no'), ''].map((h, i) => (
+                      <th key={i} className="text-left px-4 py-3 text-xs text-muted-foreground font-medium whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayPurchases.map((p: any) => (
+                    <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted/20">
+                      <td className="px-4 py-3 font-medium whitespace-nowrap">{formatHKDate(p.purchaseDate)}</td>
+                      <td className="px-4 py-3">
+                        <div>
+                          <p className="font-medium text-foreground text-sm">{p.supplementName ?? `#${p.supplementId}`}</p>
+                          {p.supplementBrand && <p className="text-xs text-muted-foreground">{p.supplementBrand}</p>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">{p.quantity} {t('supplements.units')}</td>
+                      <td className="px-4 py-3">{p.unitPrice ? `${p.currency ?? 'USD'} ${p.unitPrice}` : '—'}</td>
+                      <td className="px-4 py-3">{p.totalPrice ? `${p.currency ?? 'USD'} ${p.totalPrice}` : '—'}</td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs">{p.source ?? '—'}</td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs">{p.orderNo ?? '—'}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditPurchase(p); setPurchaseForm({ supplementId: String(p.supplementId), purchaseDate: p.purchaseDate, quantity: String(p.quantity), unitPrice: p.unitPrice ?? '', totalPrice: p.totalPrice ?? '', currency: p.currency ?? 'USD', source: p.source ?? 'iHerb', orderNo: p.orderNo ?? '', notes: p.notes ?? '', addToStock: false }); setShowPurchaseDialog(true); }}><Edit2 className="w-3.5 h-3.5" /></Button>
+                          <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deletePurchase.mutate({ id: p.id })}><Trash2 className="w-3.5 h-3.5" /></Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {displayPurchases.length === 0 && (
+                    <tr><td colSpan={8} className="text-center py-8 text-muted-foreground text-sm">{t('supplements.no_purchases')}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* Stock History Tab */}
+        <TabsContent value="stock" className="mt-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={stockFilter} onValueChange={setStockFilter}>
+              <SelectTrigger className="h-8 w-48 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('common.all')}</SelectItem>
+                {supplements.map((s: any) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <span className="text-xs text-muted-foreground">{displayStockHistory.length} {t('common.records')}</span>
+          </div>
+          <div className="bg-card border border-border rounded-2xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    {[t('common.date'), t('supplements.supplement'), t('supplements.adjust_type'), t('supplements.delta'), t('supplements.stock_after'), t('supplements.reason')].map((h, i) => (
+                      <th key={i} className="text-left px-4 py-3 text-xs text-muted-foreground font-medium whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayStockHistory.map((h: any) => (
+                    <tr key={h.id} className="border-b border-border last:border-0 hover:bg-muted/20">
+                      <td className="px-4 py-3 font-medium whitespace-nowrap">{formatHKDate(h.adjustDate)}</td>
+                      <td className="px-4 py-3 text-sm">{h.supplementName ?? `#${h.supplementId}`}</td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline" className="text-xs">
+                          {t(`supplements.adjust_type_${h.adjustType}`) || h.adjustType}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={h.delta >= 0 ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
+                          {h.delta >= 0 ? '+' : ''}{h.delta}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-medium">{h.stockAfter}</td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs">{h.reason ?? '—'}</td>
+                    </tr>
+                  ))}
+                  {displayStockHistory.length === 0 && (
+                    <tr><td colSpan={6} className="text-center py-8 text-muted-foreground text-sm">{t('supplements.no_stock_history')}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -476,6 +643,92 @@ export default function Supplements() {
               addLog.mutate({ supplementId: Number(logForm.supplementId), date: logForm.date, quantity: Number(logForm.quantity) || 1, timeOfDay: logForm.timeOfDay, notes: logForm.notes || undefined });
             }} disabled={addLog.isPending}>
               {addLog.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {t('common.save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Purchase Dialog */}
+      <Dialog open={showPurchaseDialog} onOpenChange={setShowPurchaseDialog}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>{editPurchase ? t('supplements.edit_purchase') : t('supplements.add_purchase')}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">{t('supplements.supplement')} *</label>
+              <Select value={purchaseForm.supplementId} onValueChange={v => setPurchaseForm((f: any) => ({ ...f, supplementId: v }))}>
+                <SelectTrigger><SelectValue placeholder={t('supplements.select_supplement')} /></SelectTrigger>
+                <SelectContent>{supplements.map((s: any) => <SelectItem key={s.id} value={String(s.id)}>{s.name}{s.brand ? ` (${s.brand})` : ''}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('common.date')} *</label>
+                <Input type="date" value={purchaseForm.purchaseDate} onChange={e => setPurchaseForm((f: any) => ({ ...f, purchaseDate: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('supplements.quantity')} *</label>
+                <Input type="number" min="1" placeholder="90" value={purchaseForm.quantity} onChange={e => setPurchaseForm((f: any) => ({ ...f, quantity: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('supplements.currency')}</label>
+                <Select value={purchaseForm.currency} onValueChange={v => setPurchaseForm((f: any) => ({ ...f, currency: v }))}>
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="USD">USD</SelectItem>
+                    <SelectItem value="HKD">HKD</SelectItem>
+                    <SelectItem value="CNY">CNY</SelectItem>
+                    <SelectItem value="EUR">EUR</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('supplements.unit_price')}</label>
+                <Input type="number" step="0.01" placeholder="0.00" value={purchaseForm.unitPrice} onChange={e => setPurchaseForm((f: any) => ({ ...f, unitPrice: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('supplements.total_price')}</label>
+                <Input type="number" step="0.01" placeholder="0.00" value={purchaseForm.totalPrice} onChange={e => setPurchaseForm((f: any) => ({ ...f, totalPrice: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('supplements.source')}</label>
+                <Input placeholder="iHerb" value={purchaseForm.source} onChange={e => setPurchaseForm((f: any) => ({ ...f, source: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('supplements.order_no')}</label>
+                <Input placeholder="HK12345678" value={purchaseForm.orderNo} onChange={e => setPurchaseForm((f: any) => ({ ...f, orderNo: e.target.value }))} />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">{t('common.notes')}</label>
+              <Input placeholder={t('common.optional_notes')} value={purchaseForm.notes} onChange={e => setPurchaseForm((f: any) => ({ ...f, notes: e.target.value }))} />
+            </div>
+            {!editPurchase && (
+              <div className="flex items-center justify-between border border-border rounded-xl p-3">
+                <div>
+                  <p className="text-sm font-medium">{t('supplements.add_to_stock')}</p>
+                  <p className="text-xs text-muted-foreground">{t('supplements.add_to_stock_hint')}</p>
+                </div>
+                <button type="button" onClick={() => setPurchaseForm((f: any) => ({ ...f, addToStock: !f.addToStock }))}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${purchaseForm.addToStock ? 'bg-primary' : 'bg-muted'}`}>
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${purchaseForm.addToStock ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowPurchaseDialog(false); setEditPurchase(null); }}>{t('common.cancel')}</Button>
+            <Button onClick={() => {
+              if (!purchaseForm.supplementId || !purchaseForm.purchaseDate || !purchaseForm.quantity) { toast.error(t('common.fill_required')); return; }
+              const payload = { supplementId: Number(purchaseForm.supplementId), purchaseDate: purchaseForm.purchaseDate, quantity: Number(purchaseForm.quantity), unitPrice: purchaseForm.unitPrice || undefined, totalPrice: purchaseForm.totalPrice || undefined, currency: purchaseForm.currency || undefined, source: purchaseForm.source || undefined, orderNo: purchaseForm.orderNo || undefined, notes: purchaseForm.notes || undefined };
+              if (editPurchase) updatePurchase.mutate({ id: editPurchase.id, ...payload });
+              else addPurchase.mutate({ ...payload, addToStock: purchaseForm.addToStock });
+            }} disabled={addPurchase.isPending || updatePurchase.isPending}>
+              {(addPurchase.isPending || updatePurchase.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {t('common.save')}
             </Button>
           </DialogFooter>

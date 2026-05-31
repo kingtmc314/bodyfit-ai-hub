@@ -533,3 +533,21 @@
 - [x] Mount handler in server/_core/index.ts
 - [x] Create weekly heartbeat cron job via manus-heartbeat CLI (runs Monday 09:00 HKT = Monday 01:00 UTC)
 - [x] Bump version to v1.9.0
+
+## Phase 53: Supplement Purchase Records & Stock History
+
+- [x] Add supplement_purchases table (supplementId, purchaseDate, quantity, unitPrice, totalPrice, source, orderNo, notes)
+- [x] Add supplement_stock_adjustments table (supplementId, adjustDate, adjustType: purchase/intake/manual, delta, reason, notes)
+- [x] Execute migration SQL for both tables
+- [x] Add tRPC procedures: purchases.getAll, purchases.add, purchases.update, purchases.delete
+- [x] Add tRPC procedures: stockAdjustments.getAll, stockAdjustments.add (manual adjust)
+- [x] Add "購買記錄" tab to Supplements.tsx (table of all purchases, add/edit/delete)
+- [x] Add "庫存記錄" tab to Supplements.tsx (timeline of stock changes per supplement)
+- [x] Update restock flow to log a stock_adjustment entry automatically
+- [x] Full zh/en i18n for new tabs
+- [x] Bump version to v2.0.0
+
+## Phase 54: Bulk Import 20 Supplements
+
+- [x] Insert 20 supplements from user data into the database (name, nameZh, brand, category, servingSize, timeOfDay, source)
+- [x] Verify all 20 appear correctly in the Supplements page

@@ -9,7 +9,7 @@ import {
   bodyComposition, heartRateLogs, sleepLogs, progressPhotos, aiInsights,
   healthGoals, runningLogs, runningShoes, races, favouriteExercises,
   dailySteps, medicalConditions, medicalVisits, medicalAttachments,
-  supplements, supplementLogs
+  supplements, supplementLogs, supplementPurchases, supplementStockAdjustments
 } from "../drizzle/schema";
 import { eq, and, desc, gte, lte, like, or, sql } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -2612,6 +2612,11 @@ const supplementsRouter = router({
       notes: z.string().optional(),
       reminderEnabled: z.boolean().optional(),
       reminderTime: z.string().max(5).optional(),
+      description: z.string().optional(),
+      descriptionZh: z.string().optional(),
+      iherbUrl: z.string().optional(),
+      dailyDose: z.number().optional(),
+      timeOfDay: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2637,6 +2642,11 @@ const supplementsRouter = router({
       isActive: z.boolean().optional(),
       reminderEnabled: z.boolean().optional(),
       reminderTime: z.string().max(5).optional(),
+      description: z.string().optional(),
+      descriptionZh: z.string().optional(),
+      iherbUrl: z.string().optional(),
+      dailyDose: z.number().optional(),
+      timeOfDay: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2704,8 +2714,168 @@ const supplementsRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
+      // Get current stock before update
+      const [supp] = await db.select({ stock: supplements.currentStock }).from(supplements).where(and(eq(supplements.id, input.id), eq(supplements.userId, OWNER_USER_ID)));
+      const stockAfter = (supp?.stock ?? 0) + input.quantity;
       await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${input.quantity}, "updatedAt" = NOW() WHERE id = ${input.id} AND "userId" = ${OWNER_USER_ID}`);
+      // Log stock adjustment
+      await db.insert(supplementStockAdjustments).values({
+        supplementId: input.id,
+        userId: OWNER_USER_ID,
+        adjustDate: todayHK(),
+        adjustType: 'manual_add',
+        delta: input.quantity,
+        stockAfter,
+        reason: 'Manual restock',
+      });
       return { success: true };
+    }),
+
+  // ─── Purchase Records ───────────────────────────────────────────────────────
+  getPurchases: publicProcedure
+    .input(z.object({ supplementId: z.number().nullish() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const conditions = [eq(supplementPurchases.userId, OWNER_USER_ID)];
+      if (input.supplementId) conditions.push(eq(supplementPurchases.supplementId, input.supplementId));
+      return db.select({
+        id: supplementPurchases.id,
+        supplementId: supplementPurchases.supplementId,
+        supplementName: supplements.name,
+        supplementBrand: supplements.brand,
+        purchaseDate: supplementPurchases.purchaseDate,
+        quantity: supplementPurchases.quantity,
+        unitPrice: supplementPurchases.unitPrice,
+        totalPrice: supplementPurchases.totalPrice,
+        currency: supplementPurchases.currency,
+        source: supplementPurchases.source,
+        orderNo: supplementPurchases.orderNo,
+        notes: supplementPurchases.notes,
+        createdAt: supplementPurchases.createdAt,
+      }).from(supplementPurchases)
+        .leftJoin(supplements, eq(supplementPurchases.supplementId, supplements.id))
+        .where(and(...conditions))
+        .orderBy(desc(supplementPurchases.purchaseDate));
+    }),
+
+  addPurchase: publicProcedure
+    .input(z.object({
+      supplementId: z.number(),
+      purchaseDate: z.string(),
+      quantity: z.number(),
+      unitPrice: z.string().optional(),
+      totalPrice: z.string().optional(),
+      currency: z.string().optional(),
+      source: z.string().optional(),
+      orderNo: z.string().optional(),
+      notes: z.string().optional(),
+      addToStock: z.boolean().optional(), // whether to add quantity to current stock
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { addToStock, ...purchaseData } = input;
+      const [row] = await db.insert(supplementPurchases).values({
+        ...purchaseData,
+        userId: OWNER_USER_ID,
+      }).returning();
+      // Optionally add to stock and log adjustment
+      if (addToStock) {
+        const [supp] = await db.select({ stock: supplements.currentStock }).from(supplements).where(eq(supplements.id, input.supplementId));
+        const stockAfter = (supp?.stock ?? 0) + input.quantity;
+        await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${input.quantity}, "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
+        await db.insert(supplementStockAdjustments).values({
+          supplementId: input.supplementId,
+          userId: OWNER_USER_ID,
+          adjustDate: input.purchaseDate,
+          adjustType: 'purchase',
+          delta: input.quantity,
+          stockAfter,
+          reason: `Purchase from ${input.source ?? 'iHerb'}`,
+        });
+      }
+      return row;
+    }),
+
+  updatePurchase: publicProcedure
+    .input(z.object({
+      id: z.number(),
+      purchaseDate: z.string().optional(),
+      quantity: z.number().optional(),
+      unitPrice: z.string().optional(),
+      totalPrice: z.string().optional(),
+      currency: z.string().optional(),
+      source: z.string().optional(),
+      orderNo: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { id, ...rest } = input;
+      const [row] = await db.update(supplementPurchases).set({ ...rest, updatedAt: new Date() })
+        .where(and(eq(supplementPurchases.id, id), eq(supplementPurchases.userId, OWNER_USER_ID))).returning();
+      return row;
+    }),
+
+  deletePurchase: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.delete(supplementPurchases).where(and(eq(supplementPurchases.id, input.id), eq(supplementPurchases.userId, OWNER_USER_ID)));
+      return { success: true };
+    }),
+
+  // ─── Stock Adjustments ──────────────────────────────────────────────────────
+  getStockHistory: publicProcedure
+    .input(z.object({ supplementId: z.number().nullish(), limit: z.number().optional() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const conditions = [eq(supplementStockAdjustments.userId, OWNER_USER_ID)];
+      if (input.supplementId) conditions.push(eq(supplementStockAdjustments.supplementId, input.supplementId));
+      return db.select({
+        id: supplementStockAdjustments.id,
+        supplementId: supplementStockAdjustments.supplementId,
+        supplementName: supplements.name,
+        adjustDate: supplementStockAdjustments.adjustDate,
+        adjustType: supplementStockAdjustments.adjustType,
+        delta: supplementStockAdjustments.delta,
+        stockAfter: supplementStockAdjustments.stockAfter,
+        reason: supplementStockAdjustments.reason,
+        notes: supplementStockAdjustments.notes,
+        createdAt: supplementStockAdjustments.createdAt,
+      }).from(supplementStockAdjustments)
+        .leftJoin(supplements, eq(supplementStockAdjustments.supplementId, supplements.id))
+        .where(and(...conditions))
+        .orderBy(desc(supplementStockAdjustments.adjustDate))
+        .limit(input.limit ?? 200);
+    }),
+
+  addStockAdjustment: publicProcedure
+    .input(z.object({
+      supplementId: z.number(),
+      adjustDate: z.string(),
+      adjustType: z.string(),
+      delta: z.number(),
+      reason: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const [supp] = await db.select({ stock: supplements.currentStock }).from(supplements).where(and(eq(supplements.id, input.supplementId), eq(supplements.userId, OWNER_USER_ID)));
+      const stockAfter = (supp?.stock ?? 0) + input.delta;
+      // Update stock
+      await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock + ${input.delta}), "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
+      const [row] = await db.insert(supplementStockAdjustments).values({
+        ...input,
+        userId: OWNER_USER_ID,
+        stockAfter: Math.max(0, stockAfter),
+      }).returning();
+      return row;
     }),
 });
 

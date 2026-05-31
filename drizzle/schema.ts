@@ -452,6 +452,11 @@ export const supplements = pgTable("supplements", {
   isActive: boolean("is_active").default(true),
   reminderEnabled: boolean("reminder_enabled").default(false),
   reminderTime: varchar("reminder_time", { length: 5 }), // HH:MM format, e.g. "08:00"
+  description: text("description"), // EN product description from iHerb
+  descriptionZh: text("description_zh"), // ZH product description
+  iherbUrl: text("iherb_url"), // iHerb product page URL
+  dailyDose: integer("daily_dose"), // pills/servings per day
+  timeOfDay: varchar("time_of_day", { length: 32 }), // morning, pre_workout, post_workout, evening, night
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
@@ -471,3 +476,38 @@ export const supplementLogs = pgTable("supplement_logs", {
 });
 export type SupplementLog = typeof supplementLogs.$inferSelect;
 export type InsertSupplementLog = typeof supplementLogs.$inferInsert;
+
+// ─── Supplement Purchases ─────────────────────────────────────────────────────
+export const supplementPurchases = pgTable("supplement_purchases", {
+  id: serial("id").primaryKey(),
+  supplementId: integer("supplement_id").notNull().references(() => supplements.id, { onDelete: "cascade" }),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  purchaseDate: date("purchase_date").notNull(),
+  quantity: integer("quantity").notNull().default(1), // number of pills/servings purchased
+  unitPrice: numeric("unit_price"), // price per pill/serving
+  totalPrice: numeric("total_price"), // total cost
+  currency: varchar("currency", { length: 8 }).default("HKD"),
+  source: text("source"), // iHerb, Amazon, local pharmacy, etc.
+  orderNo: text("order_no"), // order reference number
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type SupplementPurchase = typeof supplementPurchases.$inferSelect;
+export type InsertSupplementPurchase = typeof supplementPurchases.$inferInsert;
+
+// ─── Supplement Stock Adjustments ─────────────────────────────────────────────
+export const supplementStockAdjustments = pgTable("supplement_stock_adjustments", {
+  id: serial("id").primaryKey(),
+  supplementId: integer("supplement_id").notNull().references(() => supplements.id, { onDelete: "cascade" }),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  adjustDate: date("adjust_date").notNull(),
+  adjustType: varchar("adjust_type", { length: 32 }).notNull(), // purchase, intake, manual_add, manual_remove, expired, lost
+  delta: integer("delta").notNull(), // positive = add, negative = remove
+  stockAfter: integer("stock_after"), // stock level after adjustment
+  reason: text("reason"), // description of why
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type SupplementStockAdjustment = typeof supplementStockAdjustments.$inferSelect;
+export type InsertSupplementStockAdjustment = typeof supplementStockAdjustments.$inferInsert;
