@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot, Trophy, Star, MapPin, Calendar, Clock, Award, Flag, Zap, Package, Camera, ImageIcon } from "lucide-react";
+import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot, Trophy, Star, MapPin, Calendar, Clock, Award, Flag, Zap, Package, Camera, ImageIcon, ArrowUpDown, Thermometer, Wind, Droplets } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart, Area
@@ -90,6 +90,10 @@ export default function Running() {
   const [aiWeeks, setAiWeeks] = useState(12);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
 
+  // Sort state
+  const [shoeSort, setShoeSort] = useState<'status' | 'mileage' | 'name' | 'purchase'>('status');
+  const [raceSort, setRaceSort] = useState<'date' | 'distance' | 'name'>('date');
+
   // Shoe Locker state
   const [showShoeDialog, setShowShoeDialog] = useState(false);
   const [editShoe, setEditShoe] = useState<any>(null);
@@ -101,8 +105,7 @@ export default function Running() {
   const [editRace, setEditRace] = useState<any>(null);
   const [raceForm, setRaceForm] = useState<any>({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' });
   const [deleteRaceConfirm, setDeleteRaceConfirm] = useState<number | null>(null);
-  const [raceAnalysis, setRaceAnalysis] = useState<{ [id: number]: string }>({});
-  const [analyzingRace, setAnalyzingRace] = useState<number | null>(null);
+
 
   const utils = trpc.useUtils();
   const { data: logs = [], isLoading } = trpc.running.getLogs.useQuery({ limit: 200 });
@@ -210,13 +213,7 @@ export default function Running() {
     onSuccess: () => { utils.running.getRaces.invalidate(); utils.running.getPBs.invalidate(); toast.success('賽事已刪除'); setDeleteRaceConfirm(null); },
     onError: (e) => toast.error('錯誤: ' + e.message),
   });
-  const analyzeRaceMutation = trpc.running.analyzeRace.useMutation({
-    onSuccess: (data, vars) => {
-      setRaceAnalysis(prev => ({ ...prev, [vars.raceId]: typeof data.analysis === 'string' ? data.analysis : '' }));
-      setAnalyzingRace(null);
-    },
-    onError: (e) => { toast.error('分析失敗: ' + e.message); setAnalyzingRace(null); },
-  });
+
 
   // ─── Handlers ────────────────────────────────────────────────────────────────
   const openAdd = () => {
@@ -300,6 +297,41 @@ export default function Running() {
       步頻: r.average_cadence ? parseFloat(r.average_cadence) : null,
     }));
   }, [logs]);
+
+  // ─── Sorted shoes and races ─────────────────────────────────────────────────
+  const sortedShoes = useMemo(() => {
+    const shoes = [...(allShoes as any[])];
+    const statusOrder: Record<string, number> = { 'Active': 0, 'Not Yet Opened': 1, 'Retired': 2 };
+    switch (shoeSort) {
+      case 'status': return shoes.sort((a, b) => {
+        const aStatus = a.retirement_date ? 'Retired' : a.firstusedate ? 'Active' : 'Not Yet Opened';
+        const bStatus = b.retirement_date ? 'Retired' : b.firstusedate ? 'Active' : 'Not Yet Opened';
+        return (statusOrder[aStatus] ?? 3) - (statusOrder[bStatus] ?? 3);
+      });
+      case 'mileage': return shoes.sort((a, b) => {
+        const aKm = parseFloat(a.total_km || 0) + parseFloat(a.initial_km || 0);
+        const bKm = parseFloat(b.total_km || 0) + parseFloat(b.initial_km || 0);
+        return bKm - aKm;
+      });
+      case 'name': return shoes.sort((a, b) => (a.shoes_name || '').localeCompare(b.shoes_name || ''));
+      case 'purchase': return shoes.sort((a, b) => {
+        const aDate = a.purchase_date || '';
+        const bDate = b.purchase_date || '';
+        return bDate.localeCompare(aDate);
+      });
+      default: return shoes;
+    }
+  }, [allShoes, shoeSort]);
+
+  const sortedRacesList = useMemo(() => {
+    const raceList = [...(races as any[])];
+    switch (raceSort) {
+      case 'date': return raceList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      case 'distance': return raceList.sort((a, b) => parseFloat(b.distance_km || 0) - parseFloat(a.distance_km || 0));
+      case 'name': return raceList.sort((a, b) => (a.race_name || '').localeCompare(b.race_name || ''));
+      default: return raceList;
+    }
+  }, [races, raceSort]);
 
   // ─── Summary stats ───────────────────────────────────────────────────────────
   const summary = stats?.summary as any;
@@ -601,14 +633,28 @@ export default function Running() {
 
         {/* Shoe Locker tab */}
         <TabsContent value="shoes" className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <h3 className="font-semibold text-foreground flex items-center gap-2">
               <Footprints className="w-4 h-4 text-orange-500" />
               Shoe Locker
             </h3>
-            <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditShoe(null); setShoeForm({ shoesName: '', brand: '', model: '', status: 'Active', purchaseDate: '', firstUseDate: '', retirementDate: '', initialKm: '', maxKm: '800', notes: '', price: '', photoUrl: '' }); setShowShoeDialog(true); }}>
-              <Plus className="w-3.5 h-3.5 mr-1" /> 新增跑鞋
-            </Button>
+            <div className="flex items-center gap-2">
+              <Select value={shoeSort} onValueChange={(v) => setShoeSort(v as any)}>
+                <SelectTrigger className="h-8 w-36 text-xs">
+                  <ArrowUpDown className="w-3 h-3 mr-1" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="status">{t('running.sort_by_status')}</SelectItem>
+                  <SelectItem value="mileage">{t('running.sort_by_mileage')}</SelectItem>
+                  <SelectItem value="name">{t('running.sort_by_name')}</SelectItem>
+                  <SelectItem value="purchase">{t('running.sort_by_purchase')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditShoe(null); setShoeForm({ shoesName: '', brand: '', model: '', status: 'Active', purchaseDate: '', firstUseDate: '', retirementDate: '', initialKm: '', maxKm: '800', notes: '', price: '', photoUrl: '' }); setShowShoeDialog(true); }}>
+                <Plus className="w-3.5 h-3.5 mr-1" /> {t('running.add_shoe')}
+              </Button>
+            </div>
           </div>
 
           {/* Shoe cards */}
@@ -620,7 +666,7 @@ export default function Running() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {(allShoes as any[]).map((shoe: any) => {
+              {sortedShoes.map((shoe: any) => {
                 const totalKm = parseFloat(shoe.total_km || 0);
                 const maxKm = shoe.max_km ? parseFloat(shoe.max_km) : 800;
                 const initialKm = shoe.initial_km ? parseFloat(shoe.initial_km) : 0;
@@ -759,14 +805,27 @@ export default function Running() {
         {/* Race Events tab */}
         <TabsContent value="races" className="space-y-5">
           {/* Header row */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <h3 className="font-semibold text-foreground flex items-center gap-2">
               <Trophy className="w-4 h-4 text-yellow-500" />
               {t('running.race_events')}
             </h3>
-            <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditRace(null); setRaceForm({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' }); setShowRaceDialog(true); }}>
-              <Plus className="w-3.5 h-3.5 mr-1" /> {t('running.add_race')}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Select value={raceSort} onValueChange={(v) => setRaceSort(v as any)}>
+                <SelectTrigger className="h-8 w-36 text-xs">
+                  <ArrowUpDown className="w-3 h-3 mr-1" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="date">{t('running.sort_by_date')}</SelectItem>
+                  <SelectItem value="distance">{t('running.sort_by_distance')}</SelectItem>
+                  <SelectItem value="name">{t('running.sort_by_name')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditRace(null); setRaceForm({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' }); setShowRaceDialog(true); }}>
+                <Plus className="w-3.5 h-3.5 mr-1" /> {t('running.add_race')}
+              </Button>
+            </div>
           </div>
 
           {/* PB Records */}
@@ -794,9 +853,8 @@ export default function Running() {
               <p className="text-sm mt-1">{t('running.add_first_race')}</p>
             </div>
           ) : (() => {
-            const sortedRaces = [...(races as any[])].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-            const upcomingRaces = sortedRaces.filter((r: any) => new Date(r.date + 'T00:00:00+08:00') > now);
-            const completedRaces = sortedRaces.filter((r: any) => new Date(r.date + 'T00:00:00+08:00') <= now);
+            const upcomingRaces = sortedRacesList.filter((r: any) => new Date(r.date + 'T00:00:00+08:00') > now);
+            const completedRaces = sortedRacesList.filter((r: any) => new Date(r.date + 'T00:00:00+08:00') <= now);
 
             const openEditRace = (race: any) => {
               setEditRace(race);
@@ -820,54 +878,36 @@ export default function Running() {
 
             return (
               <div className="space-y-6">
-                {/* Upcoming races */}
+                {/* Upcoming races — compact grid */}
                 {upcomingRaces.length > 0 && (
                   <div>
                     <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">{t('running.upcoming')}</h4>
-                    <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {upcomingRaces.map((race: any) => {
                         const raceDate = new Date(race.date + 'T00:00:00+08:00');
                         const diffMs = raceDate.getTime() - now.getTime();
                         const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                        const diffHrs = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                        const diffMin = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-                        const diffSec = Math.floor((diffMs % (1000 * 60)) / 1000);
                         const isNext = upcomingRaces[0]?.id === race.id;
                         return (
-                          <div key={race.id} className={`rounded-2xl border p-4 shadow-sm ${
-                            isNext ? 'bg-gradient-to-r from-blue-500/10 to-indigo-500/5 border-blue-500/30' : 'bg-card border-border'
+                          <div key={race.id} className={`rounded-2xl border p-3 shadow-sm ${
+                            isNext ? 'bg-gradient-to-br from-blue-500/10 to-indigo-500/5 border-blue-500/30' : 'bg-card border-border'
                           }`}>
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="flex-1 min-w-0">
-                                {isNext && <p className="text-[10px] font-bold uppercase tracking-wider text-blue-500 mb-1 flex items-center gap-1"><Zap className="w-3 h-3" />{t('running.next_race')}</p>}
-                                <p className="font-bold text-foreground">{race.race_name}</p>
-                                <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-muted-foreground">
-                                  <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{race.date}</span>
-                                  {race.distance_km && <span className="flex items-center gap-1"><Flag className="w-3 h-3" />{parseFloat(race.distance_km).toFixed(1)} km</span>}
-                                  {race.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{race.location}</span>}
-                                </div>
-                              </div>
-                              {isNext ? (
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  {[{v: diffDays, l: t('running.days')}, {v: diffHrs, l: t('running.hrs')}, {v: diffMin, l: t('running.min_label')}, {v: diffSec, l: t('running.sec')}].map(({v, l}, i) => (
-                                    <div key={i} className="flex flex-col items-center">
-                                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-extrabold text-lg ${
-                                        i === 3 ? 'bg-red-500/15 text-red-500' : 'bg-muted text-foreground'
-                                      }`}>{String(v).padStart(2, '0')}</div>
-                                      <p className="text-[9px] text-muted-foreground mt-0.5">{l}</p>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="text-right shrink-0">
-                                  <p className="text-xl font-bold text-blue-500">{diffDays}</p>
-                                  <p className="text-[10px] text-muted-foreground">{t('running.days_to_go')}</p>
-                                </div>
-                              )}
+                            {isNext && <p className="text-[10px] font-bold uppercase tracking-wider text-blue-500 mb-1.5 flex items-center gap-1"><Zap className="w-3 h-3" />{t('running.next_race')}</p>}
+                            <p className="font-bold text-foreground text-sm leading-tight mb-1.5">{race.race_name}</p>
+                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground mb-2">
+                              <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{race.date}</span>
+                              {race.distance_km && <span className="flex items-center gap-1"><Flag className="w-3 h-3" />{parseFloat(race.distance_km).toFixed(1)} km</span>}
+                              {race.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{race.location}</span>}
                             </div>
-                            <div className="flex gap-2 mt-3">
-                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openEditRace(race)}><Edit2 className="w-3 h-3 mr-1" />{t('running.edit')}</Button>
-                              <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteRaceConfirm(Number(race.id))}><Trash2 className="w-3 h-3" /></Button>
+                            <div className="flex items-center justify-between">
+                              <div className="flex gap-1">
+                                <Button size="sm" variant="outline" className="h-6 text-[11px] px-2" onClick={() => openEditRace(race)}><Edit2 className="w-2.5 h-2.5 mr-0.5" />{t('running.edit')}</Button>
+                                <Button size="sm" variant="outline" className="h-6 w-6 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteRaceConfirm(Number(race.id))}><Trash2 className="w-2.5 h-2.5" /></Button>
+                              </div>
+                              <div className="text-right">
+                                <span className={`text-lg font-extrabold ${isNext ? 'text-blue-500' : 'text-foreground'}`}>{diffDays}</span>
+                                <span className="text-[10px] text-muted-foreground ml-1">{t('running.days_to_go')}</span>
+                              </div>
                             </div>
                           </div>
                         );
@@ -883,8 +923,7 @@ export default function Running() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {completedRaces.map((race: any) => {
                         const enriched = (racesEnriched as any[]).find((r: any) => Number(r.id) === Number(race.id));
-                        const analysis = raceAnalysis[Number(race.id)];
-                        const isAnalyzing = analyzingRace === Number(race.id);
+                        const rl = enriched?.runLog ?? null;
                         return (
                           <div key={race.id} className={`bg-card border rounded-2xl shadow-sm overflow-hidden ${
                             race.is_pb ? 'border-yellow-500/40' : 'border-border'
@@ -919,23 +958,23 @@ export default function Running() {
                             {/* Performance metrics */}
                             <div className="p-4 space-y-3">
                               {/* Rankings */}
-                              {(race.overall_place || race.gender_group_place || race.age_group_place) && (
+                              {(race.overall_place || race.gender_group_place || race.age_group_place || race.bib_no) && (
                                 <div className="flex gap-2 flex-wrap">
                                   {race.overall_place && (
                                     <div className="bg-muted/50 rounded-lg px-2.5 py-1.5 text-center">
-                                      <p className="text-[9px] text-muted-foreground font-semibold uppercase">總排</p>
+                                      <p className="text-[9px] text-muted-foreground font-semibold uppercase">{t('running.overall_place')}</p>
                                       <p className="text-sm font-bold text-foreground">#{race.overall_place}</p>
                                     </div>
                                   )}
                                   {race.gender_group_place && (
                                     <div className="bg-muted/50 rounded-lg px-2.5 py-1.5 text-center">
-                                      <p className="text-[9px] text-muted-foreground font-semibold uppercase">性別</p>
+                                      <p className="text-[9px] text-muted-foreground font-semibold uppercase">{t('running.gender_place')}</p>
                                       <p className="text-sm font-bold text-foreground">#{race.gender_group_place}</p>
                                     </div>
                                   )}
                                   {race.age_group_place && (
                                     <div className="bg-muted/50 rounded-lg px-2.5 py-1.5 text-center">
-                                      <p className="text-[9px] text-muted-foreground font-semibold uppercase">年齡組</p>
+                                      <p className="text-[9px] text-muted-foreground font-semibold uppercase">{t('running.age_group_place')}</p>
                                       <p className="text-sm font-bold text-foreground">#{race.age_group_place}</p>
                                     </div>
                                   )}
@@ -948,43 +987,142 @@ export default function Running() {
                                 </div>
                               )}
 
-                              {/* Performance from running log lookup */}
-                              {enriched && (enriched.avg_pace || enriched.avg_hr || enriched.avg_cadence || enriched.running_shoes) && (
-                                <div className="border-t border-border pt-3">
-                                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1">
+                              {/* Running log matched data — all fields */}
+                              {rl && (
+                                <div className="border-t border-border pt-3 space-y-2">
+                                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
                                     <Activity className="w-3 h-3" /> {t('running.run_log_matched')}
                                   </p>
+
+                                  {/* Pace & HR */}
                                   <div className="grid grid-cols-2 gap-2">
-                                    {enriched.avg_pace && (
+                                    {rl.average_pace && (
                                       <div className="bg-muted/40 rounded-lg p-2">
                                         <p className="text-[9px] text-muted-foreground">{t('running.avg_pace_race')}</p>
-                                        <p className="text-sm font-bold text-foreground">{formatPace(parseFloat(enriched.avg_pace))}</p>
+                                        <p className="text-sm font-bold text-foreground">{formatPace(parsePaceField(rl.average_pace))}</p>
                                       </div>
                                     )}
-                                    {enriched.avg_hr && (
+                                    {rl.best_pace && (
+                                      <div className="bg-muted/40 rounded-lg p-2">
+                                        <p className="text-[9px] text-muted-foreground">{t('running.best_pace')}</p>
+                                        <p className="text-sm font-bold text-foreground">{rl.best_pace}</p>
+                                      </div>
+                                    )}
+                                    {rl.average_heart_rate && (
                                       <div className="bg-muted/40 rounded-lg p-2">
                                         <p className="text-[9px] text-muted-foreground">{t('running.avg_hr_race')}</p>
-                                        <p className="text-sm font-bold text-foreground">{Math.round(enriched.avg_hr)} bpm</p>
+                                        <p className="text-sm font-bold text-red-500">{Math.round(Number(rl.average_heart_rate))} bpm</p>
                                       </div>
                                     )}
-                                    {enriched.avg_cadence && (
+                                    {rl.maximum_heart_rate && (
+                                      <div className="bg-muted/40 rounded-lg p-2">
+                                        <p className="text-[9px] text-muted-foreground">{t('running.max_hr')}</p>
+                                        <p className="text-sm font-bold text-red-600">{Math.round(Number(rl.maximum_heart_rate))} bpm</p>
+                                      </div>
+                                    )}
+                                    {rl.average_cadence && (
                                       <div className="bg-muted/40 rounded-lg p-2">
                                         <p className="text-[9px] text-muted-foreground">{t('running.avg_cadence_race')}</p>
-                                        <p className="text-sm font-bold text-foreground">{Math.round(enriched.avg_cadence)} spm</p>
+                                        <p className="text-sm font-bold text-foreground">{Math.round(Number(rl.average_cadence))} spm</p>
                                       </div>
                                     )}
-                                    {enriched.running_shoes && (
-                                      <div className="bg-muted/40 rounded-lg p-2 col-span-2">
+                                    {rl.max_cadence && (
+                                      <div className="bg-muted/40 rounded-lg p-2">
+                                        <p className="text-[9px] text-muted-foreground">{t('running.max_cadence')}</p>
+                                        <p className="text-sm font-bold text-foreground">{Math.round(Number(rl.max_cadence))} spm</p>
+                                      </div>
+                                    )}
+                                    {rl.calories && (
+                                      <div className="bg-muted/40 rounded-lg p-2">
+                                        <p className="text-[9px] text-muted-foreground">{t('running.calories')}</p>
+                                        <p className="text-sm font-bold text-orange-500">{rl.calories} kcal</p>
+                                      </div>
+                                    )}
+                                    {rl.running_shoes && (
+                                      <div className="bg-muted/40 rounded-lg p-2">
                                         <p className="text-[9px] text-muted-foreground">{t('running.shoes')}</p>
-                                        <p className="text-sm font-bold text-foreground truncate">{enriched.running_shoes}</p>
+                                        <p className="text-sm font-bold text-foreground truncate">{rl.running_shoes}</p>
                                       </div>
                                     )}
                                   </div>
+
+                                  {/* Biomechanics */}
+                                  {(rl.avg_stride_length_m || rl.avg_vertical_ratio || rl.vertical_oscillation_cm || rl.avg_ground_contact_time_ms) && (
+                                    <div>
+                                      <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{t('running.biomechanics')}</p>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        {rl.avg_stride_length_m && (
+                                          <div className="bg-purple-500/5 border border-purple-500/15 rounded-lg p-2">
+                                            <p className="text-[9px] text-muted-foreground">{t('running.stride_length')}</p>
+                                            <p className="text-sm font-bold text-purple-600 dark:text-purple-400">{parseFloat(rl.avg_stride_length_m).toFixed(2)} m</p>
+                                          </div>
+                                        )}
+                                        {rl.avg_vertical_ratio && (
+                                          <div className="bg-purple-500/5 border border-purple-500/15 rounded-lg p-2">
+                                            <p className="text-[9px] text-muted-foreground">{t('running.vertical_ratio')}</p>
+                                            <p className="text-sm font-bold text-purple-600 dark:text-purple-400">{parseFloat(rl.avg_vertical_ratio).toFixed(1)}%</p>
+                                          </div>
+                                        )}
+                                        {rl.vertical_oscillation_cm && (
+                                          <div className="bg-purple-500/5 border border-purple-500/15 rounded-lg p-2">
+                                            <p className="text-[9px] text-muted-foreground">{t('running.vertical_oscillation')}</p>
+                                            <p className="text-sm font-bold text-purple-600 dark:text-purple-400">{parseFloat(rl.vertical_oscillation_cm).toFixed(1)} cm</p>
+                                          </div>
+                                        )}
+                                        {rl.avg_ground_contact_time_ms && (
+                                          <div className="bg-purple-500/5 border border-purple-500/15 rounded-lg p-2">
+                                            <p className="text-[9px] text-muted-foreground">{t('running.ground_contact')}</p>
+                                            <p className="text-sm font-bold text-purple-600 dark:text-purple-400">{Math.round(Number(rl.avg_ground_contact_time_ms))} ms</p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Weather */}
+                                  {(rl.temperature || rl.humidity || rl.wind_speed || rl.apparent_temp) && (
+                                    <div>
+                                      <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                                        <Thermometer className="w-3 h-3" /> {t('running.weather_conditions')}
+                                      </p>
+                                      <div className="flex flex-wrap gap-2">
+                                        {rl.temperature && (
+                                          <div className="flex items-center gap-1 bg-sky-500/10 border border-sky-500/20 rounded-full px-2.5 py-1 text-xs">
+                                            <Thermometer className="w-3 h-3 text-sky-500" />
+                                            <span className="font-semibold text-sky-700 dark:text-sky-400">{parseFloat(rl.temperature).toFixed(1)}°C</span>
+                                          </div>
+                                        )}
+                                        {rl.apparent_temp && (
+                                          <div className="flex items-center gap-1 bg-orange-500/10 border border-orange-500/20 rounded-full px-2.5 py-1 text-xs">
+                                            <Thermometer className="w-3 h-3 text-orange-500" />
+                                            <span className="font-semibold text-orange-700 dark:text-orange-400">{t('running.feels_like')} {parseFloat(rl.apparent_temp).toFixed(1)}°C</span>
+                                          </div>
+                                        )}
+                                        {rl.humidity && (
+                                          <div className="flex items-center gap-1 bg-blue-500/10 border border-blue-500/20 rounded-full px-2.5 py-1 text-xs">
+                                            <Droplets className="w-3 h-3 text-blue-500" />
+                                            <span className="font-semibold text-blue-700 dark:text-blue-400">{parseFloat(rl.humidity).toFixed(0)}%</span>
+                                          </div>
+                                        )}
+                                        {rl.wind_speed && (
+                                          <div className="flex items-center gap-1 bg-teal-500/10 border border-teal-500/20 rounded-full px-2.5 py-1 text-xs">
+                                            <Wind className="w-3 h-3 text-teal-500" />
+                                            <span className="font-semibold text-teal-700 dark:text-teal-400">{parseFloat(rl.wind_speed).toFixed(1)} km/h</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Log notes */}
+                                  {rl.log_notes && (
+                                    <p className="text-xs text-muted-foreground italic border-t border-border pt-2">{rl.log_notes}</p>
+                                  )}
                                 </div>
                               )}
 
-                              {/* Race shoes from race record itself */}
-                              {!enriched?.running_shoes && race.running_shoes && (
+                              {/* Race shoes from race record itself (fallback) */}
+                              {!rl?.running_shoes && race.running_shoes && (
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                   <Footprints className="w-3.5 h-3.5" />
                                   <span>{race.running_shoes}</span>
@@ -995,29 +1133,11 @@ export default function Running() {
                                 <p className="text-xs text-muted-foreground italic">{race.notes}</p>
                               )}
 
-                              {/* Action buttons */}
+                              {/* Action buttons — no per-race AI button */}
                               <div className="flex gap-2 pt-1">
-                                <Button size="sm" variant="outline" className="h-7 text-xs flex items-center gap-1"
-                                  disabled={isAnalyzing}
-                                  onClick={() => { setAnalyzingRace(Number(race.id)); analyzeRaceMutation.mutate({ raceId: Number(race.id) }); }}>
-                                  {isAnalyzing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                                  {t('running.ai_race_analysis')}
-                                </Button>
                                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openEditRace(race)}><Edit2 className="w-3 h-3 mr-1" />{t('running.edit')}</Button>
                                 <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteRaceConfirm(Number(race.id))}><Trash2 className="w-3 h-3" /></Button>
                               </div>
-
-                              {/* AI Analysis result */}
-                              {analysis && (
-                                <div className="mt-2 pt-3 border-t border-border">
-                                  <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
-                                    <Sparkles className="w-3 h-3 text-orange-500" /> AI 分析結果
-                                  </p>
-                                  <div className="prose prose-sm dark:prose-invert max-w-none text-xs">
-                                    <Streamdown>{analysis}</Streamdown>
-                                  </div>
-                                </div>
-                              )}
                             </div>
                           </div>
                         );
@@ -1039,7 +1159,7 @@ export default function Running() {
                   <Sparkles className="w-4 h-4 text-orange-500" />
                   {t("running.ai_analysis")}
                 </h3>
-                <p className="text-xs text-muted-foreground mt-0.5">{t("running.ai_analysis_desc")}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{t("running.ai_coach_desc")}</p>
               </div>
               <div className="flex items-center gap-2">
                 <Select value={String(aiWeeks)} onValueChange={(v) => { setAiWeeks(Number(v)); setAiAnalysis(null); }}>

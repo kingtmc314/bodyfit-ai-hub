@@ -457,3 +457,14 @@
 - [x] Add getRacesEnriched procedure (lookup running performance by date+distance from running_logs)
 - [x] Fix AI food photo analysis: convert /manus-storage/ relative path to S3 signed URL before LLM call
 - [x] Version bump to v1.3.0
+
+## Phase 47: Completed Race Cards with All Running Log Fields + Sorting
+- [x] Add sorting to Shoe Locker: By Status / By Mileage / By Name / By Purchase Date
+- [x] Add sorting to Race Events: By Date / By Distance / By Name
+- [x] Redesign upcoming race cards as compact grid (3 per row on desktop)
+- [x] Completed race cards: show ALL running_logs fields from getRacesEnriched (avg pace, best pace, avg HR, max HR, avg cadence, max cadence, calories, running shoes, biomechanics section, weather section)
+- [x] Remove per-race AI Analysis button (AI analysis now consolidated in AI Coach tab)
+- [x] AI Coach tab description updated to mention race analysis, biomechanics, shoe recommendations
+- [x] Add i18n keys: sort_by_status/mileage/name/purchase/date/distance, best_pace, biomechanics, stride_length, vertical_ratio, vertical_oscillation, ground_contact, weather_conditions, feels_like, ai_coach_desc, no_runs_for_shoe, run_history, close
+- [x] Version bump to v1.4.0
+- [x] 35/35 tests passing, 0 TypeScript errors

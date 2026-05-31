@@ -2055,9 +2055,10 @@ ${activeShoeSummary || '暫無跑鞋記錄'}
         const maxDist = distKm * 1.1;
         // Look for a run on the same date or ±1 day with similar distance
         const logRows = await db.execute(sql`
-          SELECT id, date, distance_km, average_pace, average_heart_rate, average_cadence,
+          SELECT id, date, distance_km, average_pace, best_pace, average_heart_rate, maximum_heart_rate, average_cadence,
                  running_shoes, hour, minutes, second, calories, running_type,
-                 max_cadence, avg_stride_length_m, avg_vertical_ratio, vertical_oscillation_cm
+                 max_cadence, avg_stride_length_m, avg_vertical_ratio, vertical_oscillation_cm,
+                 avg_ground_contact_time_ms, temperature, humidity, wind_speed, apparent_temp, notes as log_notes
           FROM running_logs
           WHERE date BETWEEN (${race.date}::date - interval '1 day')::text AND (${race.date}::date + interval '1 day')::text
             AND distance_km::numeric BETWEEN ${minDist} AND ${maxDist}
