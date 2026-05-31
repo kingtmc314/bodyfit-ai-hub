@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useIsOwner } from "@/contexts/OwnerContext";
 import { toast } from "sonner";
@@ -60,6 +60,13 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   );
 };
 
+// Auto-calculate calories from steps using body weight
+// Formula based on MET 3.5 (walking), stride ~0.75m:
+// Calories = steps × 0.0004 × weight_kg
+function calcStepsCalories(steps: number, weightKg: number): number {
+  return Math.round(steps * 0.0004 * weightKg);
+}
+
 export default function Steps() {
   const { t } = useTranslation();
   const isOwner = useIsOwner();
@@ -72,6 +79,12 @@ export default function Steps() {
 
   const utils = trpc.useUtils();
   const { data: records = [], isLoading } = trpc.steps.getAll.useQuery({ limit: 365 });
+  // Fetch body weight on or before the selected date for accurate calorie estimation
+  const { data: weightRecord } = trpc.body.getWeightOnOrBefore.useQuery(
+    { date: form.date || todayHKString() },
+    { enabled: !!form.date }
+  );
+  const latestWeight: number = (weightRecord as any)?.weight ?? 70; // default 70kg if no record
 
   const addMutation = trpc.steps.add.useMutation({
     onSuccess: async (newRecord) => {
@@ -93,6 +106,18 @@ export default function Steps() {
     onSuccess: () => { utils.steps.getAll.invalidate(); toast.success(t('common.deleted')); },
     onError: (e) => toast.error(e.message),
   });
+
+  // Auto-calculate calories when steps change (only for new entries, not edits)
+  useEffect(() => {
+    if (!editEntry && form.steps) {
+      const steps = Number(form.steps);
+      if (steps > 0) {
+        const estimated = calcStepsCalories(steps, latestWeight);
+        setForm((f: any) => ({ ...f, calories: String(estimated) }));
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.steps, latestWeight]);
 
   const handleSubmit = () => {
     const payload = {
@@ -302,13 +327,33 @@ export default function Steps() {
               { key: 'floorsClimbed', label: t('steps.floors'), placeholder: '10' },
               { key: 'distanceKm', label: t('steps.distance') + ' (km)', placeholder: '7.5', step: '0.01' },
               { key: 'activeMinutes', label: t('steps.active_min'), placeholder: '60' },
-              { key: 'calories', label: t('steps.calories') + ' (kcal)', placeholder: '400' },
             ].map(f => (
               <div key={f.key}>
                 <label className="text-xs text-muted-foreground mb-1 block">{f.label}</label>
                 <Input type="number" step={f.step ?? '1'} placeholder={f.placeholder} value={form[f.key]} onChange={e => setForm((prev: any) => ({ ...prev, [f.key]: e.target.value }))} />
               </div>
             ))}
+            {/* Calories - auto-calculated from steps + body weight */}
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">
+                {t('steps.calories')} (kcal)
+                {!editEntry && form.steps && (
+                  <span className="ml-1 text-primary text-[10px]">
+                    · 自動估算 ({latestWeight}kg
+                    {weightRecord && (weightRecord as any).date !== form.date
+                      ? ` · 體重來自 ${(weightRecord as any).date}`
+                      : ''}
+                    )
+                  </span>
+                )}
+              </label>
+              <Input
+                type="number"
+                placeholder="400"
+                value={form.calories}
+                onChange={e => setForm((prev: any) => ({ ...prev, calories: e.target.value }))}
+              />
+            </div>
             <div className="col-span-2">
               <label className="text-xs text-muted-foreground mb-1 block">{t('common.notes')}</label>
               <Input placeholder={t('common.optional_notes')} value={form.notes} onChange={e => setForm((f: any) => ({ ...f, notes: e.target.value }))} />

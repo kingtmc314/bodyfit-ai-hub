@@ -458,16 +458,26 @@ export default function Workout() {
                         )}
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      {isOwner && <Button size="sm" variant="outline" className="gap-2" onClick={() => { setSearchQuery(''); setShowExerciseDialog(true); }}>
-                        <Plus className="w-3.5 h-3.5" /> Add Exercise
-                      </Button>}
-                      {isOwner && <Button size="sm" className="gap-2 bg-green-500 hover:bg-green-600 text-white"
-                        disabled={finishLoading}
-                        onClick={() => { setFinishLoading(true); finishSession.mutate({ id: activeSession.id }); }}>
-                        {finishLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                        結束訓練
-                      </Button>}
+                    <div className="flex gap-2 items-center">
+                      {activeSession.endTime ? (
+                        // Completed session - read-only badge
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-500/15 text-green-500 border border-green-500/30">
+                          <Check className="w-3 h-3" /> 已完成
+                        </span>
+                      ) : (
+                        // Active session - show edit controls
+                        <>
+                          {isOwner && <Button size="sm" variant="outline" className="gap-2" onClick={() => { setSearchQuery(''); setShowExerciseDialog(true); }}>
+                            <Plus className="w-3.5 h-3.5" /> Add Exercise
+                          </Button>}
+                          {isOwner && <Button size="sm" className="gap-2 bg-green-500 hover:bg-green-600 text-white"
+                            disabled={finishLoading}
+                            onClick={() => { setFinishLoading(true); finishSession.mutate({ id: activeSession.id }); }}>
+                            {finishLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            結束訓練
+                          </Button>}
+                        </>
+                      )}
                       {isOwner && <Button size="sm" variant="destructive" onClick={() => deleteSession.mutate({ id: activeSession.id })}>
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>}

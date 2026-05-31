@@ -730,6 +730,26 @@ const bodyRouter = router({
       return { success: true };
     }),
 
+  // Get the most recent weight record on or before a given date
+  getWeightOnOrBefore: publicProcedure
+    .input(z.object({ date: z.string() })) // date: 'YYYY-MM-DD'
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const rows = await db.select({
+        date: bodyComposition.date,
+        weight: bodyComposition.weight,
+      }).from(bodyComposition)
+        .where(and(
+          eq(bodyComposition.userId, OWNER_USER_ID),
+          sql`${bodyComposition.date} <= ${input.date}`,
+          sql`${bodyComposition.weight} IS NOT NULL`,
+        ))
+        .orderBy(desc(bodyComposition.date))
+        .limit(1);
+      return rows[0] ?? null;
+    }),
+
   // Bulk import from Google Sheets
   bulkImport: ownerProcedure
     .input(z.array(z.object({
@@ -1472,6 +1492,81 @@ const chartsRouter = router({
           sql`${workoutSessions.startTime} >= ${sinceDate}`
         ))
         .orderBy(workoutSessions.startTime);
+    }),
+
+  // Weekly exercise calories burned breakdown (workout + running + steps)
+  weeklyExerciseCalories: publicProcedure
+    .input(z.object({ weeks: z.number().int().min(1).max(26).default(8) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const sinceDate = new Date(Date.now() - input.weeks * 7 * 86400000);
+      const sinceDateStr = sinceDate.toISOString().slice(0, 10);
+      // Workout calories per day
+      const workoutRows = await db.select({
+        date: sql<string>`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as('date'),
+        calories: sql<number>`COALESCE(SUM(${workoutSessions.caloriesBurned}), 0)`.as('calories'),
+      }).from(workoutSessions)
+        .where(and(
+          eq(workoutSessions.userId, OWNER_USER_ID),
+          sql`${workoutSessions.startTime} >= ${sinceDate}`,
+          sql`${workoutSessions.endTime} IS NOT NULL`,
+        ))
+        .groupBy(sql`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`);
+      // Running calories per day
+      const runningRows = await db.select({
+        date: runningLogs.date,
+        calories: sql<number>`COALESCE(SUM(${runningLogs.calories}), 0)`.as('calories'),
+      }).from(runningLogs)
+        .where(and(
+          eq(runningLogs.userId, OWNER_USER_ID),
+          sql`${runningLogs.date} >= ${sinceDateStr}`,
+        ))
+        .groupBy(runningLogs.date);
+      // Steps calories per day
+      const stepsRows = await db.select({
+        date: dailySteps.date,
+        calories: sql<number>`COALESCE(SUM(${dailySteps.calories}), 0)`.as('calories'),
+      }).from(dailySteps)
+        .where(and(
+          eq(dailySteps.userId, OWNER_USER_ID),
+          sql`${dailySteps.date} >= ${sinceDateStr}`,
+        ))
+        .groupBy(dailySteps.date);
+      // Aggregate by ISO week (Monday-based)
+      const weekMap: Record<string, { workout: number; running: number; steps: number }> = {};
+      const getWeekLabel = (dateStr: string) => {
+        const d = new Date(dateStr + 'T12:00:00+08:00');
+        const day = d.getDay();
+        const monday = new Date(d);
+        monday.setDate(d.getDate() - ((day + 6) % 7));
+        return monday.toISOString().slice(0, 10);
+      };
+      for (const r of workoutRows) {
+        const w = getWeekLabel(r.date);
+        if (!weekMap[w]) weekMap[w] = { workout: 0, running: 0, steps: 0 };
+        weekMap[w].workout += Number(r.calories) || 0;
+      }
+      for (const r of runningRows) {
+        const w = getWeekLabel(String(r.date));
+        if (!weekMap[w]) weekMap[w] = { workout: 0, running: 0, steps: 0 };
+        weekMap[w].running += Number(r.calories) || 0;
+      }
+      for (const r of stepsRows) {
+        const w = getWeekLabel(String(r.date));
+        if (!weekMap[w]) weekMap[w] = { workout: 0, running: 0, steps: 0 };
+        weekMap[w].steps += Number(r.calories) || 0;
+      }
+      return Object.entries(weekMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([week, v]) => ({
+          week,
+          label: week.slice(5), // MM-DD
+          workout: Math.round(v.workout),
+          running: Math.round(v.running),
+          steps: Math.round(v.steps),
+          total: Math.round(v.workout + v.running + v.steps),
+        }));
     }),
 
   // Fetch daily calorie totals for charting

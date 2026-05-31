@@ -722,6 +722,47 @@ function WorkoutCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
   );
 }
 
+// ─── Weekly Exercise Calorie Chart ──────────────────────────────────────────
+function WeeklyExerciseCaloriesChart({ weeks }: { weeks: number }) {
+  const { data, isLoading, error, refetch } = trpc.charts.weeklyExerciseCalories.useQuery({ weeks });
+  if (isLoading) return <ChartSkeleton />;
+  if (error) return <ErrorChart message={String(error)} onRetry={refetch} />;
+  if (!data || !data.length) return <EmptyChart message="No exercise data yet. Complete workouts, log runs, or record steps to see weekly calorie burn." />;
+  return (
+    <Card className="col-span-full">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium">每週運動消耗卡路里</CardTitle>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-500" /> 健身</span>
+            <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-orange-400" /> 跑步</span>
+            <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-green-400" /> 步行</span>
+          </div>
+        </div>
+        <CardDescription className="text-xs">每週健身 + 跑步 + 步行消耗（kcal）</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 5 }} barSize={24}>
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
+            <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+            <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" unit=" kcal" width={60} />
+            <Tooltip
+              contentStyle={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }}
+              formatter={(v: number, name: string) => [`${v} kcal`, name === 'workout' ? '健身' : name === 'running' ? '跑步' : '步行']}
+              labelFormatter={(label) => `週起 ${label}`}
+            />
+            <Legend formatter={(v) => v === 'workout' ? '健身' : v === 'running' ? '跑步' : '步行'} wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="workout" stackId="a" fill="#3b82f6" name="workout" radius={[0, 0, 0, 0]} />
+            <Bar dataKey="running" stackId="a" fill="#fb923c" name="running" radius={[0, 0, 0, 0]} />
+            <Bar dataKey="steps" stackId="a" fill="#4ade80" name="steps" radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Nutrition Charts ─────────────────────────────────────────────────────────
 function NutritionCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
   const { data, isLoading, error, refetch } = trpc.charts.calorieHistory.useQuery({ days });
@@ -862,7 +903,14 @@ export default function Trends() {
           <HeartRateCharts days={days} goals={goals} />
         </TabsContent>
         <TabsContent value="workout" className="mt-4">
-          <WorkoutCharts days={days} goals={goals} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="col-span-full">
+              <WeeklyExerciseCaloriesChart weeks={days <= 30 ? 4 : days <= 90 ? 8 : 16} />
+            </div>
+          </div>
+          <div className="mt-4">
+            <WorkoutCharts days={days} goals={goals} />
+          </div>
         </TabsContent>
         <TabsContent value="nutrition" className="mt-4">
           <NutritionCharts days={days} goals={goals} />
