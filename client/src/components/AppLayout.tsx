@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import { OwnerProvider, useIsOwner } from "@/contexts/OwnerContext";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { getLoginUrl } from "@/const";
 
 type NavGroup = {
   groupKey: string;
@@ -178,16 +179,26 @@ function AppLayoutInner({ children }: AppLayoutProps) {
             </Button>
           </div>
         </div>
-        {/* Visitor badge for non-owner */}
+        {/* Visitor badge / login button for non-owner */}
         {!loading && !isOwner && (
-          <div className="mt-2 px-2 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 flex items-center gap-1.5">
-            <Eye className="w-3 h-3 text-blue-500 shrink-0" />
-            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium leading-tight">
-              {i18n.language === 'zh' ? '訪客瀏覽模式' : 'Read-only visitor'}
-            </span>
+          <div className="mt-2 space-y-1.5">
+            <div className="px-2 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 flex items-center gap-1.5">
+              <Eye className="w-3 h-3 text-blue-500 shrink-0" />
+              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium leading-tight">
+                {i18n.language === 'zh' ? '訪客瀏覽模式' : 'Read-only visitor'}
+              </span>
+            </div>
+            {!user && (
+              <button
+                onClick={() => { window.location.href = getLoginUrl(); }}
+                className="w-full text-[11px] font-semibold text-white bg-primary hover:bg-primary/90 rounded-lg py-1.5 transition-colors"
+              >
+                {i18n.language === 'zh' ? '登入' : 'Log In'}
+              </button>
+            )}
           </div>
         )}
-        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v2.8.0</p>
+        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v2.9.0</p>
       </div>
     </div>
   );
@@ -244,10 +255,18 @@ function AppLayoutInner({ children }: AppLayoutProps) {
                 </p>
                 <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
                   {i18n.language === 'zh'
-                    ? '您正在瀏覽 kingmath 的健身數據（唯讀）。登入為擁有者以編輯數據。'
-                    : "You're viewing kingmath's fitness data in read-only mode. Log in as owner to edit."}
+                    ? '您正在瀏覽 kingmath 的健身數據（唯讀）。'
+                    : "You're viewing kingmath's fitness data in read-only mode."}
                 </p>
               </div>
+              {!user && (
+                <button
+                  onClick={() => { window.location.href = getLoginUrl(); }}
+                  className="shrink-0 text-xs font-semibold text-white bg-primary hover:bg-primary/90 rounded-lg px-3 py-1.5 transition-colors"
+                >
+                  {i18n.language === 'zh' ? '登入' : 'Log In'}
+                </button>
+              )}
             </div>
           )}
           {children}
