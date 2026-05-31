@@ -631,6 +631,88 @@ export default function Running() {
               </ResponsiveContainer>
             )}
           </div>
+
+          {/* Pace Zone Distribution */}
+          {(() => {
+            // Define 5 pace zones (min/km): Z1 easy >6:30, Z2 aerobic 5:45-6:30, Z3 tempo 5:00-5:45, Z4 threshold 4:20-5:00, Z5 speed <4:20
+            const paceZoneDefs = [
+              { label: 'Z1 輕鬆', color: '#60a5fa', min: 390, max: Infinity },  // >6:30
+              { label: 'Z2 有氧', color: '#34d399', min: 345, max: 390 },        // 5:45-6:30
+              { label: 'Z3 節奏', color: '#fbbf24', min: 300, max: 345 },        // 5:00-5:45
+              { label: 'Z4 閾值', color: '#f97316', min: 260, max: 300 },        // 4:20-5:00
+              { label: 'Z5 速度', color: '#ef4444', min: 0, max: 260 },          // <4:20
+            ];
+            const paceZoneCounts = paceZoneDefs.map(z => ({
+              zone: z.label,
+              次數: (logs as any[]).filter((r: any) => {
+                const sec = r.average_pace ? parsePaceField(r.average_pace) : null;
+                if (!sec) return false;
+                return sec >= z.min && sec < z.max;
+              }).length,
+              color: z.color,
+            })).filter(z => z.次數 > 0);
+            return (
+              <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+                <h3 className="font-semibold text-foreground mb-1">配速區間分佈</h3>
+                <p className="text-xs text-muted-foreground mb-4">Z1 &gt;6:30 · Z2 5:45–6:30 · Z3 5:00–5:45 · Z4 4:20–5:00 · Z5 &lt;4:20 /km</p>
+                {paceZoneCounts.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8 text-sm">暫無配速數據</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={paceZoneCounts} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <YAxis type="category" dataKey="zone" tick={{ fontSize: 11 }} width={72} />
+                      <Tooltip formatter={(v) => [`${v} 次`, '跑步次數']} />
+                      <Bar dataKey="次數" radius={[0, 4, 4, 0]}>
+                        {paceZoneCounts.map((entry, i) => (
+                          <rect key={i} fill={entry.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* HR Zone Analysis */}
+          {hrZones.length > 0 && (() => {
+            const hrZoneColors = ['#60a5fa', '#34d399', '#fbbf24', '#f97316', '#ef4444'];
+            const hrZoneCounts = hrZones.map((z, i) => ({
+              zone: z.label,
+              次數: (logs as any[]).filter((r: any) => {
+                const hr = r.average_heart_rate;
+                if (!hr) return false;
+                return hr >= z.lo && hr <= z.hi;
+              }).length,
+              範圍: `${z.lo}–${z.hi}`,
+              color: hrZoneColors[i],
+            })).filter(z => z.次數 > 0);
+            return (
+              <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+                <h3 className="font-semibold text-foreground mb-1">心率區間分析 (Karvonen)</h3>
+                <p className="text-xs text-muted-foreground mb-4">基於靜息心率 {restingHr} bpm · 最大心率 {maxHrForZones} bpm</p>
+                {hrZoneCounts.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8 text-sm">暫無心率數據</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={hrZoneCounts} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <YAxis type="category" dataKey="zone" tick={{ fontSize: 11 }} width={60} />
+                      <Tooltip formatter={(v, _n, props) => [`${v} 次 (${props.payload?.範圍} bpm)`, '跑步次數']} />
+                      <Bar dataKey="次數" radius={[0, 4, 4, 0]}>
+                        {hrZoneCounts.map((entry, i) => (
+                          <rect key={i} fill={entry.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            );
+          })()}
         </TabsContent>
 
         {/* Log tab */}

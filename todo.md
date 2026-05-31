@@ -124,3 +124,11 @@
 - [x] Update Dashboard hero card to show net calories (intake minus burned) with breakdown
 - [x] Add today's exercise summary card on Dashboard showing workout/running/steps calories burned
 - [x] Add floating FAB quick-add button on Dashboard (log food, log workout, log weight, log sleep)
+
+## v3.3.0 Planned Features
+- [ ] Steps calorie backfill: server procedure to recalculate calories for steps records with 0 calories using date-specific body weight
+- [ ] Steps page: add "重新計算卡路里" button to trigger backfill
+- [ ] Running page: add pace zone distribution bar chart (5 zones)
+- [ ] Running page: add heart rate zone analysis chart (5 HR zones)
+- [ ] Dynamic TDEE calorie target: adjust daily calorie goal based on exercise burned (BMR + activity + exercise)
+- [ ] Dashboard net calorie card: show TDEE-adjusted target instead of fixed 2000 kcal

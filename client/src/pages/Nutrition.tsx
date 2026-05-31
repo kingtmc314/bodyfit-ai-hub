@@ -110,6 +110,11 @@ export default function Nutrition() {
   const totalCaloriesBurned = workoutCalData?.totalBurned ?? workoutCaloriesBurned;
   const workoutSessions = workoutCalData?.sessions ?? [];
 
+  // Fetch TDEE-based dynamic calorie target (uses BMR from latest body composition)
+  const { data: dashSummary } = trpc.dashboard.getSummary.useQuery();
+  const dynamicCalorieGoal = dashSummary?.tdee?.dailyCalorieTarget ?? GOALS.calories;
+  const hasBmr = dashSummary?.tdee?.hasBmr ?? false;
+
   const totals = meals.reduce((acc, m) => ({
     calories: acc.calories + (m.calories ?? 0),
     protein: acc.protein + (m.protein ?? 0),
@@ -214,7 +219,7 @@ export default function Nutrition() {
       {/* Daily Summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Calories", value: Math.round(totals.calories), goal: GOALS.calories, unit: "kcal", color: "oklch(0.78 0.20 50)", icon: Flame },
+          { label: "Calories", value: Math.round(totals.calories), goal: dynamicCalorieGoal, unit: "kcal", color: "oklch(0.78 0.20 50)", icon: Flame },
           { label: "Protein", value: Math.round(totals.protein), goal: GOALS.protein, unit: "g", color: "oklch(0.72 0.19 160)", icon: Beef },
           { label: "Carbs", value: Math.round(totals.carbs), goal: GOALS.carbs, unit: "g", color: "oklch(0.75 0.17 280)", icon: Wheat },
           { label: "Fat", value: Math.round(totals.fat), goal: GOALS.fat, unit: "g", color: "oklch(0.68 0.22 25)", icon: Droplets },
@@ -257,14 +262,14 @@ export default function Nutrition() {
             </div>
             <div className="text-center">
               <p className="text-xs text-muted-foreground">淨卡路里</p>
-              <p className={`text-base font-bold ${Math.round(totals.calories - totalCaloriesBurned) > GOALS.calories ? 'text-red-500' : 'text-green-500'}`}>
+              <p className={`text-base font-bold ${Math.round(totals.calories - totalCaloriesBurned) > dynamicCalorieGoal ? 'text-red-500' : 'text-green-500'}`}>
                 {Math.round(totals.calories - totalCaloriesBurned)}
               </p>
             </div>
             <div className="text-center">
-              <p className="text-xs text-muted-foreground">剩餘目標</p>
+              <p className="text-xs text-muted-foreground">剩餘目標{hasBmr && <span className="ml-1 text-primary/70">(TDEE)</span>}</p>
               <p className="text-base font-bold text-foreground">
-                {Math.max(0, GOALS.calories - Math.round(totals.calories - totalCaloriesBurned))}
+                {Math.max(0, dynamicCalorieGoal - Math.round(totals.calories - totalCaloriesBurned))}
               </p>
             </div>
           </div>

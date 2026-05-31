@@ -1142,6 +1142,19 @@ const dashboardRouter = router({
     const totalCaloriesBurned = workoutCaloriesBurned + runningCaloriesBurned + stepsCaloriesBurned;
     const netCalories = todayCalories - totalCaloriesBurned;
 
+    // Calculate TDEE-based daily calorie target
+    // Uses BMR from latest body composition + activity factor (estimated from recent workout frequency)
+    // Activity factor: sedentary 1.2, light 1.375, moderate 1.55, active 1.725
+    const bmr = latestBody[0]?.bmr ? Number(latestBody[0].bmr) : null;
+    const recentWorkoutDays = sessionDates.size; // unique days with workouts in last 7 days
+    const activityFactor = recentWorkoutDays >= 6 ? 1.725 : recentWorkoutDays >= 4 ? 1.55 : recentWorkoutDays >= 2 ? 1.375 : 1.2;
+    // TDEE = BMR × activity factor (base maintenance), then add today's exercise on top
+    // This gives a dynamic target that adjusts with today's actual exercise
+    const baseTdee = bmr ? Math.round(bmr * activityFactor) : 2000;
+    // Daily target = base TDEE (already includes typical activity) + extra exercise today beyond typical
+    // Simpler approach: base TDEE + today's exercise burned (encourages eating back exercise calories)
+    const dailyCalorieTarget = bmr ? Math.round(bmr * activityFactor) + totalCaloriesBurned : 2000 + totalCaloriesBurned;
+
     return {
       today: { calories: todayCalories, protein: todayProtein, carbs: todayCarbs, fat: todayFat, mealCount: todayMeals.length },
       exercise: {
@@ -1153,6 +1166,13 @@ const dashboardRouter = router({
         todayWorkouts,
         todayRunning,
         todaySteps: todayStepsRows[0] || null,
+      },
+      tdee: {
+        bmr: bmr ?? null,
+        activityFactor,
+        baseTdee,
+        dailyCalorieTarget,
+        hasBmr: !!bmr,
       },
       workoutStreak: streak,
       latestBody: latestBody[0] || null,
@@ -2919,7 +2939,7 @@ const stepsRouter = router({
       await db.insert(stepLogPhotos).values({ userId: OWNER_USER_ID, stepLogId: input.stepLogId, photoUrl: url, fileKey: key, caption: input.caption, sortOrder });
       return { url, key };
     }),
-  deleteLogPhoto: ownerProcedure
+    deleteLogPhoto: ownerProcedure
     .input(z.object({ photoId: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2927,8 +2947,53 @@ const stepsRouter = router({
       await db.delete(stepLogPhotos).where(and(eq(stepLogPhotos.id, input.photoId), eq(stepLogPhotos.userId, OWNER_USER_ID)));
       return { success: true };
     }),
-});
 
+  // Backfill calories for steps records that have 0 or null calories
+  // Uses body weight on or before each step record's date for accurate estimation
+  backfillCalories: ownerProcedure
+    .mutation(async () => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      // Get all steps records with 0 or null calories that have steps > 0
+      const stepsToFill = await db.select().from(dailySteps)
+        .where(and(
+          eq(dailySteps.userId, OWNER_USER_ID),
+          sql`(${dailySteps.calories} IS NULL OR ${dailySteps.calories} = 0)`,
+          sql`${dailySteps.steps} > 0`,
+        ))
+        .orderBy(dailySteps.date);
+
+      if (stepsToFill.length === 0) return { updated: 0 };
+
+      // Get all body composition records ordered by date for binary search
+      const bodyRecords = await db.select({
+        date: bodyComposition.date,
+        weight: bodyComposition.weight,
+      }).from(bodyComposition)
+        .where(and(
+          eq(bodyComposition.userId, OWNER_USER_ID),
+          sql`${bodyComposition.weight} IS NOT NULL`,
+        ))
+        .orderBy(bodyComposition.date);
+
+      let updated = 0;
+      for (const step of stepsToFill) {
+        // Find the most recent body weight on or before this step's date
+        const weightRecord = bodyRecords
+          .filter(b => b.date <= step.date)
+          .at(-1); // last element = most recent
+        const weightKg = (weightRecord?.weight as number | null) ?? 70;
+        const estimated = Math.round((step.steps ?? 0) * 0.0004 * weightKg);
+        if (estimated > 0) {
+          await db.update(dailySteps)
+            .set({ calories: estimated })
+            .where(eq(dailySteps.id, step.id));
+          updated++;
+        }
+      }
+      return { updated, total: stepsToFill.length };
+    }),
+});
 // ─── Medical Router ───────────────────────────────────────────────────────────
 const medicalRouter = router({
   getConditions: publicProcedure.query(async () => {

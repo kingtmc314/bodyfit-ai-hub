@@ -219,14 +219,16 @@ export default function Dashboard() {
     );
   }
 
-  const { today: tod, exercise, workoutStreak, latestBody, prevBody, latestSleep, latestHr } = summary || {};
+  const { today: tod, exercise, tdee, workoutStreak, latestBody, prevBody, latestSleep, latestHr } = summary || {};
   const weightDiff = latestBody && prevBody ? (latestBody.weight ?? 0) - (prevBody.weight ?? 0) : 0;
 
   const caloriesIntake = tod?.calories || 0;
   const totalBurned = exercise?.totalBurned || 0;
   const netCalories = caloriesIntake - totalBurned;
-  const netRemaining = CALORIE_GOAL - netCalories;
-  const netPct = Math.min((netCalories / CALORIE_GOAL) * 100, 100);
+  // Use TDEE-based dynamic target if BMR is available, otherwise fall back to CALORIE_GOAL (2000)
+  const dynamicCalorieTarget = tdee?.dailyCalorieTarget ?? CALORIE_GOAL;
+  const netRemaining = dynamicCalorieTarget - netCalories;
+  const netPct = Math.min((netCalories / dynamicCalorieTarget) * 100, 100);
   const hasExercise = totalBurned > 0;
 
   const macroData = [
@@ -279,7 +281,7 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1">{t('dashboard.net_calories')}</p>
             <div className="flex items-end gap-2">
               <span className="metric-value text-4xl text-foreground">{Math.round(netCalories)}</span>
-              <span className="text-muted-foreground text-sm mb-1">/ {CALORIE_GOAL} {t('nutrition.kcal')}</span>
+              <span className="text-muted-foreground text-sm mb-1">/ {dynamicCalorieTarget} {t('nutrition.kcal')}{tdee?.hasBmr && <span className="ml-1 text-xs text-primary/70">(TDEE)</span>}</span>
             </div>
             <div className="flex items-center gap-4 mt-2 flex-wrap">
               <div className="flex items-center gap-1.5">

@@ -106,6 +106,13 @@ export default function Steps() {
     onSuccess: () => { utils.steps.getAll.invalidate(); toast.success(t('common.deleted')); },
     onError: (e) => toast.error(e.message),
   });
+  const backfillMutation = trpc.steps.backfillCalories.useMutation({
+    onSuccess: (result) => {
+      utils.steps.getAll.invalidate();
+      toast.success(`已更新 ${result.updated} 筆步數記錄的卡路里估算`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   // Auto-calculate calories when steps change (only for new entries, not edits)
   useEffect(() => {
@@ -173,11 +180,19 @@ export default function Steps() {
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">{t('steps.subtitle')}</p>
         </div>
-        {isOwner && (
-          <Button onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }} className="gap-2">
-            <Plus className="w-4 h-4" /> {t('steps.add')}
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {isOwner && (
+            <Button variant="outline" size="sm" onClick={() => backfillMutation.mutate()} disabled={backfillMutation.isPending} className="gap-1.5 text-xs">
+              {backfillMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <TrendingUp className="w-3.5 h-3.5" />}
+              重新計算卡路里
+            </Button>
+          )}
+          {isOwner && (
+            <Button onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }} className="gap-2">
+              <Plus className="w-4 h-4" /> {t('steps.add')}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Today's summary */}
