@@ -340,7 +340,17 @@ const workoutRouter = router({
           VALUES (${rest.sessionId}, ${rest.exerciseName}, ${rest.setNumber}, ${rest.reps ?? null}, ${rest.weight ?? null}, ${rest.duration ?? null}, ${rest.distance ?? null}, ${rest.notes ?? null})
         `);
       }
-      return { success: true };
+      // Recalculate and update totalVolume on the session
+      const volumeResult = await db.execute(sql`
+        SELECT COALESCE(SUM(reps * weight), 0) as total
+        FROM workout_sets
+        WHERE "sessionId" = ${rest.sessionId} AND reps IS NOT NULL AND weight IS NOT NULL
+      `);
+      const newVolume = Number(((volumeResult as any).rows?.[0] ?? (volumeResult as any)[0])?.total ?? 0);
+      await db.update(workoutSessions)
+        .set({ totalVolume: newVolume, updatedAt: new Date() })
+        .where(eq(workoutSessions.id, rest.sessionId));
+      return { success: true, totalVolume: newVolume };
     }),
 
   // Update set

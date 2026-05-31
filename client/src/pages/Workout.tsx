@@ -152,13 +152,27 @@ export default function Workout() {
     onSuccess: () => { utils.workout.getSessions.invalidate(); setActiveSession(null); toast.success("Session deleted"); },
   });
   const addSet = trpc.workout.addSet.useMutation({
-    onSuccess: () => { utils.workout.getSessionWithSets.invalidate(); setShowAddSetDialog(false); toast.success("Set logged!"); },
+    onSuccess: () => {
+      utils.workout.getSessionWithSets.invalidate();
+      utils.workout.getSessions.invalidate();
+      setShowAddSetDialog(false);
+      toast.success("Set logged!");
+    },
   });
   const updateSet = trpc.workout.updateSet.useMutation({
-    onSuccess: () => { utils.workout.getSessionWithSets.invalidate(); setEditSet(null); toast.success("Updated!"); },
+    onSuccess: () => {
+      utils.workout.getSessionWithSets.invalidate();
+      utils.workout.getSessions.invalidate();
+      setEditSet(null);
+      toast.success("Updated!");
+    },
   });
   const deleteSet = trpc.workout.deleteSet.useMutation({
-    onSuccess: () => { utils.workout.getSessionWithSets.invalidate(); toast.success("Set deleted"); },
+    onSuccess: () => {
+      utils.workout.getSessionWithSets.invalidate();
+      utils.workout.getSessions.invalidate();
+      toast.success("Set deleted");
+    },
   });
 
   const { data: favourites = [] } = trpc.workout.getFavourites.useQuery();

@@ -604,3 +604,7 @@
 - [x] 修復：addSet procedure 改為 exerciseId optional，使用 raw SQL 插入（不傳 exerciseId）
 - [x] 修復：handleAddSet 前端不再傳 exerciseId: 1
 - [x] TypeScript: 0 errors
+
+## Bug Fix: Log Set 後圖表/列表不即時更新
+- [x] 修復：addSet/updateSet/deleteSet onSuccess 現在同時 invalidate getSessions（讓圖表和列表即時刷新）
+- [x] 修復：addSet server 端自動重算 totalVolume 並更新 workout_sessions.totalVolume
