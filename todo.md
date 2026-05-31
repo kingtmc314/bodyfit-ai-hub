@@ -635,3 +635,11 @@
 - [x] 修復：activeMuscles useMemo 改為同時比對英文名、中文名（nameZh）和大小寫不敏感匹配
 - [x] 修復：server/routers.ts 移除重複的 finishSession 和 analyzeExercise 程序（duplicate property 錯誤）
 - [x] TypeScript: 0 errors | 35 tests passing
+
+## Phase 62: Three New Features (v2.6.0)
+- [x] Running screenshot import — ScreenshotImporter already in Running.tsx dialog since v2.4.0 (confirmed)
+- [x] Workout session finish: added "結束訓練" green button in session header bar; calls finishSession mutation which calculates duration and saves endTime; shows toast with total minutes; clears activeSession
+- [x] AI exercise analysis: added "AI" purple button on each exercise card; opens AI Analysis dialog with trend analysis + 3 personalized recommendations in Traditional Chinese; supports re-analyze
+- [x] finishSession server procedure: calculates duration from startTime→endTime, updates workoutSessions.duration
+- [x] analyzeExercise server procedure: fetches last 30 sets via session join, calls LLM with structured JSON schema for analysis + 3 recommendations
+- [x] Bump version to v2.6.0 | TypeScript: 0 errors | 35 tests passing

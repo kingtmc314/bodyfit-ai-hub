@@ -182,6 +182,26 @@ export default function Workout() {
     },
   });
 
+  const [finishLoading, setFinishLoading] = useState(false);
+  const finishSession = trpc.workout.finishSession.useMutation({
+    onSuccess: (data) => {
+      utils.workout.getSessions.invalidate();
+      setFinishLoading(false);
+      toast.success(`訓練完成！共 ${data.duration} 分鐘 🎉`);
+      setActiveSession(null);
+    },
+    onError: (e) => { setFinishLoading(false); toast.error('錯誤: ' + e.message); },
+  });
+
+  const [showAiAnalysis, setShowAiAnalysis] = useState(false);
+  const [aiAnalysisExercise, setAiAnalysisExercise] = useState<string | null>(null);
+  const [aiAnalysisResult, setAiAnalysisResult] = useState<{ analysis: string; recommendations: Array<{ title: string; detail: string; type: string }> } | null>(null);
+  const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
+  const analyzeExercise = trpc.workout.analyzeExercise.useMutation({
+    onSuccess: (data) => { setAiAnalysisResult(data); setAiAnalysisLoading(false); },
+    onError: (e) => { toast.error('AI 分析失敗: ' + e.message); setAiAnalysisLoading(false); },
+  });
+
   const { data: favourites = [] } = trpc.workout.getFavourites.useQuery();
   const favouriteSet = useMemo(() => new Set(favourites as string[]), [favourites]);
 
@@ -412,6 +432,12 @@ export default function Workout() {
                       <Button size="sm" variant="outline" className="gap-2" onClick={() => setShowExerciseDialog(true)}>
                         <Plus className="w-3.5 h-3.5" /> Add Exercise
                       </Button>
+                      <Button size="sm" className="gap-2 bg-green-500 hover:bg-green-600 text-white"
+                        disabled={finishLoading}
+                        onClick={() => { setFinishLoading(true); finishSession.mutate({ id: activeSession.id }); }}>
+                        {finishLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                        結束訓練
+                      </Button>
                       <Button size="sm" variant="destructive" onClick={() => deleteSession.mutate({ id: activeSession.id })}>
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
@@ -435,10 +461,16 @@ export default function Workout() {
                                 {ex?.equipment && <Badge variant="outline" className="text-xs">{ex.equipment}</Badge>}
                               </div>
                             </div>
-                            <Button size="sm" variant="ghost" className="gap-1 text-xs"
-                              onClick={() => { setSelectedExercise(ex || { name: exerciseName }); setSetForm({ reps: 10, weight: sets[sets.length - 1]?.weight || 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
-                              <Plus className="w-3.5 h-3.5" /> Set
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button size="sm" variant="ghost" className="gap-1 text-xs"
+                                onClick={() => { setSelectedExercise(ex || { name: exerciseName }); setSetForm({ reps: 10, weight: sets[sets.length - 1]?.weight || 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
+                                <Plus className="w-3.5 h-3.5" /> Set
+                              </Button>
+                              <Button size="sm" variant="ghost" className="gap-1 text-xs text-purple-500 hover:text-purple-600"
+                                onClick={() => { setAiAnalysisExercise(exerciseName); setAiAnalysisResult(null); setShowAiAnalysis(true); setAiAnalysisLoading(true); analyzeExercise.mutate({ exerciseName }); }}>
+                                <Sparkles className="w-3.5 h-3.5" /> AI
+                              </Button>
+                            </div>
                           </div>
                           <div className="divide-y divide-border">
                             {sets.map((s, i) => (
@@ -879,6 +911,55 @@ export default function Workout() {
           }
         }}
       />
+
+      {/* AI Exercise Analysis Dialog */}
+      <Dialog open={showAiAnalysis} onOpenChange={setShowAiAnalysis}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-500" />
+              AI 動作分析 — {aiAnalysisExercise}
+            </DialogTitle>
+          </DialogHeader>
+          {aiAnalysisLoading ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-3">
+              <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+              <p className="text-sm text-muted-foreground">正在分析訓練記錄…</p>
+            </div>
+          ) : aiAnalysisResult ? (
+            <div className="space-y-4">
+              <div className="bg-purple-50 dark:bg-purple-950/30 rounded-xl p-4 border border-purple-200 dark:border-purple-800">
+                <p className="text-sm text-foreground leading-relaxed">{aiAnalysisResult.analysis}</p>
+              </div>
+              {aiAnalysisResult.recommendations.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">個人化建議</p>
+                  {aiAnalysisResult.recommendations.map((rec, i) => (
+                    <div key={i} className="flex gap-3 bg-card border border-border rounded-xl p-3">
+                      <div className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <span className="text-xs font-bold text-purple-600 dark:text-purple-400">{i + 1}</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{rec.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{rec.detail}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAiAnalysis(false)}>關閉</Button>
+            {!aiAnalysisLoading && (
+              <Button variant="outline" className="gap-2 text-purple-600"
+                onClick={() => { setAiAnalysisResult(null); setAiAnalysisLoading(true); analyzeExercise.mutate({ exerciseName: aiAnalysisExercise! }); }}>
+                <Sparkles className="w-4 h-4" /> 重新分析
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
