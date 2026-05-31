@@ -483,3 +483,21 @@
 - [ ] Add Training Plan section to AI Coach tab with goal race selector, plan duration (weeks), generate button
 - [ ] Display training plan as structured weekly schedule (Mon-Sun with workout type, distance, intensity)
 - [ ] Update i18n en.json and zh.json with new training plan keys
+
+## Phase 49: Large Update v1.6.0
+
+- [ ] Fix finish time display in PB cards (hr/min/sec not showing)
+- [ ] Fix finish time display in completed race cards header
+- [ ] Add sort/filter to Running Log tab
+- [ ] Add sort/filter to Workout page
+- [ ] Add sort/filter to Nutrition page
+- [ ] Add sort/filter to Body Composition page
+- [ ] Add sort/filter to Heart Rate page
+- [ ] Add sort/filter to Sleep page
+- [ ] Create Steps & Stairs page (daily steps + floors climbed)
+- [ ] Create Medical Records page with file upload
+- [ ] Create Supplements page with inventory tracking
+- [ ] Reorganize sidebar navigation (group tabs)
+- [ ] Add exercise machine/movement illustrations to Workout page
+- [ ] Full zh/en i18n for all new pages
+- [ ] Bump version to v1.6.0

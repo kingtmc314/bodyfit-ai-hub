@@ -7,7 +7,9 @@ import { getDb } from "./db";
 import {
   mealLogs, foodItems, workoutSessions, workoutSets, exercises,
   bodyComposition, heartRateLogs, sleepLogs, progressPhotos, aiInsights,
-  healthGoals, runningLogs, runningShoes, races, favouriteExercises
+  healthGoals, runningLogs, runningShoes, races, favouriteExercises,
+  dailySteps, medicalConditions, medicalVisits, medicalAttachments,
+  supplements, supplementLogs
 } from "../drizzle/schema";
 import { eq, and, desc, gte, lte, like, or, sql } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -2352,6 +2354,357 @@ ${trainingSummary || '無訓練記錄'}
 });
 
 
+// ─── Steps Router ───────────────────────────────────────────────────────────
+const stepsRouter = router({
+  getAll: publicProcedure
+    .input(z.object({ limit: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db.select().from(dailySteps)
+        .where(eq(dailySteps.userId, OWNER_USER_ID))
+        .orderBy(desc(dailySteps.date))
+        .limit(input?.limit ?? 365);
+      return rows;
+    }),
+  add: publicProcedure
+    .input(z.object({
+      date: z.string(),
+      steps: z.number().optional(),
+      floorsClimbed: z.number().optional(),
+      distanceKm: z.string().optional(),
+      activeMinutes: z.number().optional(),
+      calories: z.number().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const [row] = await db.insert(dailySteps).values({
+        userId: OWNER_USER_ID,
+        date: input.date,
+        steps: input.steps,
+        floorsClimbed: input.floorsClimbed,
+        distanceKm: input.distanceKm,
+        activeMinutes: input.activeMinutes,
+        calories: input.calories,
+        notes: input.notes,
+      }).returning();
+      return row;
+    }),
+  update: publicProcedure
+    .input(z.object({
+      id: z.number(),
+      date: z.string().optional(),
+      steps: z.number().optional(),
+      floorsClimbed: z.number().optional(),
+      distanceKm: z.string().optional(),
+      activeMinutes: z.number().optional(),
+      calories: z.number().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { id, ...rest } = input;
+      const [row] = await db.update(dailySteps).set(rest).where(and(eq(dailySteps.id, id), eq(dailySteps.userId, OWNER_USER_ID))).returning();
+      return row;
+    }),
+  delete: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.delete(dailySteps).where(and(eq(dailySteps.id, input.id), eq(dailySteps.userId, OWNER_USER_ID)));
+      return { success: true };
+    }),
+});
+
+// ─── Medical Router ───────────────────────────────────────────────────────────
+const medicalRouter = router({
+  getConditions: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(medicalConditions)
+      .where(eq(medicalConditions.userId, OWNER_USER_ID))
+      .orderBy(desc(medicalConditions.createdAt));
+  }),
+  addCondition: publicProcedure
+    .input(z.object({
+      title: z.string(),
+      category: z.string().optional(),
+      status: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const [row] = await db.insert(medicalConditions).values({
+        userId: OWNER_USER_ID,
+        title: input.title,
+        category: input.category,
+        status: input.status ?? 'active',
+        startDate: input.startDate,
+        endDate: input.endDate,
+        notes: input.notes,
+      }).returning();
+      return row;
+    }),
+  updateCondition: publicProcedure
+    .input(z.object({
+      id: z.number(),
+      title: z.string().optional(),
+      category: z.string().optional(),
+      status: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { id, ...rest } = input;
+      const [row] = await db.update(medicalConditions).set({ ...rest, updatedAt: new Date() })
+        .where(and(eq(medicalConditions.id, id), eq(medicalConditions.userId, OWNER_USER_ID))).returning();
+      return row;
+    }),
+  deleteCondition: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.delete(medicalConditions).where(and(eq(medicalConditions.id, input.id), eq(medicalConditions.userId, OWNER_USER_ID)));
+      return { success: true };
+    }),
+  getVisits: publicProcedure
+    .input(z.object({ conditionId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(medicalVisits)
+        .where(and(eq(medicalVisits.conditionId, input.conditionId), eq(medicalVisits.userId, OWNER_USER_ID)))
+        .orderBy(desc(medicalVisits.visitDate));
+    }),
+  addVisit: publicProcedure
+    .input(z.object({
+      conditionId: z.number(),
+      visitDate: z.string(),
+      visitType: z.string().optional(),
+      doctorName: z.string().optional(),
+      clinic: z.string().optional(),
+      diagnosis: z.string().optional(),
+      prescription: z.string().optional(),
+      followUpDate: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const [row] = await db.insert(medicalVisits).values({
+        conditionId: input.conditionId,
+        userId: OWNER_USER_ID,
+        visitDate: input.visitDate,
+        visitType: input.visitType,
+        doctorName: input.doctorName,
+        clinic: input.clinic,
+        diagnosis: input.diagnosis,
+        prescription: input.prescription,
+        followUpDate: input.followUpDate,
+        notes: input.notes,
+      }).returning();
+      return row;
+    }),
+  updateVisit: publicProcedure
+    .input(z.object({
+      id: z.number(),
+      visitDate: z.string().optional(),
+      visitType: z.string().optional(),
+      doctorName: z.string().optional(),
+      clinic: z.string().optional(),
+      diagnosis: z.string().optional(),
+      prescription: z.string().optional(),
+      followUpDate: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { id, ...rest } = input;
+      const [row] = await db.update(medicalVisits).set(rest)
+        .where(and(eq(medicalVisits.id, id), eq(medicalVisits.userId, OWNER_USER_ID))).returning();
+      return row;
+    }),
+  deleteVisit: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.delete(medicalVisits).where(and(eq(medicalVisits.id, input.id), eq(medicalVisits.userId, OWNER_USER_ID)));
+      return { success: true };
+    }),
+  getAttachments: publicProcedure
+    .input(z.object({ visitId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(medicalAttachments)
+        .where(and(eq(medicalAttachments.visitId, input.visitId), eq(medicalAttachments.userId, OWNER_USER_ID)))
+        .orderBy(desc(medicalAttachments.createdAt));
+    }),
+  uploadAttachment: publicProcedure
+    .input(z.object({
+      visitId: z.number(),
+      fileName: z.string(),
+      fileType: z.string(),
+      fileBase64: z.string(),
+      attachmentType: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const buffer = Buffer.from(input.fileBase64, 'base64');
+      const key = `medical/${OWNER_USER_ID}/${nanoid()}-${input.fileName}`;
+      const { url } = await storagePut(key, buffer, input.fileType);
+      const [row] = await db.insert(medicalAttachments).values({
+        visitId: input.visitId,
+        userId: OWNER_USER_ID,
+        fileName: input.fileName,
+        fileType: input.fileType,
+        fileKey: key,
+        fileUrl: url,
+        attachmentType: input.attachmentType,
+        notes: input.notes,
+      }).returning();
+      return row;
+    }),
+  deleteAttachment: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.delete(medicalAttachments).where(and(eq(medicalAttachments.id, input.id), eq(medicalAttachments.userId, OWNER_USER_ID)));
+      return { success: true };
+    }),
+});
+
+// ─── Supplements Router ───────────────────────────────────────────────────────
+const supplementsRouter = router({
+  getAll: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(supplements)
+      .where(eq(supplements.userId, OWNER_USER_ID))
+      .orderBy(supplements.name);
+  }),
+  add: publicProcedure
+    .input(z.object({
+      name: z.string(),
+      brand: z.string().optional(),
+      category: z.string().optional(),
+      servingSize: z.string().optional(),
+      currentStock: z.number().optional(),
+      lowStockThreshold: z.number().optional(),
+      purchaseDate: z.string().optional(),
+      expiryDate: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const [row] = await db.insert(supplements).values({
+        userId: OWNER_USER_ID,
+        ...input,
+      }).returning();
+      return row;
+    }),
+  update: publicProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      brand: z.string().optional(),
+      category: z.string().optional(),
+      servingSize: z.string().optional(),
+      currentStock: z.number().optional(),
+      lowStockThreshold: z.number().optional(),
+      purchaseDate: z.string().optional(),
+      expiryDate: z.string().optional(),
+      notes: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { id, ...rest } = input;
+      const [row] = await db.update(supplements).set({ ...rest, updatedAt: new Date() })
+        .where(and(eq(supplements.id, id), eq(supplements.userId, OWNER_USER_ID))).returning();
+      return row;
+    }),
+  delete: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.delete(supplements).where(and(eq(supplements.id, input.id), eq(supplements.userId, OWNER_USER_ID)));
+      return { success: true };
+    }),
+  getLogs: publicProcedure
+    .input(z.object({ supplementId: z.number().optional(), limit: z.number().optional() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const conditions = [eq(supplementLogs.userId, OWNER_USER_ID)];
+      if (input.supplementId) conditions.push(eq(supplementLogs.supplementId, input.supplementId));
+      return db.select().from(supplementLogs)
+        .where(and(...conditions))
+        .orderBy(desc(supplementLogs.date))
+        .limit(input.limit ?? 200);
+    }),
+  addLog: publicProcedure
+    .input(z.object({
+      supplementId: z.number(),
+      date: z.string(),
+      quantity: z.number().optional(),
+      timeOfDay: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const [row] = await db.insert(supplementLogs).values({
+        supplementId: input.supplementId,
+        userId: OWNER_USER_ID,
+        date: input.date,
+        quantity: input.quantity ?? 1,
+        timeOfDay: input.timeOfDay,
+        notes: input.notes,
+      }).returning();
+      // Deduct from stock
+      await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock - ${input.quantity ?? 1}), "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
+      return row;
+    }),
+  deleteLog: publicProcedure
+    .input(z.object({ id: z.number(), quantity: z.number().optional(), supplementId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.delete(supplementLogs).where(and(eq(supplementLogs.id, input.id), eq(supplementLogs.userId, OWNER_USER_ID)));
+      // Restore stock
+      await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${input.quantity ?? 1}, "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
+      return { success: true };
+    }),
+  restockSupplement: publicProcedure
+    .input(z.object({ id: z.number(), quantity: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${input.quantity}, "updatedAt" = NOW() WHERE id = ${input.id} AND "userId" = ${OWNER_USER_ID}`);
+      return { success: true };
+    }),
+});
+
 // ─── App Router ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
@@ -2375,8 +2728,10 @@ export const appRouter = router({
   charts: chartsRouter,
   goals: goalsRouter,
   imageImport: imageImportRouter,
-  running: runningRouter,
+    running: runningRouter,
+  steps: stepsRouter,
+  medical: medicalRouter,
+  supplements: supplementsRouter,
 });
-
 export type AppRouter = typeof appRouter;
 

@@ -368,3 +368,104 @@ export const favouriteExercises = pgTable("favourite_exercises", {
 });
 export type FavouriteExercise = typeof favouriteExercises.$inferSelect;
 export type InsertFavouriteExercise = typeof favouriteExercises.$inferInsert;
+
+// ─── Daily Steps & Stairs ─────────────────────────────────────────────────────
+export const dailySteps = pgTable("daily_steps", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: date("date").notNull(),
+  steps: integer("steps"),
+  floorsClimbed: integer("floors_climbed"),
+  distanceKm: numeric("distance_km"),
+  activeMinutes: integer("active_minutes"),
+  calories: integer("calories"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type DailySteps = typeof dailySteps.$inferSelect;
+export type InsertDailySteps = typeof dailySteps.$inferInsert;
+
+// ─── Medical Conditions ───────────────────────────────────────────────────────
+export const medicalConditions = pgTable("medical_conditions", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  category: varchar("category", { length: 64 }), // e.g. illness, injury, sports_injury, checkup
+  status: varchar("status", { length: 32 }).default("active"), // active, resolved, chronic
+  startDate: date("start_date"),
+  endDate: date("end_date"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type MedicalCondition = typeof medicalConditions.$inferSelect;
+export type InsertMedicalCondition = typeof medicalConditions.$inferInsert;
+
+// ─── Medical Visits (per condition) ──────────────────────────────────────────
+export const medicalVisits = pgTable("medical_visits", {
+  id: serial("id").primaryKey(),
+  conditionId: integer("condition_id").notNull().references(() => medicalConditions.id, { onDelete: "cascade" }),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  visitDate: date("visit_date").notNull(),
+  visitType: varchar("visit_type", { length: 64 }), // consultation, xray, mri, blood_test, physio, checkup, other
+  doctorName: text("doctor_name"),
+  clinic: text("clinic"),
+  diagnosis: text("diagnosis"),
+  prescription: text("prescription"),
+  followUpDate: date("follow_up_date"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type MedicalVisit = typeof medicalVisits.$inferSelect;
+export type InsertMedicalVisit = typeof medicalVisits.$inferInsert;
+
+// ─── Medical Attachments (per visit) ─────────────────────────────────────────
+export const medicalAttachments = pgTable("medical_attachments", {
+  id: serial("id").primaryKey(),
+  visitId: integer("visit_id").notNull().references(() => medicalVisits.id, { onDelete: "cascade" }),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  fileType: varchar("file_type", { length: 64 }), // image/jpeg, application/pdf, etc.
+  fileKey: text("file_key").notNull(),
+  fileUrl: text("file_url").notNull(),
+  attachmentType: varchar("attachment_type", { length: 64 }), // xray, mri, doctor_note, prescription, report, other
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type MedicalAttachment = typeof medicalAttachments.$inferSelect;
+export type InsertMedicalAttachment = typeof medicalAttachments.$inferInsert;
+
+// ─── Supplements ──────────────────────────────────────────────────────────────
+export const supplements = pgTable("supplements", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  brand: text("brand"),
+  category: varchar("category", { length: 64 }), // protein, vitamin, mineral, pre_workout, etc.
+  servingSize: text("serving_size"),
+  currentStock: integer("current_stock").default(0), // in pills/servings
+  lowStockThreshold: integer("low_stock_threshold").default(30),
+  purchaseDate: date("purchase_date"),
+  expiryDate: date("expiry_date"),
+  notes: text("notes"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type Supplement = typeof supplements.$inferSelect;
+export type InsertSupplement = typeof supplements.$inferInsert;
+
+// ─── Supplement Intake Logs ───────────────────────────────────────────────────
+export const supplementLogs = pgTable("supplement_logs", {
+  id: serial("id").primaryKey(),
+  supplementId: integer("supplement_id").notNull().references(() => supplements.id, { onDelete: "cascade" }),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: date("date").notNull(),
+  quantity: integer("quantity").default(1),
+  timeOfDay: varchar("time_of_day", { length: 32 }), // morning, afternoon, evening, night, pre_workout, post_workout
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type SupplementLog = typeof supplementLogs.$inferSelect;
+export type InsertSupplementLog = typeof supplementLogs.$inferInsert;

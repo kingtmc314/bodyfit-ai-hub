@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Moon, Trash2, Edit2, Loader2, Upload } from "lucide-react";
+import { Plus, Moon, Trash2, Edit2, Loader2, Upload, ArrowUpDown } from "lucide-react";
 import QuickImportModal from "@/components/QuickImportModal";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -81,8 +81,11 @@ export default function Sleep() {
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
 
+  const [sleepSort, setSleepSort] = useState<'date_desc'|'date_asc'|'duration_desc'|'score_desc'|'hrv_desc'>('date_desc');
+  const [sleepSearch, setSleepSearch] = useState('');
+  const [sleepQualityFilter, setSleepQualityFilter] = useState<string>('all');
   const utils = trpc.useUtils();
-  const { data: records = [], isLoading } = trpc.sleep.getAll.useQuery({ limit: 90 });
+  const { data: records = [], isLoading } = trpc.sleep.getAll.useQuery({ limit: 200 });
   const { data: goalsData } = trpc.goals.getGoals.useQuery();
 
   const checkGoalAchievement = (payload: Record<string, number | undefined>) => {
@@ -327,9 +330,43 @@ export default function Sleep() {
           </div>
         </TabsContent>
 
-        <TabsContent value="log" className="mt-4">
-          <div className="bg-card border border-border rounded-2xl overflow-hidden">
-            <div className="overflow-x-auto">
+        <TabsContent value="log" className="mt-4 space-y-3">
+          {(() => {
+            let sleepList = [...records];
+            if (sleepQualityFilter !== 'all') sleepList = sleepList.filter((r: any) => r.sleepQuality === sleepQualityFilter);
+            if (sleepSearch.trim()) sleepList = sleepList.filter((r: any) => (r.notes||'').toLowerCase().includes(sleepSearch.toLowerCase()));
+            switch (sleepSort) {
+              case 'date_asc': sleepList.sort((a: any,b: any)=>new Date(a.date).getTime()-new Date(b.date).getTime()); break;
+              case 'date_desc': sleepList.sort((a: any,b: any)=>new Date(b.date).getTime()-new Date(a.date).getTime()); break;
+              case 'duration_desc': sleepList.sort((a: any,b: any)=>Number(b.sleepDuration||0)-Number(a.sleepDuration||0)); break;
+              case 'score_desc': sleepList.sort((a: any,b: any)=>Number(b.sleepScore||0)-Number(a.sleepScore||0)); break;
+              case 'hrv_desc': sleepList.sort((a: any,b: any)=>Number(b.hrv||0)-Number(a.hrv||0)); break;
+            }
+            return (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input placeholder={t('common.search')+'...'} value={sleepSearch} onChange={e=>setSleepSearch(e.target.value)} className="h-8 text-xs w-40" />
+                  <Select value={sleepQualityFilter} onValueChange={setSleepQualityFilter}>
+                    <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t('common.all_quality')}</SelectItem>
+                      {QUALITY_OPTIONS.map(q=><SelectItem key={q} value={q}>{q}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select value={sleepSort} onValueChange={v=>setSleepSort(v as any)}>
+                    <SelectTrigger className="h-8 w-44 text-xs"><ArrowUpDown className="w-3 h-3 mr-1"/><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="date_desc">{t('common.sort_date_desc')}</SelectItem>
+                      <SelectItem value="date_asc">{t('common.sort_date_asc')}</SelectItem>
+                      <SelectItem value="duration_desc">{t('sleep.sort_duration_desc')}</SelectItem>
+                      <SelectItem value="score_desc">{t('sleep.sort_score_desc')}</SelectItem>
+                      <SelectItem value="hrv_desc">{t('sleep.sort_hrv_desc')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="text-xs text-muted-foreground ml-auto">{sleepList.length} {t('common.records')}</span>
+                </div>
+                <div className="bg-card border border-border rounded-2xl overflow-hidden">
+                  <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
@@ -339,7 +376,7 @@ export default function Sleep() {
                   </tr>
                 </thead>
                 <tbody>
-                  {records.map(r => (
+                  {sleepList.map((r: any) => (
                     <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/20">
                       <td className="px-4 py-3 font-medium whitespace-nowrap">{formatHKDate(r.date)}</td>
                       <td className="px-4 py-3">{r.sleepScore ?? "—"}</td>
@@ -375,13 +412,16 @@ export default function Sleep() {
                       </td>
                     </tr>
                   ))}
-                  {records.length === 0 && (
-                    <tr><td colSpan={12} className="text-center py-8 text-muted-foreground text-sm">No records yet</td></tr>
+                  {sleepList.length === 0 && (
+                    <tr><td colSpan={12} className="text-center py-8 text-muted-foreground text-sm">{t('common.no_records')}</td></tr>
                   )}
                 </tbody>
               </table>
-            </div>
-          </div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </TabsContent>
       </Tabs>
 

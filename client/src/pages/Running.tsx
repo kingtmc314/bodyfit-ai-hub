@@ -93,6 +93,10 @@ export default function Running() {
   // Sort state
   const [shoeSort, setShoeSort] = useState<'status' | 'mileage' | 'name' | 'purchase'>('status');
   const [raceSort, setRaceSort] = useState<'date' | 'distance' | 'name'>('date');
+  // Log sort/filter state
+  const [logSort, setLogSort] = useState<'date_desc' | 'date_asc' | 'distance_desc' | 'pace_asc' | 'hr_asc'>('date_desc');
+  const [logFilterType, setLogFilterType] = useState<string>('all');
+  const [logSearch, setLogSearch] = useState('');
 
   // Shoe Locker state
   const [showShoeDialog, setShowShoeDialog] = useState(false);
@@ -345,6 +349,28 @@ export default function Running() {
     }
   }, [races, raceSort]);
 
+  // ─── Sorted/filtered log ────────────────────────────────────────────────────
+  const sortedFilteredLogs = useMemo(() => {
+    let list = [...(logs as any[])];
+    if (logFilterType !== 'all') list = list.filter((r: any) => r.running_type === logFilterType);
+    if (logSearch.trim()) {
+      const q = logSearch.toLowerCase();
+      list = list.filter((r: any) => (
+        (r.running_type || '').toLowerCase().includes(q) ||
+        (r.running_shoes || '').toLowerCase().includes(q) ||
+        (r.notes || '').toLowerCase().includes(q)
+      ));
+    }
+    switch (logSort) {
+      case 'date_asc': list.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); break;
+      case 'date_desc': list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); break;
+      case 'distance_desc': list.sort((a, b) => parseFloat(b.distance_km || 0) - parseFloat(a.distance_km || 0)); break;
+      case 'pace_asc': list.sort((a, b) => parsePaceField(a.average_pace) - parsePaceField(b.average_pace)); break;
+      case 'hr_asc': list.sort((a, b) => (a.average_heart_rate ?? 999) - (b.average_heart_rate ?? 999)); break;
+    }
+    return list;
+  }, [logs, logSort, logFilterType, logSearch]);
+
   // ─── Summary stats ───────────────────────────────────────────────────────────
   const summary = stats?.summary as any;
   const totalRuns = summary ? Number(summary.total_runs) : 0;
@@ -566,13 +592,40 @@ export default function Running() {
         </TabsContent>
 
         {/* Log tab */}
-        <TabsContent value="log">
+        <TabsContent value="log" className="space-y-3">
+          {/* Sort/Filter bar */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              placeholder={t('common.search') + '...'}
+              value={logSearch}
+              onChange={(e) => setLogSearch(e.target.value)}
+              className="h-8 text-xs w-40"
+            />
+            <Select value={logFilterType} onValueChange={setLogFilterType}>
+              <SelectTrigger className="h-8 w-36 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('common.all_types')}</SelectItem>
+                {RUNNING_TYPES.map(rt => <SelectItem key={rt} value={rt}>{rt}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={logSort} onValueChange={(v) => setLogSort(v as any)}>
+              <SelectTrigger className="h-8 w-40 text-xs"><ArrowUpDown className="w-3 h-3 mr-1" /><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="date_desc">{t('running.sort_date_desc')}</SelectItem>
+                <SelectItem value="date_asc">{t('running.sort_date_asc')}</SelectItem>
+                <SelectItem value="distance_desc">{t('running.sort_distance')}</SelectItem>
+                <SelectItem value="pace_asc">{t('running.sort_pace')}</SelectItem>
+                <SelectItem value="hr_asc">{t('running.sort_hr')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-xs text-muted-foreground ml-auto">{sortedFilteredLogs.length} {t('common.records')}</span>
+          </div>
           <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
             {isLoading ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
               </div>
-            ) : (logs as any[]).length === 0 ? (
+            ) : sortedFilteredLogs.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <Footprints className="w-10 h-10 mx-auto mb-3 opacity-30" />
                 <p className="font-medium">尚未記錄跑步數據</p>
@@ -589,7 +642,7 @@ export default function Running() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(logs as any[]).map((row: any) => (
+                    {sortedFilteredLogs.map((row: any) => (
                       <tr key={row.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                         <td className="px-4 py-3 font-medium whitespace-nowrap">{formatHKDate(row.date)}</td>
                         <td className="px-4 py-3">

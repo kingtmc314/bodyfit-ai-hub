@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Heart, Plus, Trash2, Edit2, Loader2, Activity, Upload } from "lucide-react";
+import { Heart, Plus, Trash2, Edit2, Loader2, Activity, Upload, ArrowUpDown } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import QuickImportModal from "@/components/QuickImportModal";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -38,8 +39,10 @@ export default function HeartRate() {
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
 
+  const [hrSort, setHrSort] = useState<'date_desc'|'date_asc'|'resting_asc'|'hrv_desc'>('date_desc');
+  const [hrSearch, setHrSearch] = useState('');
   const utils = trpc.useUtils();
-  const { data: records = [], isLoading } = trpc.heartRate.getAll.useQuery({ limit: 60 });
+  const { data: records = [], isLoading } = trpc.heartRate.getAll.useQuery({ limit: 200 });
   const { data: goalsData } = trpc.goals.getGoals.useQuery();
 
   const checkGoalAchievement = (payload: Record<string, number | undefined>) => {
@@ -214,9 +217,33 @@ export default function HeartRate() {
           </div>
         </TabsContent>
 
-        <TabsContent value="log" className="mt-4">
-          <div className="bg-card border border-border rounded-2xl overflow-hidden">
-            <div className="overflow-x-auto">
+        <TabsContent value="log" className="mt-4 space-y-3">
+          {(() => {
+            let hrList = [...records];
+            if (hrSearch.trim()) hrList = hrList.filter(r => (r.notes||'').toLowerCase().includes(hrSearch.toLowerCase()));
+            switch (hrSort) {
+              case 'date_asc': hrList.sort((a,b)=>new Date(a.date).getTime()-new Date(b.date).getTime()); break;
+              case 'date_desc': hrList.sort((a,b)=>new Date(b.date).getTime()-new Date(a.date).getTime()); break;
+              case 'resting_asc': hrList.sort((a,b)=>Number(a.restingHr||999)-Number(b.restingHr||999)); break;
+              case 'hrv_desc': hrList.sort((a,b)=>Number(b.hrv||0)-Number(a.hrv||0)); break;
+            }
+            return (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input placeholder={t('common.search')+'...'} value={hrSearch} onChange={e=>setHrSearch(e.target.value)} className="h-8 text-xs w-40" />
+                  <Select value={hrSort} onValueChange={v=>setHrSort(v as any)}>
+                    <SelectTrigger className="h-8 w-44 text-xs"><ArrowUpDown className="w-3 h-3 mr-1"/><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="date_desc">{t('common.sort_date_desc')}</SelectItem>
+                      <SelectItem value="date_asc">{t('common.sort_date_asc')}</SelectItem>
+                      <SelectItem value="resting_asc">{t('hr.sort_resting_asc')}</SelectItem>
+                      <SelectItem value="hrv_desc">{t('hr.sort_hrv_desc')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="text-xs text-muted-foreground ml-auto">{hrList.length} {t('common.records')}</span>
+                </div>
+                <div className="bg-card border border-border rounded-2xl overflow-hidden">
+                  <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
@@ -226,7 +253,7 @@ export default function HeartRate() {
                   </tr>
                 </thead>
                 <tbody>
-                  {records.map(r => (
+                  {hrList.map(r => (
                     <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/20">
                       <td className="px-4 py-3 font-medium">{formatHKDate(r.date)}</td>
                       <td className="px-4 py-3">{r.restingHr ? `${r.restingHr} bpm` : "—"}</td>
@@ -246,13 +273,16 @@ export default function HeartRate() {
                       </td>
                     </tr>
                   ))}
-                  {records.length === 0 && (
-                    <tr><td colSpan={7} className="text-center py-8 text-muted-foreground text-sm">No records yet</td></tr>
+                  {hrList.length === 0 && (
+                    <tr><td colSpan={7} className="text-center py-8 text-muted-foreground text-sm">{t('common.no_records')}</td></tr>
                   )}
                 </tbody>
               </table>
-            </div>
-          </div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </TabsContent>
       </Tabs>
 

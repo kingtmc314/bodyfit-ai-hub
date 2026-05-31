@@ -19,25 +19,58 @@ import {
   TrendingUp,
   Target,
   Footprints,
+  Stethoscope,
+  Pill,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 
-const navItems = [
-  { path: "/",           key: "dashboard", icon: LayoutDashboard, badgeClass: "icon-badge-orange" },
-  { path: "/nutrition",  key: "nutrition",  icon: Utensils,        badgeClass: "icon-badge-yellow" },
-  { path: "/workout",    key: "workout",    icon: Dumbbell,        badgeClass: "icon-badge-blue"   },
-  { path: "/body",       key: "body",       icon: Scale,           badgeClass: "icon-badge-green"  },
-  { path: "/heart-rate", key: "heartrate",  icon: Heart,           badgeClass: "icon-badge-red"    },
-  { path: "/sleep",      key: "sleep",      icon: Moon,            badgeClass: "icon-badge-purple" },
-  { path: "/photos",     key: "photos",     icon: Camera,          badgeClass: "icon-badge-blue"   },
-  { path: "/insights",   key: "insights",   icon: Sparkles,        badgeClass: "icon-badge-orange" },
-  { path: "/import",     key: "import",     icon: Upload,          badgeClass: "icon-badge-green"  },
-  { path: "/trends",     key: "trends",     icon: TrendingUp,      badgeClass: "icon-badge-blue"   },
-  { path: "/goals",      key: "goals",      icon: Target,          badgeClass: "icon-badge-orange" },
-  { path: "/running",    key: "running",    icon: Footprints,      badgeClass: "icon-badge-red"    },
+type NavGroup = {
+  groupKey: string;
+  items: { path: string; key: string; icon: React.ElementType; badgeClass: string }[];
+};
+
+const navGroups: NavGroup[] = [
+  {
+    groupKey: "group_overview",
+    items: [
+      { path: "/",         key: "dashboard", icon: LayoutDashboard, badgeClass: "icon-badge-orange" },
+      { path: "/insights", key: "insights",  icon: Sparkles,        badgeClass: "icon-badge-orange" },
+      { path: "/trends",   key: "trends",    icon: TrendingUp,      badgeClass: "icon-badge-blue"   },
+      { path: "/goals",    key: "goals",     icon: Target,          badgeClass: "icon-badge-orange" },
+    ],
+  },
+  {
+    groupKey: "group_fitness",
+    items: [
+      { path: "/workout",    key: "workout",  icon: Dumbbell,   badgeClass: "icon-badge-blue"   },
+      { path: "/running",    key: "running",  icon: Footprints, badgeClass: "icon-badge-red"    },
+      { path: "/steps",      key: "steps",    icon: Activity,   badgeClass: "icon-badge-green"  },
+    ],
+  },
+  {
+    groupKey: "group_health",
+    items: [
+      { path: "/nutrition",  key: "nutrition",    icon: Utensils,     badgeClass: "icon-badge-yellow" },
+      { path: "/body",       key: "body",         icon: Scale,        badgeClass: "icon-badge-green"  },
+      { path: "/heart-rate", key: "heartrate",    icon: Heart,        badgeClass: "icon-badge-red"    },
+      { path: "/sleep",      key: "sleep",        icon: Moon,         badgeClass: "icon-badge-purple" },
+      { path: "/supplements",key: "supplements",  icon: Pill,         badgeClass: "icon-badge-blue"   },
+    ],
+  },
+  {
+    groupKey: "group_records",
+    items: [
+      { path: "/medical",  key: "medical",  icon: Stethoscope, badgeClass: "icon-badge-red"    },
+      { path: "/photos",   key: "photos",   icon: Camera,      badgeClass: "icon-badge-blue"   },
+      { path: "/import",   key: "import",   icon: Upload,      badgeClass: "icon-badge-green"  },
+    ],
+  },
 ];
+
+// Flat list for active detection
+const navItems = navGroups.flatMap(g => g.items);
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -71,26 +104,35 @@ export default function AppLayout({ children }: AppLayoutProps) {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {navItems.map((item) => {
-          const isActive = location === item.path;
-          return (
-            <Link key={item.path} href={item.path} onClick={() => setSidebarOpen(false)}>
-              <div className={cn("nav-item", isActive && "active")}>
-                <div className={cn("icon-badge", item.badgeClass)}>
-                  <item.icon className="w-4 h-4" />
-                </div>
-                <span className={cn(
-                  "text-sm font-semibold flex-1",
-                  isActive ? "text-primary" : "text-foreground/80"
-                )}>
-                  {t(`nav.${item.key}`)}
-                </span>
-                {isActive && <ChevronRight className="w-3.5 h-3.5 text-primary shrink-0" />}
-              </div>
-            </Link>
-          );
-        })}
+      <nav className="flex-1 px-3 py-4 overflow-y-auto">
+        {navGroups.map((group, gi) => (
+          <div key={group.groupKey} className={gi > 0 ? "mt-3" : ""}>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 px-2 mb-1">
+              {t(`nav.${group.groupKey}`, { defaultValue: '' })}
+            </p>
+            <div className="space-y-0.5">
+              {group.items.map((item) => {
+                const isActive = location === item.path;
+                return (
+                  <Link key={item.path} href={item.path} onClick={() => setSidebarOpen(false)}>
+                    <div className={cn("nav-item", isActive && "active")}>
+                      <div className={cn("icon-badge", item.badgeClass)}>
+                        <item.icon className="w-4 h-4" />
+                      </div>
+                      <span className={cn(
+                        "text-sm font-semibold flex-1",
+                        isActive ? "text-primary" : "text-foreground/80"
+                      )}>
+                        {t(`nav.${item.key}`)}
+                      </span>
+                      {isActive && <ChevronRight className="w-3.5 h-3.5 text-primary shrink-0" />}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       {/* Bottom controls */}
@@ -123,7 +165,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </Button>
           </div>
         </div>
-        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v1.0.1</p>
+        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v1.6.0</p>
       </div>
     </div>
   );

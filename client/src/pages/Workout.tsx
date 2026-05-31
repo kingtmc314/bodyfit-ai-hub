@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Dumbbell, Trash2, Edit2, Search, ChevronRight, Loader2,
-  Flame, Timer, Weight, BarChart2, X, Check, Trophy, Target, Star
+  Flame, Timer, Weight, BarChart2, X, Check, Trophy, Target, Star, ArrowUpDown
 } from "lucide-react";
 import MuscleMap, { MUSCLE_GROUPS } from "@/components/MuscleMap";
 import ExerciseDetailModal from "@/components/ExerciseDetailModal";
@@ -128,6 +128,8 @@ export default function Workout() {
   const [setForm, setSetForm] = useState({ reps: 10, weight: 0, notes: "" });
   const [sessionName, setSessionName] = useState("");
   const [editSet, setEditSet] = useState<any>(null);
+  const [sessionSort, setSessionSort] = useState<'date_desc'|'date_asc'|'volume_desc'|'duration_desc'>('date_desc');
+  const [sessionSearch, setSessionSearch] = useState('');
 
   const utils = trpc.useUtils();
   const { data: sessions = [], isLoading } = trpc.workout.getSessions.useQuery({
@@ -462,7 +464,12 @@ export default function Workout() {
                     onClick={() => { setDetailExercise(ex); setShowExerciseDetail(true); }}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-foreground text-sm">{ex.name}</p>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-lg" title={ex.equipment}>
+                            {({Barbell:'🏋️',Dumbbell:'💪',Cable:'🔗',Machine:'⚙️',Bodyweight:'🤸','Pull-up Bar':'🔝','EZ Bar':'〰️','Resistance Band':'🎗️',Kettlebell:'🫙','Smith Machine':'🏗️','Trap Bar':'🏋️','Dip Bar':'🔝',Plate:'⚖️','Foam Roller':'🔵','Medicine Ball':'🏀','Battle Rope':'〰️','Cardio Machine':'🚴','TRX / Suspension':'🎗️'} as Record<string,string>)[ex.equipment] || '🏋️'}
+                          </span>
+                          <p className="font-semibold text-foreground text-sm">{ex.name}</p>
+                        </div>
                         <p className="text-xs text-muted-foreground">{ex.nameZh}</p>
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           <Badge variant="secondary" className="text-xs capitalize">{ex.muscleGroup}</Badge>
@@ -516,9 +523,31 @@ export default function Workout() {
 
             {/* Session History */}
             <div className="bg-card border border-border rounded-2xl p-5">
-              <h3 className="font-semibold text-foreground mb-4">Recent Sessions</h3>
-              <div className="space-y-2 max-h-52 overflow-y-auto">
-                {sessions.slice(0, 10).map(s => (
+              <h3 className="font-semibold text-foreground mb-3">All Sessions</h3>
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <Input placeholder={t('common.search')+'...'} value={sessionSearch} onChange={e=>setSessionSearch(e.target.value)} className="h-8 text-xs w-36" />
+                <Select value={sessionSort} onValueChange={v=>setSessionSort(v as any)}>
+                  <SelectTrigger className="h-8 w-44 text-xs"><ArrowUpDown className="w-3 h-3 mr-1"/><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="date_desc">{t('common.sort_date_desc')}</SelectItem>
+                    <SelectItem value="date_asc">{t('common.sort_date_asc')}</SelectItem>
+                    <SelectItem value="volume_desc">{t('workout.sort_volume_desc')}</SelectItem>
+                    <SelectItem value="duration_desc">{t('workout.sort_duration_desc')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {(() => {
+                let sList = [...sessions];
+                if (sessionSearch.trim()) sList = sList.filter((s: any) => (s.name||'').toLowerCase().includes(sessionSearch.toLowerCase()));
+                switch (sessionSort) {
+                  case 'date_asc': sList.sort((a: any,b: any)=>new Date(a.startTime).getTime()-new Date(b.startTime).getTime()); break;
+                  case 'date_desc': sList.sort((a: any,b: any)=>new Date(b.startTime).getTime()-new Date(a.startTime).getTime()); break;
+                  case 'volume_desc': sList.sort((a: any,b: any)=>Number(b.totalVolume||0)-Number(a.totalVolume||0)); break;
+                  case 'duration_desc': sList.sort((a: any,b: any)=>Number(b.duration||0)-Number(a.duration||0)); break;
+                }
+                return (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {sList.map((s: any) => (
                   <div key={s.id} className="flex items-center gap-3 py-2 border-b border-border last:border-0">
                     <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center shrink-0">
                       <Dumbbell className="w-4 h-4 text-purple-400" />
@@ -540,8 +569,10 @@ export default function Workout() {
                     </div>
                   </div>
                 ))}
-                {sessions.length === 0 && <p className="text-muted-foreground text-sm text-center py-4">No sessions yet</p>}
-              </div>
+                    {sList.length === 0 && <p className="text-muted-foreground text-sm text-center py-4">{t('common.no_records')}</p>}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </TabsContent>

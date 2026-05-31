@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Scale, Trash2, Edit2, Loader2, TrendingUp, TrendingDown, Minus, Upload } from "lucide-react";
+import { Plus, Scale, Trash2, Edit2, Loader2, TrendingUp, TrendingDown, Minus, Upload, ArrowUpDown } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import QuickImportModal from "@/components/QuickImportModal";
 import {
   AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -38,8 +39,10 @@ export default function BodyComposition() {
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
 
+  const [bodySort, setBodySort] = useState<'date_desc'|'date_asc'|'weight_asc'|'weight_desc'|'bf_asc'>('date_desc');
+  const [bodySearch, setBodySearch] = useState('');
   const utils = trpc.useUtils();
-  const { data: records = [], isLoading } = trpc.body.getAll.useQuery({ limit: 60 });
+  const { data: records = [], isLoading } = trpc.body.getAll.useQuery({ limit: 200 });
   const { data: goalsData } = trpc.goals.getGoals.useQuery();
 
   // Check if a saved value meets/beats a goal and show a celebratory toast
@@ -248,9 +251,42 @@ export default function BodyComposition() {
           </div>
         </TabsContent>
 
-        <TabsContent value="log" className="mt-4">
-          <div className="bg-card border border-border rounded-2xl overflow-hidden">
-            <div className="overflow-x-auto">
+        <TabsContent value="log" className="mt-4 space-y-3">
+          {/* Sort/Filter bar */}
+          {(() => {
+            const sortedBodyRecords = (() => {
+              let list = [...records];
+              if (bodySearch.trim()) {
+                const q = bodySearch.toLowerCase();
+                list = list.filter(r => (r.notes || '').toLowerCase().includes(q));
+              }
+              switch (bodySort) {
+                case 'date_asc': list.sort((a,b) => new Date(a.date).getTime()-new Date(b.date).getTime()); break;
+                case 'date_desc': list.sort((a,b) => new Date(b.date).getTime()-new Date(a.date).getTime()); break;
+                case 'weight_asc': list.sort((a,b) => Number(a.weight||999)-Number(b.weight||999)); break;
+                case 'weight_desc': list.sort((a,b) => Number(b.weight||0)-Number(a.weight||0)); break;
+                case 'bf_asc': list.sort((a,b) => Number(a.bodyFatPct||999)-Number(b.bodyFatPct||999)); break;
+              }
+              return list;
+            })();
+            return (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input placeholder={t('common.search')+'...'} value={bodySearch} onChange={e=>setBodySearch(e.target.value)} className="h-8 text-xs w-40" />
+                  <Select value={bodySort} onValueChange={v=>setBodySort(v as any)}>
+                    <SelectTrigger className="h-8 w-44 text-xs"><ArrowUpDown className="w-3 h-3 mr-1"/><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="date_desc">{t('common.sort_date_desc')}</SelectItem>
+                      <SelectItem value="date_asc">{t('common.sort_date_asc')}</SelectItem>
+                      <SelectItem value="weight_desc">{t('body.sort_weight_desc')}</SelectItem>
+                      <SelectItem value="weight_asc">{t('body.sort_weight_asc')}</SelectItem>
+                      <SelectItem value="bf_asc">{t('body.sort_bf_asc')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="text-xs text-muted-foreground ml-auto">{sortedBodyRecords.length} {t('common.records')}</span>
+                </div>
+                <div className="bg-card border border-border rounded-2xl overflow-hidden">
+                  <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
@@ -260,7 +296,7 @@ export default function BodyComposition() {
                   </tr>
                 </thead>
                 <tbody>
-                  {records.map(r => (
+                  {sortedBodyRecords.map(r => (
                     <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/20">
                       <td className="px-4 py-3 font-medium whitespace-nowrap">{formatHKDate(r.date)}</td>
                       <td className="px-4 py-3">{r.weight != null ? `${Number(r.weight).toFixed(1)} kg` : "—"}</td>
@@ -282,13 +318,16 @@ export default function BodyComposition() {
                       </td>
                     </tr>
                   ))}
-                  {records.length === 0 && (
-                    <tr><td colSpan={9} className="text-center py-8 text-muted-foreground text-sm">No records yet</td></tr>
+                  {sortedBodyRecords.length === 0 && (
+                    <tr><td colSpan={9} className="text-center py-8 text-muted-foreground text-sm">{t('common.no_records')}</td></tr>
                   )}
                 </tbody>
               </table>
-            </div>
-          </div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </TabsContent>
       </Tabs>
 
