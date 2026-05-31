@@ -1,6 +1,8 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
+import AuthCallback from "@/pages/AuthCallback";
+import Login from "@/pages/Login";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -39,6 +41,8 @@ function Router() {
       <Route path="/steps" component={() => <AppLayout><Steps /></AppLayout>} />
       <Route path="/medical" component={() => <AppLayout><Medical /></AppLayout>} />
       <Route path="/supplements" component={() => <AppLayout><Supplements /></AppLayout>} />
+      <Route path="/login" component={Login} />
+      <Route path="/auth/callback" component={AuthCallback} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

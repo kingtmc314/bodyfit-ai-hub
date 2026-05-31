@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import { OwnerProvider, useIsOwner } from "@/contexts/OwnerContext";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
+// Supabase Auth: login is now at /login route
 
 type NavGroup = {
   groupKey: string;
@@ -190,7 +190,7 @@ function AppLayoutInner({ children }: AppLayoutProps) {
             </div>
             {!user && (
               <button
-                onClick={() => { window.location.href = getLoginUrl(); }}
+                onClick={() => { window.location.href = '/login'; }}
                 className="w-full text-[11px] font-semibold text-white bg-primary hover:bg-primary/90 rounded-lg py-1.5 transition-colors"
               >
                 {i18n.language === 'zh' ? '登入' : 'Log In'}
@@ -198,7 +198,7 @@ function AppLayoutInner({ children }: AppLayoutProps) {
             )}
           </div>
         )}
-        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v2.9.0</p>
+        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v3.0.0</p>
       </div>
     </div>
   );
@@ -261,7 +261,7 @@ function AppLayoutInner({ children }: AppLayoutProps) {
               </div>
               {!user && (
                 <button
-                  onClick={() => { window.location.href = getLoginUrl(); }}
+                  onClick={() => { window.location.href = '/login'; }}
                   className="shrink-0 text-xs font-semibold text-white bg-primary hover:bg-primary/90 rounded-lg px-3 py-1.5 transition-colors"
                 >
                   {i18n.language === 'zh' ? '登入' : 'Log In'}
