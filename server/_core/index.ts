@@ -39,6 +39,25 @@ async function startServer() {
   registerOAuthRoutes(app);
   // Health check for Render/uptime monitoring
   app.get("/api/health", (_req, res) => res.json({ ok: true, version: "1.0.0" }));
+
+  // Proxy for wger.de exercise images (no CORS headers on wger media)
+  app.get("/api/wger-img", async (req, res) => {
+    try {
+      const path = req.query.path as string;
+      if (!path || !path.startsWith("/media/exercise-images/")) {
+        return res.status(400).json({ error: "Invalid path" });
+      }
+      const upstream = await fetch(`https://wger.de${path}`);
+      if (!upstream.ok) return res.status(upstream.status).end();
+      const ct = upstream.headers.get("content-type") || "image/png";
+      res.setHeader("Content-Type", ct);
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      const buf = await upstream.arrayBuffer();
+      res.end(Buffer.from(buf));
+    } catch (e) {
+      res.status(500).end();
+    }
+  });
   // Scheduled cron handlers — must be before Vite/static fallthrough
   app.post("/api/scheduled/daily-reminder", dailyReminderHandler);
 
