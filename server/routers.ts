@@ -3566,6 +3566,138 @@ const supplementsRouter = router({
       }).returning();
       return row;
     }),
+
+  // ─── Bulk Log Today ─────────────────────────────────────────────────────────
+  bulkLogToday: ownerProcedure
+    .input(z.object({
+      date: z.string(), // yyyy-MM-dd in HK time
+      items: z.array(z.object({
+        supplementId: z.number(),
+        quantity: z.number().default(1),
+        timeOfDay: z.string().optional(),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      let logged = 0;
+      let skipped = 0;
+      for (const item of input.items) {
+        // Check if already logged today
+        const existing = await db.select({ id: supplementLogs.id }).from(supplementLogs)
+          .where(and(
+            eq(supplementLogs.userId, OWNER_USER_ID),
+            eq(supplementLogs.supplementId, item.supplementId),
+            eq(supplementLogs.date, input.date),
+            item.timeOfDay ? eq(supplementLogs.timeOfDay, item.timeOfDay) : sql`1=1`,
+          )).limit(1);
+        if (existing.length > 0) { skipped++; continue; }
+        const qty = item.quantity ?? 1;
+        await db.insert(supplementLogs).values({
+          supplementId: item.supplementId,
+          userId: OWNER_USER_ID,
+          date: input.date,
+          quantity: qty,
+          timeOfDay: item.timeOfDay,
+        });
+        // Deduct stock and log adjustment
+        const [suppCur] = await db.select({ stock: supplements.currentStock }).from(supplements)
+          .where(and(eq(supplements.id, item.supplementId), eq(supplements.userId, OWNER_USER_ID)));
+        const stockAfter = Math.max(0, (suppCur?.stock ?? 0) - qty);
+        await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock - ${qty}), "updatedAt" = NOW() WHERE id = ${item.supplementId} AND "userId" = ${OWNER_USER_ID}`);
+        await db.insert(supplementStockAdjustments).values({
+          supplementId: item.supplementId,
+          userId: OWNER_USER_ID,
+          adjustDate: input.date,
+          adjustType: 'intake',
+          delta: -qty,
+          stockAfter,
+          reason: item.timeOfDay ? `進食 (${item.timeOfDay}) [一鍵記錄]` : '進食記錄 [一鍵記錄]',
+        });
+        logged++;
+      }
+      return { logged, skipped };
+    }),
+
+  // ─── Backfill Stock History from Intake Logs ────────────────────────────────
+  backfillStockHistory: ownerProcedure
+    .mutation(async () => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      // Get all intake logs ordered by date asc, id asc (chronological)
+      const intakeLogs = await db.select().from(supplementLogs)
+        .where(eq(supplementLogs.userId, OWNER_USER_ID))
+        .orderBy(supplementLogs.date, supplementLogs.id);
+      // Get existing stock adjustments of type 'intake' that were auto-generated (have notes = backfill marker or reason contains [backfill])
+      // Use a unique marker: store logId in notes as 'logId:{id}' to deduplicate precisely
+      const existingAdj = await db.select({ notes: supplementStockAdjustments.notes })
+        .from(supplementStockAdjustments)
+        .where(and(
+          eq(supplementStockAdjustments.userId, OWNER_USER_ID),
+          sql`${supplementStockAdjustments.notes} LIKE 'logId:%'`,
+        ));
+      const existingLogIds = new Set(
+        existingAdj
+          .map((a: any) => a.notes?.match(/^logId:(\d+)/)?.[1])
+          .filter(Boolean)
+          .map(Number)
+      );
+      // Also check for adjustments created by addLog (notes is null/undefined, reason contains [\u4e00鍵記錄] or is 進食記錄)
+      // For these we can't perfectly deduplicate, so we use a count-based approach per (supplementId, date)
+      const existingIntakeAdj = await db.select({
+        supplementId: supplementStockAdjustments.supplementId,
+        adjustDate: supplementStockAdjustments.adjustDate,
+      }).from(supplementStockAdjustments)
+        .where(and(
+          eq(supplementStockAdjustments.userId, OWNER_USER_ID),
+          sql`${supplementStockAdjustments.adjustType} = 'intake'`,
+          sql`(${supplementStockAdjustments.notes} IS NULL OR ${supplementStockAdjustments.notes} NOT LIKE 'logId:%')`,
+        ));
+      // Count existing non-backfill intake adjustments per (supplementId, date)
+      const existingCountMap = new Map<string, number>();
+      for (const a of existingIntakeAdj) {
+        const k = `${a.supplementId}|${a.adjustDate}`;
+        existingCountMap.set(k, (existingCountMap.get(k) ?? 0) + 1);
+      }
+      // Count intake logs per (supplementId, date)
+      const logCountMap = new Map<string, number>();
+      for (const log of intakeLogs) {
+        const k = `${log.supplementId}|${log.date}`;
+        logCountMap.set(k, (logCountMap.get(k) ?? 0) + 1);
+      }
+      // Get current stock per supplement to work backwards
+      const suppStocks = await db.select({ id: supplements.id, stock: supplements.currentStock }).from(supplements)
+        .where(eq(supplements.userId, OWNER_USER_ID));
+      const stockMap = new Map(suppStocks.map((s: any) => [s.id, s.stock ?? 0]));
+      let inserted = 0;
+      const usedCountMap = new Map<string, number>();
+      for (const log of intakeLogs) {
+        // Skip if already has a backfill record for this logId
+        if (existingLogIds.has(log.id)) continue;
+        const k = `${log.supplementId}|${log.date}`;
+        const usedCount = usedCountMap.get(k) ?? 0;
+        const existingCount = existingCountMap.get(k) ?? 0;
+        const totalLogs = logCountMap.get(k) ?? 1;
+        // If existing non-backfill adjustments already cover all logs for this day, skip
+        if (usedCount + existingCount >= totalLogs) continue;
+        usedCountMap.set(k, usedCount + 1);
+        const qty = log.quantity ?? 1;
+        // Use current stock as approximate (best we can do without full history)
+        const approxStock = stockMap.get(log.supplementId) ?? 0;
+        await db.insert(supplementStockAdjustments).values({
+          supplementId: log.supplementId,
+          userId: OWNER_USER_ID,
+          adjustDate: log.date,
+          adjustType: 'intake',
+          delta: -qty,
+          stockAfter: approxStock,
+          reason: log.timeOfDay ? `進食 (${log.timeOfDay}) [回填]` : '進食記錄 [回填]',
+          notes: `logId:${log.id}`,
+        });
+        inserted++;
+      }
+      return { inserted, total: intakeLogs.length };
+    }),
 });
 
 // ─── App Router ───────────────────────────────────────────────────────────────

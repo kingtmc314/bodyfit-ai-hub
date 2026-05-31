@@ -115,6 +115,23 @@ export default function Supplements() {
     onSuccess: () => { utils.supplements.getPurchases.invalidate(); toast.success(t('supplements.purchase_deleted')); },
     onError: (e) => toast.error(e.message),
   });
+  const bulkLogToday = trpc.supplements.bulkLogToday.useMutation({
+    onSuccess: (res) => {
+      utils.supplements.getLogs.invalidate();
+      utils.supplements.getAll.invalidate();
+      utils.supplements.getStockHistory.invalidate();
+      if (res.skipped > 0) toast.success(`已記錄 ${res.logged} 項，${res.skipped} 項已跳過`);
+      else toast.success(`已一鍵記錄 ${res.logged} 項補充品`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const backfillStockHistory = trpc.supplements.backfillStockHistory.useMutation({
+    onSuccess: (res) => {
+      utils.supplements.getStockHistory.invalidate();
+      toast.success(`回填完成：新增 ${res.inserted} 筆庫存記錄`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   // Toggle card expansion
   const toggleCard = (id: number) => setExpandedCards(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -616,6 +633,18 @@ export default function Supplements() {
               </SelectContent>
             </Select>
             <span className="text-xs text-muted-foreground">{displayStockHistory.length} {t('common.records')}</span>
+            <div className="ml-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1"
+                disabled={backfillStockHistory.isPending}
+                onClick={() => backfillStockHistory.mutate()}
+              >
+                {backfillStockHistory.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                回填歷史記錄
+              </Button>
+            </div>
           </div>
           <div className="bg-card border border-border rounded-2xl overflow-hidden">
             <div className="overflow-x-auto">
@@ -633,9 +662,31 @@ export default function Supplements() {
                       <td className="px-4 py-3 font-medium whitespace-nowrap">{formatHKDate(h.adjustDate)}</td>
                       <td className="px-4 py-3 text-sm">{h.supplementName ?? `#${h.supplementId}`}</td>
                       <td className="px-4 py-3">
-                        <Badge variant="outline" className="text-xs">
-                          {t(`supplements.adjust_type_${h.adjustType}`) || h.adjustType}
-                        </Badge>
+                        {(() => {
+                          const typeColors: Record<string, string> = {
+                            intake: 'bg-red-500/15 text-red-400 border-red-500/30',
+                            intake_reversal: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+                            intake_edit: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
+                            restock: 'bg-green-500/15 text-green-400 border-green-500/30',
+                            purchase: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+                            manual: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+                            adjustment: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+                            expiry: 'bg-gray-500/15 text-gray-400 border-gray-500/30',
+                          };
+                          const typeLabels: Record<string, string> = {
+                            intake: '進食',
+                            intake_reversal: '還原',
+                            intake_edit: '修改',
+                            restock: '補貨',
+                            purchase: '購買',
+                            manual: '手動',
+                            adjustment: '調整',
+                            expiry: '過期',
+                          };
+                          const cls = typeColors[h.adjustType] ?? 'bg-muted text-muted-foreground border-border';
+                          const label = typeLabels[h.adjustType] ?? h.adjustType;
+                          return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cls}`}>{label}</span>;
+                        })()}
                       </td>
                       <td className="px-4 py-3">
                         <span className={h.delta >= 0 ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
@@ -710,6 +761,32 @@ export default function Supplements() {
               </div>
             );
           })}
+
+          {/* Bulk log button */}
+          {todaySchedule.totalActive > 0 && todaySchedule.totalTaken < todaySchedule.totalActive && (
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                className="gap-2 text-sm"
+                disabled={bulkLogToday.isPending}
+                onClick={() => {
+                  const unlogged = Object.entries(todaySchedule.groups)
+                    .flatMap(([timeKey, items]: [string, any]) =>
+                      (items as any[]).filter((s: any) => !s.takenToday).map((s: any) => ({
+                        supplementId: s.id,
+                        quantity: s.dailyDose ?? 1,
+                        timeOfDay: timeKey === 'other' ? 'morning' : timeKey,
+                      }))
+                    );
+                  if (unlogged.length === 0) return;
+                  bulkLogToday.mutate({ date: todayHKString(), items: unlogged });
+                }}
+              >
+                {bulkLogToday.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                一鍵全部記錄
+              </Button>
+            </div>
+          )}
 
           {todaySchedule.totalActive === 0 && (
             <div className="text-center py-12 text-muted-foreground">

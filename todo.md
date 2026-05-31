@@ -172,3 +172,11 @@
 - [x] Add Edit Log dialog with date, quantity, time of day, notes fields
 - [x] Fix deleteLog to also invalidate stockHistory cache
 - [x] Update version to v3.4.5 in AppLayout sidebar
+
+## v3.5.0 Supplement Enhancements (2026-06-01)
+- [x] Backend: bulkLogToday procedure — log all active supplements with today's schedule in one call
+- [x] Backend: backfillStockHistory procedure — rebuild stock adjustments from existing intake logs
+- [x] Frontend: 今日計劃 tab — add 一鍵全部記錄 button
+- [x] Frontend: 庫存記錄 tab — color-coded type labels (進食/補貨/手動/修改/還原)
+- [x] Frontend: 庫存記錄 tab — add 回填歷史庫存記錄 button
+- [x] Update version to v3.5.0
