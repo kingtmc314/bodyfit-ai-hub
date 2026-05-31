@@ -11,7 +11,7 @@ import {
 } from "../drizzle/schema";
 import { eq, and, desc, gte, lte, like, or, sql } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
-import { storagePut } from "./storage";
+import { storagePut, storageGetSignedUrl } from "./storage";
 import { nanoid } from "nanoid";
 import { todayHK, daysAgoHK, toHKDateString } from "./hkTime";
 import { parseRows, detectDataType, type ImportDataType } from "./csvImport";
@@ -118,6 +118,19 @@ const nutritionRouter = router({
   analyzeFoodPhoto: publicProcedure
     .input(z.object({ imageUrl: z.string(), imageBase64: z.string().optional() }))
     .mutation(async ({ input }) => {
+      // If imageUrl is a relative /manus-storage/ path, resolve to a real signed S3 URL
+      // so the LLM can actually fetch the image
+      let resolvedImageUrl = input.imageUrl;
+      if (input.imageUrl.startsWith('/manus-storage/')) {
+        const key = input.imageUrl.replace('/manus-storage/', '');
+        try {
+          resolvedImageUrl = await storageGetSignedUrl(key);
+        } catch (e) {
+          console.error('[analyzeFoodPhoto] Failed to get signed URL:', e);
+          // Fall back to original URL
+          resolvedImageUrl = input.imageUrl;
+        }
+      }
       const response = await invokeLLM({
         messages: [
           {
@@ -129,7 +142,7 @@ const nutritionRouter = router({
             content: [
               {
                 type: "image_url" as const,
-                image_url: { url: input.imageUrl, detail: "high" as const }
+                image_url: { url: resolvedImageUrl, detail: "high" as const }
               },
               {
                 type: "text" as const,
@@ -1550,9 +1563,16 @@ const runningRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
+      // Auto-lookup shoes_id by name to keep FK in sync
+      let shoesId: number | null = null;
+      if (input.runningShoes) {
+        const shoeRow = await db.execute(sql`SELECT id FROM running_shoes WHERE shoes_name = ${input.runningShoes} LIMIT 1`);
+        const found = ((shoeRow as any).rows ?? shoeRow)[0];
+        if (found) shoesId = Number(found.id);
+      }
       await db.execute(sql`
         INSERT INTO running_logs (
-          date, running_type, running_shoes, distance_km, hour, minutes, second,
+          date, running_type, running_shoes, shoes_id, distance_km, hour, minutes, second,
           average_pace, best_pace, average_heart_rate, maximum_heart_rate,
           average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
           vertical_oscillation_cm, avg_ground_contact_time_ms,
@@ -1561,6 +1581,7 @@ const runningRouter = router({
           ${input.date},
           ${input.runningType ?? null},
           ${input.runningShoes ?? null},
+          ${shoesId},
           ${input.distanceKm ?? null},
           ${input.hour ?? null},
           ${input.minutes ?? null},
@@ -1613,6 +1634,12 @@ const runningRouter = router({
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
       const { id, ...fields } = input;
+      // Auto-lookup shoes_id if runningShoes changed
+      if (fields.runningShoes !== undefined) {
+        const shoeRow = await db.execute(sql`SELECT id FROM running_shoes WHERE shoes_name = ${fields.runningShoes} LIMIT 1`);
+        const found = ((shoeRow as any).rows ?? shoeRow)[0];
+        (fields as any).shoesId = found ? Number(found.id) : null;
+      }
       const setClauses = Object.entries(fields)
         .filter(([, v]) => v !== undefined)
         .map(([k, v]) => {
@@ -1688,10 +1715,98 @@ const runningRouter = router({
         r.notes ? `備註:${r.notes}` : '',
       ].filter(Boolean).join(', ')).join('\\n');
 
+      // Fetch upcoming races for predictions
+      const upcomingRaceRows = await db.execute(sql`
+        SELECT race_name, date, distance_km, location
+        FROM races
+        WHERE date >= TO_CHAR(NOW(), 'YYYY-MM-DD')
+        ORDER BY date ASC
+        LIMIT 10
+      `);
+      const upcomingRaces = (upcomingRaceRows as any).rows ?? upcomingRaceRows;
+
+      // Fetch past race results for context
+      const pastRaceRows = await db.execute(sql`
+        SELECT race_name, date, distance_km, finish_time, is_pb, overall_place, gender_group_place, age_group_place, location, notes
+        FROM races
+        WHERE date < TO_CHAR(NOW(), 'YYYY-MM-DD') AND finish_time IS NOT NULL
+        ORDER BY date DESC
+        LIMIT 20
+      `);
+      const pastRaces = (pastRaceRows as any).rows ?? pastRaceRows;
+
+      // Fetch active shoes for recommendation
+      const activeShoeRows = await db.execute(sql`
+        SELECT s.shoes_name, s.brand, s.model,
+          COALESCE(s.initial_km::numeric, 0) + COALESCE(SUM(r.distance_km::numeric), 0) AS total_km
+        FROM running_shoes s
+        LEFT JOIN running_logs r ON (r.shoes_id = s.id OR (r.shoes_id IS NULL AND r.running_shoes = s.shoes_name))
+        WHERE s.status = 'Active'
+        GROUP BY s.id, s.shoes_name, s.brand, s.model
+        ORDER BY s.shoes_name ASC
+      `);
+      const activeShoes = (activeShoeRows as any).rows ?? activeShoeRows;
+
+      const pastRaceSummary = pastRaces.map((r: any) =>
+        `${r.date?.toString().slice(0,10)} ${r.race_name} ${parseFloat(r.distance_km||0).toFixed(1)}km 完成:${r.finish_time}${r.is_pb?' (PB)':''}${r.overall_place?' 總排#'+r.overall_place:''}${r.location?' @'+r.location:''}`
+      ).join('\n');
+
+      const upcomingRaceSummary = upcomingRaces.map((r: any) =>
+        `${r.date?.toString().slice(0,10)} ${r.race_name} ${parseFloat(r.distance_km||0).toFixed(1)}km${r.location?' @'+r.location:''}`
+      ).join('\n');
+
+      const activeShoeSummary = activeShoes.map((s: any) =>
+        `${s.shoes_name}${s.brand?' ('+s.brand+')':''} 已跑${parseFloat(s.total_km||0).toFixed(0)}km`
+      ).join(', ');
+
       const res = await invokeLLM({
         messages: [
-          { role: 'system', content: '你是一位專業跑步教練和運動科學分析師。請用繁體中文回答，結構清晰，分段說明。' },
-          { role: 'user', content: `請分析我的跑步數據，最近${input.weeks}週共${logs.length}次跑步。\n總距離:${parseFloat(stats?.total_distance||0).toFixed(1)}km，平均配速:${formatPace(parseFloat(stats?.avg_pace||0)*60)}，平均心率:${Math.round(stats?.avg_hr||0)}bpm，平均步頻:${Math.round(stats?.avg_cadence||0)}spm，平均步幅:${parseFloat(stats?.avg_stride||0).toFixed(2)}m，平均垂直比:${parseFloat(stats?.avg_vr||0).toFixed(1)}%，平均振幅:${parseFloat(stats?.avg_vo||0).toFixed(1)}cm\n\n詳細記錄(最近30次):\n${summary}\n\n請提供以下分析:\n1. 跑步表現總結(配速趨勢、距離進展、心率效率)\n2. 步頻與步幅分析(是否達到理想步頻 170-180spm)\n3. 垂直振幅與垂直比分析(跑步經濟性評估)\n4. 訓練負荷與類型分布分析\n5. 具體改進建議(至少 3 項可執行的訓練建議)` },
+          { role: 'system', content: '你是一位專業馬拉松教練和運動科學分析師。請用繁體中文回答，結構清晰，分段說明，使用 Markdown 格式。' },
+          { role: 'user', content: `請全面分析我的跑步數據並提供詳細建議。
+
+## 訓練數據摘要 (最近${input.weeks}週)
+共${logs.length}次跑步，總距離:${parseFloat(stats?.total_distance||0).toFixed(1)}km
+平均配速:${formatPace(parseFloat(stats?.avg_pace||0)*60)}，平均心率:${Math.round(stats?.avg_hr||0)}bpm
+平均步頻:${Math.round(stats?.avg_cadence||0)}spm，平均步幅:${parseFloat(stats?.avg_stride||0).toFixed(2)}m
+平均垂直比:${parseFloat(stats?.avg_vr||0).toFixed(1)}%，平均振幅:${parseFloat(stats?.avg_vo||0).toFixed(1)}cm
+
+## 詳細訓練記錄(最近30次)
+${summary}
+
+## 過往賽事記錄
+${pastRaceSummary || '暫無過往賽事記錄'}
+
+## 即將到來的賽事
+${upcomingRaceSummary || '暫無即將到來的賽事'}
+
+## 現有跑鞋 (Active)
+${activeShoeSummary || '暫無跑鞋記錄'}
+
+請提供以下完整分析:
+
+### 1. 跑步表現總結
+分析配速趨勢、距離進展、心率效率
+
+### 2. 跑步生物力學分析
+步頻/步幅/垂直振幅/垂直比分析，跑步經濟性評估
+
+### 3. 訓練負荷與類型分布
+評估訓練充分度、強度分布是否合理
+
+### 4. 即將賽事完成時間預測
+根據現有訓練水平，為每場即將到來的賽事預測完成時間範圍（樂觀/保守），並說明預測依據
+
+### 5. 各賽事配速策略建議
+為每場即將到來的賽事提供具體配速計劃（前半段/後半段分配）
+
+### 6. 跑鞋推薦
+根據賽事距離和訓練類型，從現有跑鞋中推薦最適合的選擇，並說明理由（考慮里程磨損）
+
+### 7. 天氣應對策略
+針對香港天氣特點（高溫高濕夏季、涼爽冬季），提供不同天氣條件下的配速調整、補水策略和裝備建議
+
+### 8. 具體訓練改進建議
+提供至少5項可執行的訓練建議，幫助達成賽事目標` },
         ],
       });
       return { analysis: res.choices[0]?.message?.content ?? '分析失敗，請稍後再試。' };
@@ -1702,11 +1817,14 @@ const runningRouter = router({
     .query(async () => {
       const db = await getDb();
       if (!db) return [];
+      // Join on BOTH shoes_id (FK) and shoes_name text match to handle legacy data
       const rows = await db.execute(sql`
         SELECT s.*,
-          COALESCE(s.initial_km::numeric, 0) + COALESCE(SUM(r.distance_km::numeric), 0) AS total_km
+          COALESCE(s.initial_km::numeric, 0) + COALESCE(SUM(r.distance_km::numeric), 0) AS total_km,
+          COALESCE(COUNT(r.id), 0) AS run_count,
+          COALESCE(s.max_km, 800) AS max_km
         FROM running_shoes s
-        LEFT JOIN running_logs r ON r.shoes_id = s.id
+        LEFT JOIN running_logs r ON (r.shoes_id = s.id OR (r.shoes_id IS NULL AND r.running_shoes = s.shoes_name))
         GROUP BY s.id
         ORDER BY s.status ASC, s.shoes_name ASC
       `);
@@ -1722,18 +1840,21 @@ const runningRouter = router({
       purchaseDate: z.string().optional(),
       retirementDate: z.string().optional(),
       initialKm: z.number().optional().default(0),
+      maxKm: z.number().optional().default(800),
       notes: z.string().optional(),
       price: z.number().optional(),
       firstUseDate: z.string().optional(),
+      photoUrl: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
       await db.execute(sql`
-        INSERT INTO running_shoes (shoes_name, brand, model, status, purchase_date, retirement_date, initial_km, notes, price, firstusedate)
+        INSERT INTO running_shoes (shoes_name, brand, model, status, purchase_date, retirement_date, initial_km, max_km, notes, price, firstusedate, photo_url)
         VALUES (${input.shoesName}, ${input.brand ?? null}, ${input.model ?? null}, ${input.status ?? 'Active'},
           ${input.purchaseDate ?? null}, ${input.retirementDate ?? null}, ${input.initialKm ?? 0},
-          ${input.notes ?? null}, ${input.price ?? null}, ${input.firstUseDate ?? null})
+          ${input.maxKm ?? 800},
+          ${input.notes ?? null}, ${input.price ?? null}, ${input.firstUseDate ?? null}, ${input.photoUrl ?? null})
       `);
       return { success: true };
     }),
@@ -1748,9 +1869,11 @@ const runningRouter = router({
       purchaseDate: z.string().optional(),
       retirementDate: z.string().optional(),
       initialKm: z.number().optional(),
+      maxKm: z.number().optional(),
       notes: z.string().optional(),
       price: z.number().optional(),
       firstUseDate: z.string().optional(),
+      photoUrl: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -1765,9 +1888,11 @@ const runningRouter = router({
       if (fields.purchaseDate !== undefined) { sets.push(`purchase_date = $${sets.length+1}`); vals.push(fields.purchaseDate); }
       if (fields.retirementDate !== undefined) { sets.push(`retirement_date = $${sets.length+1}`); vals.push(fields.retirementDate); }
       if (fields.initialKm !== undefined) { sets.push(`initial_km = $${sets.length+1}`); vals.push(fields.initialKm); }
+      if ((fields as any).maxKm !== undefined) { sets.push(`max_km = $${sets.length+1}`); vals.push((fields as any).maxKm); }
       if (fields.notes !== undefined) { sets.push(`notes = $${sets.length+1}`); vals.push(fields.notes); }
       if (fields.price !== undefined) { sets.push(`price = $${sets.length+1}`); vals.push(fields.price); }
       if (fields.firstUseDate !== undefined) { sets.push(`firstusedate = $${sets.length+1}`); vals.push(fields.firstUseDate); }
+      if ((fields as any).photoUrl !== undefined) { sets.push(`photo_url = $${sets.length+1}`); vals.push((fields as any).photoUrl); }
       if (sets.length === 0) return { success: true };
       vals.push(id);
       const { Client } = (await import('pg')).default as any;
@@ -1785,6 +1910,24 @@ const runningRouter = router({
       if (!db) throw new Error('DB unavailable');
       await db.execute(sql`DELETE FROM running_shoes WHERE id = ${input.id}`);
       return { success: true };
+    }),
+
+  getShoeRunHistory: publicProcedure
+    .input(z.object({ shoeId: z.number().optional(), shoeName: z.string().optional() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      // Match by shoes_id FK or by shoes_name text (legacy data)
+      const rows = await db.execute(sql`
+        SELECT id, date, distance_km, hour, minutes, second, average_pace, average_heart_rate,
+               average_cadence, calories, running_type, notes
+        FROM running_logs
+        WHERE (${input.shoeId ?? null}::bigint IS NOT NULL AND (shoes_id = ${input.shoeId ?? null} OR (shoes_id IS NULL AND running_shoes = ${input.shoeName ?? null})))
+           OR (${input.shoeId ?? null}::bigint IS NULL AND running_shoes = ${input.shoeName ?? null})
+        ORDER BY date DESC
+        LIMIT 200
+      `);
+      return (rows as any).rows ?? rows;
     }),
 
   // ─── Races CRUD ──────────────────────────────────────────────────────────────
@@ -1895,6 +2038,36 @@ const runningRouter = router({
         ORDER BY distance_km ASC, finish_time ASC
       `);
       return (rows as any).rows ?? rows;
+    }),
+
+  // Get all races enriched with matching running_log data (same date ± 1 day, distance within 10%)
+  getRacesEnriched: publicProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const raceRows = await db.execute(sql`SELECT * FROM races ORDER BY date DESC`);
+      const races = (raceRows as any).rows ?? raceRows;
+      // For each race, try to find a matching running_log entry
+      const enriched = await Promise.all(races.map(async (race: any) => {
+        if (!race.date || !race.distance_km) return { ...race, runLog: null };
+        const distKm = parseFloat(race.distance_km);
+        const minDist = distKm * 0.9;
+        const maxDist = distKm * 1.1;
+        // Look for a run on the same date or ±1 day with similar distance
+        const logRows = await db.execute(sql`
+          SELECT id, date, distance_km, average_pace, average_heart_rate, average_cadence,
+                 running_shoes, hour, minutes, second, calories, running_type,
+                 max_cadence, avg_stride_length_m, avg_vertical_ratio, vertical_oscillation_cm
+          FROM running_logs
+          WHERE date BETWEEN (${race.date}::date - interval '1 day')::text AND (${race.date}::date + interval '1 day')::text
+            AND distance_km::numeric BETWEEN ${minDist} AND ${maxDist}
+          ORDER BY ABS(distance_km::numeric - ${distKm}) ASC
+          LIMIT 1
+        `);
+        const logData = ((logRows as any).rows ?? logRows)[0] ?? null;
+        return { ...race, runLog: logData };
+      }));
+      return enriched;
     }),
 
   analyzeRace: publicProcedure

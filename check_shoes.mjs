@@ -1,0 +1,11 @@
+import pg from 'pg';
+const { Client } = pg.default ?? pg;
+const client = new Client({ connectionString: process.env.SUPABASE_DATABASE_URL, ssl: { rejectUnauthorized: false } });
+await client.connect();
+const r1 = await client.query(`SELECT COUNT(*) as total, COUNT(shoes_id) as with_shoes_id, COUNT(running_shoes) as with_shoes_name FROM running_logs`);
+console.log('running_logs stats:', r1.rows[0]);
+const r2 = await client.query(`SELECT shoes_id, running_shoes FROM running_logs WHERE running_shoes IS NOT NULL LIMIT 5`);
+console.log('Sample:', r2.rows);
+const r3 = await client.query(`SELECT id, shoes_name FROM running_shoes LIMIT 5`);
+console.log('Shoes:', r3.rows);
+await client.end();

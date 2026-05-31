@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot, Trophy, Star, MapPin, Calendar, Clock, Award, Flag } from "lucide-react";
+import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot, Trophy, Star, MapPin, Calendar, Clock, Award, Flag, Zap, Package, Camera, ImageIcon } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart, Area
@@ -93,7 +93,7 @@ export default function Running() {
   // Shoe Locker state
   const [showShoeDialog, setShowShoeDialog] = useState(false);
   const [editShoe, setEditShoe] = useState<any>(null);
-  const [shoeForm, setShoeForm] = useState<any>({ shoesName: '', brand: '', model: '', status: 'Active', purchaseDate: '', initialKm: '', notes: '', price: '', firstUseDate: '' });
+  const [shoeForm, setShoeForm] = useState<any>({ shoesName: '', brand: '', model: '', status: 'Active', purchaseDate: '', firstUseDate: '', retirementDate: '', initialKm: '', maxKm: '800', notes: '', price: '', photoUrl: '' });
   const [deleteShoeConfirm, setDeleteShoeConfirm] = useState<number | null>(null);
 
   // Race Events state
@@ -110,7 +110,37 @@ export default function Running() {
   const { data: activeShoes = [] } = trpc.running.getActiveShoes.useQuery();
   const { data: allShoes = [] } = trpc.running.getShoes.useQuery();
   const { data: races = [] } = trpc.running.getRaces.useQuery();
+  const { data: racesEnriched = [] } = trpc.running.getRacesEnriched.useQuery();
   const { data: pbs = [] } = trpc.running.getPBs.useQuery();
+  const { data: hrLogs = [] } = trpc.heartRate.getAll.useQuery({ limit: 30 });
+
+  // Shoe run history modal state
+  const [shoeHistoryModal, setShoeHistoryModal] = useState<{ shoe: any; runs: any[] } | null>(null);
+  const [loadingShoeHistory, setLoadingShoeHistory] = useState<number | null>(null);
+  const shoeHistoryQuery = trpc.running.getShoeRunHistory.useQuery(
+    { shoeId: loadingShoeHistory ?? undefined },
+    { enabled: loadingShoeHistory !== null }
+  );
+
+  // Countdown timer
+  const [now, setNow] = useState(() => new Date());
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    timerRef.current = setInterval(() => setNow(new Date()), 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
+
+  // Open shoe history
+  const openShoeHistory = (shoe: any) => {
+    setLoadingShoeHistory(Number(shoe.id));
+  };
+  useEffect(() => {
+    if (loadingShoeHistory !== null && !shoeHistoryQuery.isLoading && shoeHistoryQuery.data) {
+      const shoe = (allShoes as any[]).find((s: any) => Number(s.id) === loadingShoeHistory);
+      setShoeHistoryModal({ shoe, runs: shoeHistoryQuery.data as any[] });
+      setLoadingShoeHistory(null);
+    }
+  }, [loadingShoeHistory, shoeHistoryQuery.isLoading, shoeHistoryQuery.data]);
 
   // ─── Mutations ───────────────────────────────────────────────────────────────
   const addMutation = trpc.running.addLog.useMutation({
@@ -155,7 +185,7 @@ export default function Running() {
 
   // Shoe mutations
   const addShoeMutation = trpc.running.addShoe.useMutation({
-    onSuccess: () => { utils.running.getShoes.invalidate(); utils.running.getActiveShoes.invalidate(); toast.success('跑鞋已新增'); setShowShoeDialog(false); setShoeForm({ shoesName: '', brand: '', model: '', status: 'Active', purchaseDate: '', initialKm: '', notes: '', price: '', firstUseDate: '' }); },
+    onSuccess: () => { utils.running.getShoes.invalidate(); utils.running.getActiveShoes.invalidate(); toast.success(t('running.add_shoe') + ' ✓'); setShowShoeDialog(false); setShoeForm({ shoesName: '', brand: '', model: '', status: 'Active', purchaseDate: '', firstUseDate: '', retirementDate: '', initialKm: '', maxKm: '800', notes: '', price: '', photoUrl: '' }); },
     onError: (e) => toast.error('錯誤: ' + e.message),
   });
   const updateShoeMutation = trpc.running.updateShoe.useMutation({
@@ -278,40 +308,139 @@ export default function Running() {
   const avgPaceSec = summary ? parsePaceField(summary.avg_pace_sec ? String(summary.avg_pace_sec) : null) : 0;
   const avgHr = summary ? Math.round(Number(summary.avg_hr || 0)) : 0;
 
+  // ─── Derived data for header ─────────────────────────────────────────────────
+  const latestHr = (hrLogs as any[]).length > 0 ? (hrLogs as any[])[0] : null;
+  const restingHr = latestHr?.restingHr ?? null;
+  const maxHrForZones = latestHr?.highHr ?? 202;
+  const finishedRacesCount = (races as any[]).filter((r: any) => new Date(r.date + 'T00:00:00+08:00') <= now).length;
+  const totalShoesCount = (allShoes as any[]).length;
+  const nextRace = [...(races as any[])]
+    .filter((r: any) => new Date(r.date + 'T00:00:00+08:00') > now)
+    .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+  const otherUpcoming = [...(races as any[])]
+    .filter((r: any) => new Date(r.date + 'T00:00:00+08:00') > now)
+    .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .slice(1, 4);
+
+  // HR Zones (Karvonen)
+  const hrZones = restingHr && maxHrForZones ? [
+    { label: 'ZONE 1', pct: '59–74%', lo: Math.round(restingHr + 0.59 * (maxHrForZones - restingHr)), hi: Math.round(restingHr + 0.74 * (maxHrForZones - restingHr)), color: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20' },
+    { label: 'ZONE 2', pct: '74–84%', lo: Math.round(restingHr + 0.74 * (maxHrForZones - restingHr)), hi: Math.round(restingHr + 0.84 * (maxHrForZones - restingHr)), color: 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20' },
+    { label: 'ZONE 3', pct: '84–88%', lo: Math.round(restingHr + 0.84 * (maxHrForZones - restingHr)), hi: Math.round(restingHr + 0.88 * (maxHrForZones - restingHr)), color: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20' },
+    { label: 'ZONE 4', pct: '88–95%', lo: Math.round(restingHr + 0.88 * (maxHrForZones - restingHr)), hi: Math.round(restingHr + 0.95 * (maxHrForZones - restingHr)), color: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20' },
+    { label: 'ZONE 5', pct: '95–100%', lo: Math.round(restingHr + 0.95 * (maxHrForZones - restingHr)), hi: maxHrForZones, color: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20' },
+  ] : [];
+
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <Footprints className="w-6 h-6 text-orange-500" />
-            {t("running.title")}
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">{t("running.subtitle")}</p>
+      {/* Gradient hero banner */}
+      <div className="rounded-2xl p-5 text-white" style={{background: 'linear-gradient(135deg, oklch(0.62 0.20 45) 0%, oklch(0.68 0.19 25) 100%)'}}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl font-extrabold text-white flex items-center gap-2">
+              <Footprints className="w-5 h-5" />
+              {t('running.title')}
+            </h1>
+            <p className="text-white/70 text-sm mt-0.5">{t('running.subtitle')}</p>
+          </div>
+          <Button onClick={openAdd} size="sm" className="bg-white text-orange-600 hover:bg-white/90 font-semibold">
+            <Plus className="w-4 h-4 mr-1" /> {t('running.add_record')}
+          </Button>
         </div>
-        <Button onClick={openAdd} className="hero-gradient text-white">
-          <Plus className="w-4 h-4 mr-1" /> {t("running.add_record")}
-        </Button>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* 4 Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: t("running.total_runs"), value: `${totalRuns} ${t("running.runs")}`, icon: Footprints, color: "text-orange-500" },
-          { label: t("running.total_distance"), value: `${totalDist} km`, icon: Activity, color: "text-emerald-500" },
-          { label: t("running.avg_pace_label"), value: formatPace(avgPaceSec), icon: Timer, color: "text-blue-500" },
-          { label: t("running.avg_hr_label"), value: avgHr ? `${avgHr} bpm` : "—", icon: Heart, color: "text-red-500" },
+          { labelKey: 'running.total_shoes', value: totalShoesCount, unit: '', icon: Package, badgeClass: 'icon-badge-purple' },
+          { labelKey: 'running.finished_races', value: finishedRacesCount, unit: '', icon: Trophy, badgeClass: 'icon-badge-yellow' },
+          { labelKey: 'running.total_activities', value: totalRuns, unit: '', icon: Activity, badgeClass: 'icon-badge-green' },
+          { labelKey: 'running.resting_hr', value: restingHr, unit: 'bpm', icon: Heart, badgeClass: 'icon-badge-red' },
         ].map((s) => (
-          <div key={s.label} className="bg-card border border-border rounded-2xl p-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-1">
-              <s.icon className={`w-4 h-4 ${s.color}`} />
-              <span className="text-xs text-muted-foreground">{s.label}</span>
+          <div key={s.labelKey} className="stat-card rounded-2xl p-4">
+            <div className={`icon-badge ${s.badgeClass} mb-2`}>
+              <s.icon className="w-4 h-4" />
             </div>
-            <p className="text-xl font-bold text-foreground">{s.value}</p>
+            <p className="text-xs text-muted-foreground font-semibold">{t(s.labelKey)}</p>
+            <p className="metric-value text-2xl text-foreground mt-0.5">
+              {s.value ?? '—'}{s.unit && s.value != null ? <span className="text-sm font-normal text-muted-foreground ml-1">{s.unit}</span> : null}
+            </p>
           </div>
         ))}
       </div>
+
+      {/* Next Race countdown */}
+      {nextRace && (() => {
+        const raceDate = new Date(nextRace.date + 'T00:00:00+08:00');
+        const diffMs = raceDate.getTime() - now.getTime();
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const diffHrs = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const diffMin = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        const diffSec = Math.floor((diffMs % (1000 * 60)) / 1000);
+        return (
+          <div className="rounded-2xl border border-red-500/20 p-5 shadow-sm" style={{background: 'linear-gradient(135deg, oklch(0.97 0.02 25) 0%, oklch(0.98 0.01 45) 100%)'}}>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold uppercase tracking-wider text-red-500 flex items-center gap-1 mb-1">
+                  <Zap className="w-3.5 h-3.5" /> {t('running.next_race')}
+                </p>
+                <p className="text-xl font-extrabold text-foreground">{nextRace.race_name}</p>
+                <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" />{nextRace.date}</span>
+                  {nextRace.distance_km && <span className="flex items-center gap-1"><Flag className="w-3.5 h-3.5" />{parseFloat(nextRace.distance_km).toFixed(1)} km</span>}
+                  {nextRace.location && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{nextRace.location}</span>}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {[{v: diffDays, l: t('running.days')}, {v: diffHrs, l: t('running.hrs')}, {v: diffMin, l: t('running.min_label')}, {v: diffSec, l: t('running.sec')}].map(({v, l}, i) => (
+                  <div key={i} className="flex flex-col items-center">
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-extrabold text-xl shadow-sm ${
+                      i === 3 ? 'bg-red-500/15 text-red-500 border border-red-500/20' : 'bg-white dark:bg-muted text-foreground border border-border'
+                    }`}>{String(v).padStart(2, '0')}</div>
+                    <p className="text-[9px] text-muted-foreground mt-1 font-semibold uppercase">{l}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {otherUpcoming.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-border/50">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">{t('running.also_coming_up')}</p>
+                <div className="flex gap-2 flex-wrap">
+                  {otherUpcoming.map((r: any) => {
+                    const d = Math.ceil((new Date(r.date + 'T00:00:00+08:00').getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                    return (
+                      <div key={r.id} className="flex items-center gap-2 bg-white/60 dark:bg-muted/50 border border-border rounded-full px-3 py-1 text-xs">
+                        <span className="text-foreground font-medium truncate max-w-[120px]">{r.race_name}</span>
+                        <span className="text-red-500 font-bold shrink-0">{d}d</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* HR Zones */}
+      {hrZones.length > 0 && (
+        <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
+          <h3 className="text-sm font-bold text-foreground mb-1 flex items-center gap-2">
+            <Heart className="w-4 h-4 text-red-500" /> {t('running.hr_zones')}
+          </h3>
+          <p className="text-xs text-muted-foreground mb-3">{t('running.hr_zones_based')} {maxHrForZones} bpm {t('running.and_resting')} {restingHr} bpm</p>
+          <div className="grid grid-cols-5 gap-2">
+            {hrZones.map((z) => (
+              <div key={z.label} className={`border rounded-xl p-2.5 text-center ${z.color}`}>
+                <p className="text-[10px] font-bold">{z.label}</p>
+                <p className="text-[9px] opacity-70">{z.pct}</p>
+                <p className="text-sm font-extrabold mt-1">{z.lo} – {z.hi}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs defaultValue="charts">
@@ -477,104 +606,148 @@ export default function Running() {
               <Footprints className="w-4 h-4 text-orange-500" />
               Shoe Locker
             </h3>
-            <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditShoe(null); setShoeForm({ shoesName: '', brand: '', model: '', status: 'Active', purchaseDate: '', initialKm: '', notes: '', price: '', firstUseDate: '' }); setShowShoeDialog(true); }}>
+            <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditShoe(null); setShoeForm({ shoesName: '', brand: '', model: '', status: 'Active', purchaseDate: '', firstUseDate: '', retirementDate: '', initialKm: '', maxKm: '800', notes: '', price: '', photoUrl: '' }); setShowShoeDialog(true); }}>
               <Plus className="w-3.5 h-3.5 mr-1" /> 新增跑鞋
             </Button>
           </div>
-
-          {/* PB section */}
-          {(pbs as any[]).length > 0 && (
-            <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
-              <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                <Award className="w-4 h-4 text-yellow-500" /> 個人PB記錄
-              </h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {(pbs as any[]).map((pb: any, i: number) => (
-                  <div key={i} className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 text-center">
-                    <p className="text-xs text-muted-foreground">{parseFloat(pb.distance_km).toFixed(1)} km</p>
-                    <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">{pb.finish_time}</p>
-                    <p className="text-[10px] text-muted-foreground truncate">{pb.race_name}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Shoe cards */}
           {(allShoes as any[]).length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <Footprints className="w-12 h-12 mx-auto mb-3 opacity-20" />
-              <p className="font-medium">尚無跑鞋記錄</p>
-              <p className="text-sm mt-1">點擊「新增跑鞋」開始管理你的跑鞋</p>
+              <p className="font-medium">{t('running.no_shoes_yet')}</p>
+              <p className="text-sm mt-1">{t('running.add_first_shoe')}</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {(allShoes as any[]).map((shoe: any) => {
                 const totalKm = parseFloat(shoe.total_km || 0);
-                const maxKm = 800;
-                const pct = Math.min(100, (totalKm / maxKm) * 100);
-                const statusColor = shoe.status === 'Active' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-                  : shoe.status === 'Retired' ? 'bg-red-500/10 text-red-600 border-red-500/20'
-                  : 'bg-blue-500/10 text-blue-600 border-blue-500/20';
+                const maxKm = shoe.max_km ? parseFloat(shoe.max_km) : 800;
+                const initialKm = shoe.initial_km ? parseFloat(shoe.initial_km) : 0;
+                const usedKm = totalKm + initialKm;
+                const pct = Math.min(100, (usedKm / maxKm) * 100);
+                const runCount = shoe.run_count ? Number(shoe.run_count) : 0;
+                const priceNum = shoe.price ? parseFloat(shoe.price) : null;
+                const costPerKm = priceNum && usedKm > 0 ? (priceNum / usedKm).toFixed(2) : null;
+
+                // Status logic: retirement_date → retired, first_use_date → active, else not opened
+                const hasRetirement = !!shoe.retirement_date;
+                const hasFirstUse = !!shoe.firstusedate;
+                const shoeStatus = hasRetirement ? 'Retired' : hasFirstUse ? 'Active' : 'Not Yet Opened';
+                const statusLabel = shoeStatus === 'Retired' ? t('running.status_retired') : shoeStatus === 'Active' ? t('running.status_active') : t('running.status_not_opened');
+                const statusClass = shoeStatus === 'Active' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
+                  : shoeStatus === 'Retired' ? 'bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30'
+                  : 'bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30';
+                const barColor = pct > 87.5 ? 'bg-red-500' : pct > 62.5 ? 'bg-yellow-500' : 'bg-emerald-500';
+                const kmColor = pct > 87.5 ? 'text-red-500' : pct > 62.5 ? 'text-yellow-500' : 'text-emerald-500';
+
                 return (
-                  <div key={shoe.id} className="bg-card border border-border rounded-2xl p-4 shadow-sm">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-foreground truncate">{shoe.shoes_name}</p>
-                        {(shoe.brand || shoe.model) && (
-                          <p className="text-xs text-muted-foreground">{[shoe.brand, shoe.model].filter(Boolean).join(' ')}</p>
-                        )}
-                      </div>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ml-2 shrink-0 ${statusColor}`}>
-                        {shoe.status === 'Active' ? '使用中' : shoe.status === 'Retired' ? '已退役' : '未開封'}
+                  <div key={shoe.id} className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+                    {/* Photo area */}
+                    <div className="relative bg-muted/40 flex items-center justify-center" style={{ minHeight: 180 }}>
+                      {shoe.photo_url ? (
+                        <img src={shoe.photo_url} alt={shoe.shoes_name} className="w-full h-44 object-contain p-2" />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-44 text-muted-foreground/30">
+                          <Footprints className="w-16 h-16" />
+                        </div>
+                      )}
+                      {/* Status badge overlay */}
+                      <span className={`absolute top-3 left-3 text-[11px] px-2.5 py-1 rounded-full border font-semibold ${statusClass}`}>
+                        {statusLabel}
                       </span>
                     </div>
 
-                    {/* Mileage bar */}
-                    <div className="mb-3">
-                      <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                        <span>距離</span>
-                        <span className={totalKm > 700 ? 'text-red-500 font-semibold' : totalKm > 500 ? 'text-yellow-500 font-semibold' : 'text-emerald-500 font-semibold'}>
-                          {totalKm.toFixed(0)} km
-                        </span>
-                      </div>
-                      <div className="w-full bg-muted rounded-full h-2">
-                        <div
-                          className={`h-2 rounded-full transition-all ${pct > 87.5 ? 'bg-red-500' : pct > 62.5 ? 'bg-yellow-500' : 'bg-emerald-500'}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">建議更換: 800 km</p>
-                    </div>
+                    {/* Card body */}
+                    <div className="p-4">
+                      {/* Brand + Name */}
+                      {shoe.brand && (
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">{shoe.brand}</p>
+                      )}
+                      <p className="font-bold text-foreground text-base leading-tight mb-3">{shoe.shoes_name}</p>
 
-                    {shoe.purchase_date && (
-                      <p className="text-xs text-muted-foreground mb-1">購買: {shoe.purchase_date}</p>
-                    )}
-                    {shoe.notes && (
-                      <p className="text-xs text-muted-foreground mb-2 italic truncate">{shoe.notes}</p>
-                    )}
+                      {/* Mileage bar */}
+                      <div className="mb-3">
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="text-muted-foreground">{t('running.distance_used')}</span>
+                          <span className={`font-bold ${kmColor}`}>{usedKm.toFixed(1)} km</span>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-2.5">
+                          <div className={`h-2.5 rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+                        </div>
+                        <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
+                          <span>0 km</span>
+                          <span>{maxKm} km</span>
+                        </div>
+                      </div>
 
-                    <div className="flex gap-2 mt-2">
-                      <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => {
-                        setEditShoe(shoe);
-                        setShoeForm({
-                          shoesName: shoe.shoes_name || '',
-                          brand: shoe.brand || '',
-                          model: shoe.model || '',
-                          status: shoe.status || 'Active',
-                          purchaseDate: shoe.purchase_date || '',
-                          initialKm: shoe.initial_km != null ? String(shoe.initial_km) : '',
-                          notes: shoe.notes || '',
-                          price: shoe.price != null ? String(shoe.price) : '',
-                          firstUseDate: shoe.firstusedate || '',
-                        });
-                        setShowShoeDialog(true);
-                      }}>
-                        <Edit2 className="w-3 h-3 mr-1" /> 編輯
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteShoeConfirm(Number(shoe.id))}>
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
+                      {/* Stats row */}
+                      <div className="grid grid-cols-3 gap-2 mb-3">
+                        <div className="bg-muted/50 rounded-xl p-2 text-center">
+                          <p className="text-[10px] text-muted-foreground">{t('running.sessions')}</p>
+                          <p className="text-sm font-bold text-foreground">{runCount}</p>
+                        </div>
+                        <div className="bg-muted/50 rounded-xl p-2 text-center">
+                          <p className="text-[10px] text-muted-foreground">{t('running.price')}</p>
+                          <p className="text-sm font-bold text-orange-500">{priceNum ? `HK$${priceNum.toLocaleString()}` : '—'}</p>
+                        </div>
+                        <div className="bg-muted/50 rounded-xl p-2 text-center">
+                          <p className="text-[10px] text-muted-foreground">{t('running.cost_per_km')}</p>
+                          <p className="text-sm font-bold text-emerald-600">{costPerKm ? `$${costPerKm}` : '—'}</p>
+                        </div>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex gap-2 mb-3">
+                        <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" onClick={() => {
+                          setEditShoe(shoe);
+                          setShoeForm({
+                            shoesName: shoe.shoes_name || '',
+                            brand: shoe.brand || '',
+                            model: shoe.model || '',
+                            status: shoeStatus,
+                            purchaseDate: shoe.purchase_date || '',
+                            firstUseDate: shoe.firstusedate || '',
+                            retirementDate: shoe.retirement_date || '',
+                            initialKm: shoe.initial_km != null ? String(shoe.initial_km) : '',
+                            maxKm: shoe.max_km != null ? String(shoe.max_km) : '800',
+                            notes: shoe.notes || '',
+                            price: shoe.price != null ? String(shoe.price) : '',
+                            photoUrl: shoe.photo_url || '',
+                          });
+                          setShowShoeDialog(true);
+                        }}>
+                          <Edit2 className="w-3 h-3 mr-1" /> {t('running.edit')}
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteShoeConfirm(Number(shoe.id))}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                        <Button size="sm" variant="outline" className="flex-1 h-8 text-xs text-blue-600 hover:text-blue-700 border-blue-200 hover:border-blue-400"
+                          onClick={() => openShoeHistory(shoe)}
+                          disabled={loadingShoeHistory === Number(shoe.id)}>
+                          {loadingShoeHistory === Number(shoe.id) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Activity className="w-3 h-3 mr-1" />}
+                          {runCount} {t('running.view_runs')}
+                        </Button>
+                      </div>
+
+                      {/* Dates footer */}
+                      <div className="border-t border-border pt-2 space-y-0.5">
+                        {shoe.purchase_date && (
+                          <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                            <Calendar className="w-3 h-3" /> {t('running.purchased')}: {shoe.purchase_date}
+                          </p>
+                        )}
+                        {shoe.firstusedate && (
+                          <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                            <Footprints className="w-3 h-3" /> {t('running.first_used')}: {shoe.firstusedate}
+                          </p>
+                        )}
+                        {shoe.retirement_date && (
+                          <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                            <Flag className="w-3 h-3" /> {t('running.retired_on')}: {shoe.retirement_date}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -584,132 +757,277 @@ export default function Running() {
         </TabsContent>
 
         {/* Race Events tab */}
-        <TabsContent value="races" className="space-y-4">
+        <TabsContent value="races" className="space-y-5">
+          {/* Header row */}
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-foreground flex items-center gap-2">
               <Trophy className="w-4 h-4 text-yellow-500" />
-              賽事管理
+              {t('running.race_events')}
             </h3>
             <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditRace(null); setRaceForm({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' }); setShowRaceDialog(true); }}>
-              <Plus className="w-3.5 h-3.5 mr-1" /> 新增賽事
+              <Plus className="w-3.5 h-3.5 mr-1" /> {t('running.add_race')}
             </Button>
           </div>
+
+          {/* PB Records */}
+          {(pbs as any[]).length > 0 && (
+            <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/5 border border-yellow-500/20 rounded-2xl p-4 shadow-sm">
+              <h4 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
+                <Award className="w-4 h-4 text-yellow-500" /> {t('running.pb_records')}
+              </h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {(pbs as any[]).map((pb: any, i: number) => (
+                  <div key={i} className="bg-white/50 dark:bg-white/5 border border-yellow-500/20 rounded-xl p-3 text-center">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{parseFloat(pb.distance_km).toFixed(1)} km</p>
+                    <p className="text-xl font-extrabold text-yellow-600 dark:text-yellow-400 mt-0.5">{pb.finish_time}</p>
+                    <p className="text-[10px] text-muted-foreground truncate mt-0.5">{pb.race_name}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {(races as any[]).length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <Trophy className="w-12 h-12 mx-auto mb-3 opacity-20" />
-              <p className="font-medium">尚無賽事記錄</p>
-              <p className="text-sm mt-1">點擊「新增賽事」開始記錄你的賽事</p>
+              <p className="font-medium">{t('running.no_races_yet')}</p>
+              <p className="text-sm mt-1">{t('running.add_first_race')}</p>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {(races as any[]).map((race: any) => {
-                const raceDate = new Date(race.date + 'T00:00:00+08:00');
-                const now = new Date();
-                const isUpcoming = raceDate > now;
-                const diffMs = raceDate.getTime() - now.getTime();
-                const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-                const analysis = raceAnalysis[Number(race.id)];
-                const isAnalyzing = analyzingRace === Number(race.id);
+          ) : (() => {
+            const sortedRaces = [...(races as any[])].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            const upcomingRaces = sortedRaces.filter((r: any) => new Date(r.date + 'T00:00:00+08:00') > now);
+            const completedRaces = sortedRaces.filter((r: any) => new Date(r.date + 'T00:00:00+08:00') <= now);
 
-                return (
-                  <div key={race.id} className={`bg-card border rounded-2xl p-4 shadow-sm ${
-                    isUpcoming ? 'border-blue-500/30' : race.is_pb ? 'border-yellow-500/30' : 'border-border'
-                  }`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold text-foreground">{race.race_name}</p>
-                          {race.is_pb && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-400 font-bold">PB</span>
-                          )}
-                          {isUpcoming && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 font-medium">即將來臨</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{race.date}</span>
-                          {race.distance_km && <span className="flex items-center gap-1"><Flag className="w-3 h-3" />{parseFloat(race.distance_km).toFixed(1)} km</span>}
-                          {race.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{race.location}</span>}
-                          {race.finish_time && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{race.finish_time}</span>}
-                        </div>
-                        {(race.overall_place || race.gender_group_place || race.age_group_place) && (
-                          <div className="flex gap-2 mt-1 flex-wrap">
-                            {race.overall_place && <span className="text-[10px] text-muted-foreground">總排: #{race.overall_place}</span>}
-                            {race.gender_group_place && <span className="text-[10px] text-muted-foreground">性別: #{race.gender_group_place}</span>}
-                            {race.age_group_place && <span className="text-[10px] text-muted-foreground">年齡: #{race.age_group_place}</span>}
-                          </div>
-                        )}
-                      </div>
+            const openEditRace = (race: any) => {
+              setEditRace(race);
+              setRaceForm({
+                raceName: race.race_name || '',
+                date: race.date || todayHKString(),
+                distanceKm: race.distance_km != null ? String(race.distance_km) : '',
+                location: race.location || '',
+                registration: race.registration || '',
+                bibNo: race.bib_no || '',
+                isPb: race.is_pb || false,
+                finishTime: race.finish_time || '',
+                overallPlace: race.overall_place != null ? String(race.overall_place) : '',
+                ageGroupPlace: race.age_group_place != null ? String(race.age_group_place) : '',
+                genderGroupPlace: race.gender_group_place != null ? String(race.gender_group_place) : '',
+                runningShoes: race.running_shoes || '',
+                notes: race.notes || '',
+              });
+              setShowRaceDialog(true);
+            };
 
-                      {/* Countdown or finish time */}
-                      <div className="text-right shrink-0">
-                        {isUpcoming ? (
-                          <div className="text-center">
-                            <p className="text-2xl font-bold text-blue-500">{diffDays}</p>
-                            <p className="text-[10px] text-muted-foreground">天後</p>
+            return (
+              <div className="space-y-6">
+                {/* Upcoming races */}
+                {upcomingRaces.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">{t('running.upcoming')}</h4>
+                    <div className="space-y-2">
+                      {upcomingRaces.map((race: any) => {
+                        const raceDate = new Date(race.date + 'T00:00:00+08:00');
+                        const diffMs = raceDate.getTime() - now.getTime();
+                        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                        const diffHrs = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                        const diffMin = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                        const diffSec = Math.floor((diffMs % (1000 * 60)) / 1000);
+                        const isNext = upcomingRaces[0]?.id === race.id;
+                        return (
+                          <div key={race.id} className={`rounded-2xl border p-4 shadow-sm ${
+                            isNext ? 'bg-gradient-to-r from-blue-500/10 to-indigo-500/5 border-blue-500/30' : 'bg-card border-border'
+                          }`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                {isNext && <p className="text-[10px] font-bold uppercase tracking-wider text-blue-500 mb-1 flex items-center gap-1"><Zap className="w-3 h-3" />{t('running.next_race')}</p>}
+                                <p className="font-bold text-foreground">{race.race_name}</p>
+                                <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-muted-foreground">
+                                  <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{race.date}</span>
+                                  {race.distance_km && <span className="flex items-center gap-1"><Flag className="w-3 h-3" />{parseFloat(race.distance_km).toFixed(1)} km</span>}
+                                  {race.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{race.location}</span>}
+                                </div>
+                              </div>
+                              {isNext ? (
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {[{v: diffDays, l: t('running.days')}, {v: diffHrs, l: t('running.hrs')}, {v: diffMin, l: t('running.min_label')}, {v: diffSec, l: t('running.sec')}].map(({v, l}, i) => (
+                                    <div key={i} className="flex flex-col items-center">
+                                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-extrabold text-lg ${
+                                        i === 3 ? 'bg-red-500/15 text-red-500' : 'bg-muted text-foreground'
+                                      }`}>{String(v).padStart(2, '0')}</div>
+                                      <p className="text-[9px] text-muted-foreground mt-0.5">{l}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="text-right shrink-0">
+                                  <p className="text-xl font-bold text-blue-500">{diffDays}</p>
+                                  <p className="text-[10px] text-muted-foreground">{t('running.days_to_go')}</p>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex gap-2 mt-3">
+                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openEditRace(race)}><Edit2 className="w-3 h-3 mr-1" />{t('running.edit')}</Button>
+                              <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteRaceConfirm(Number(race.id))}><Trash2 className="w-3 h-3" /></Button>
+                            </div>
                           </div>
-                        ) : race.finish_time ? (
-                          <div className="text-center">
-                            <p className="text-lg font-bold text-foreground">{race.finish_time}</p>
-                            <p className="text-[10px] text-muted-foreground">完賽時間</p>
-                          </div>
-                        ) : null}
-                      </div>
+                        );
+                      })}
                     </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-2 mt-3 flex-wrap">
-                      {!isUpcoming && (
-                        <Button size="sm" variant="outline" className="h-7 text-xs flex items-center gap-1"
-                          disabled={isAnalyzing}
-                          onClick={() => { setAnalyzingRace(Number(race.id)); analyzeRaceMutation.mutate({ raceId: Number(race.id) }); }}>
-                          {isAnalyzing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                          AI 分析
-                        </Button>
-                      )}
-                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
-                        setEditRace(race);
-                        setRaceForm({
-                          raceName: race.race_name || '',
-                          date: race.date || todayHKString(),
-                          distanceKm: race.distance_km != null ? String(race.distance_km) : '',
-                          location: race.location || '',
-                          registration: race.registration || '',
-                          bibNo: race.bib_no || '',
-                          isPb: race.is_pb || false,
-                          finishTime: race.finish_time || '',
-                          overallPlace: race.overall_place != null ? String(race.overall_place) : '',
-                          ageGroupPlace: race.age_group_place != null ? String(race.age_group_place) : '',
-                          genderGroupPlace: race.gender_group_place != null ? String(race.gender_group_place) : '',
-                          runningShoes: race.running_shoes || '',
-                          notes: race.notes || '',
-                        });
-                        setShowRaceDialog(true);
-                      }}>
-                        <Edit2 className="w-3 h-3 mr-1" /> 編輯
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteRaceConfirm(Number(race.id))}>
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </div>
-
-                    {/* AI Analysis result */}
-                    {analysis && (
-                      <div className="mt-3 pt-3 border-t border-border">
-                        <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
-                          <Sparkles className="w-3 h-3 text-orange-500" /> AI 分析結果
-                        </p>
-                        <div className="prose prose-sm dark:prose-invert max-w-none text-xs">
-                          <Streamdown>{analysis}</Streamdown>
-                        </div>
-                      </div>
-                    )}
                   </div>
-                );
-              })}
-            </div>
-          )}
+                )}
+
+                {/* Completed races */}
+                {completedRaces.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">{t('running.completed')}</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {completedRaces.map((race: any) => {
+                        const enriched = (racesEnriched as any[]).find((r: any) => Number(r.id) === Number(race.id));
+                        const analysis = raceAnalysis[Number(race.id)];
+                        const isAnalyzing = analyzingRace === Number(race.id);
+                        return (
+                          <div key={race.id} className={`bg-card border rounded-2xl shadow-sm overflow-hidden ${
+                            race.is_pb ? 'border-yellow-500/40' : 'border-border'
+                          }`}>
+                            {/* Card header */}
+                            <div className={`p-4 ${
+                              race.is_pb ? 'bg-gradient-to-r from-yellow-500/10 to-orange-500/5' : 'bg-muted/30'
+                            }`}>
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="font-bold text-foreground">{race.race_name}</p>
+                                    {race.is_pb && (
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500 text-white font-extrabold">{t('running.pb_badge')}</span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-muted-foreground">
+                                    <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{race.date}</span>
+                                    {race.distance_km && <span className="flex items-center gap-1"><Flag className="w-3 h-3" />{parseFloat(race.distance_km).toFixed(1)} km</span>}
+                                    {race.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{race.location}</span>}
+                                  </div>
+                                </div>
+                                {race.finish_time && (
+                                  <div className="text-right shrink-0">
+                                    <p className="text-2xl font-extrabold text-foreground">{race.finish_time}</p>
+                                    <p className="text-[10px] text-muted-foreground">{t('running.finish_time')}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Performance metrics */}
+                            <div className="p-4 space-y-3">
+                              {/* Rankings */}
+                              {(race.overall_place || race.gender_group_place || race.age_group_place) && (
+                                <div className="flex gap-2 flex-wrap">
+                                  {race.overall_place && (
+                                    <div className="bg-muted/50 rounded-lg px-2.5 py-1.5 text-center">
+                                      <p className="text-[9px] text-muted-foreground font-semibold uppercase">總排</p>
+                                      <p className="text-sm font-bold text-foreground">#{race.overall_place}</p>
+                                    </div>
+                                  )}
+                                  {race.gender_group_place && (
+                                    <div className="bg-muted/50 rounded-lg px-2.5 py-1.5 text-center">
+                                      <p className="text-[9px] text-muted-foreground font-semibold uppercase">性別</p>
+                                      <p className="text-sm font-bold text-foreground">#{race.gender_group_place}</p>
+                                    </div>
+                                  )}
+                                  {race.age_group_place && (
+                                    <div className="bg-muted/50 rounded-lg px-2.5 py-1.5 text-center">
+                                      <p className="text-[9px] text-muted-foreground font-semibold uppercase">年齡組</p>
+                                      <p className="text-sm font-bold text-foreground">#{race.age_group_place}</p>
+                                    </div>
+                                  )}
+                                  {race.bib_no && (
+                                    <div className="bg-muted/50 rounded-lg px-2.5 py-1.5 text-center">
+                                      <p className="text-[9px] text-muted-foreground font-semibold uppercase">BIB</p>
+                                      <p className="text-sm font-bold text-foreground">{race.bib_no}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Performance from running log lookup */}
+                              {enriched && (enriched.avg_pace || enriched.avg_hr || enriched.avg_cadence || enriched.running_shoes) && (
+                                <div className="border-t border-border pt-3">
+                                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1">
+                                    <Activity className="w-3 h-3" /> {t('running.run_log_matched')}
+                                  </p>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    {enriched.avg_pace && (
+                                      <div className="bg-muted/40 rounded-lg p-2">
+                                        <p className="text-[9px] text-muted-foreground">{t('running.avg_pace_race')}</p>
+                                        <p className="text-sm font-bold text-foreground">{formatPace(parseFloat(enriched.avg_pace))}</p>
+                                      </div>
+                                    )}
+                                    {enriched.avg_hr && (
+                                      <div className="bg-muted/40 rounded-lg p-2">
+                                        <p className="text-[9px] text-muted-foreground">{t('running.avg_hr_race')}</p>
+                                        <p className="text-sm font-bold text-foreground">{Math.round(enriched.avg_hr)} bpm</p>
+                                      </div>
+                                    )}
+                                    {enriched.avg_cadence && (
+                                      <div className="bg-muted/40 rounded-lg p-2">
+                                        <p className="text-[9px] text-muted-foreground">{t('running.avg_cadence_race')}</p>
+                                        <p className="text-sm font-bold text-foreground">{Math.round(enriched.avg_cadence)} spm</p>
+                                      </div>
+                                    )}
+                                    {enriched.running_shoes && (
+                                      <div className="bg-muted/40 rounded-lg p-2 col-span-2">
+                                        <p className="text-[9px] text-muted-foreground">{t('running.shoes')}</p>
+                                        <p className="text-sm font-bold text-foreground truncate">{enriched.running_shoes}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Race shoes from race record itself */}
+                              {!enriched?.running_shoes && race.running_shoes && (
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  <Footprints className="w-3.5 h-3.5" />
+                                  <span>{race.running_shoes}</span>
+                                </div>
+                              )}
+
+                              {race.notes && (
+                                <p className="text-xs text-muted-foreground italic">{race.notes}</p>
+                              )}
+
+                              {/* Action buttons */}
+                              <div className="flex gap-2 pt-1">
+                                <Button size="sm" variant="outline" className="h-7 text-xs flex items-center gap-1"
+                                  disabled={isAnalyzing}
+                                  onClick={() => { setAnalyzingRace(Number(race.id)); analyzeRaceMutation.mutate({ raceId: Number(race.id) }); }}>
+                                  {isAnalyzing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                                  {t('running.ai_race_analysis')}
+                                </Button>
+                                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openEditRace(race)}><Edit2 className="w-3 h-3 mr-1" />{t('running.edit')}</Button>
+                                <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteRaceConfirm(Number(race.id))}><Trash2 className="w-3 h-3" /></Button>
+                              </div>
+
+                              {/* AI Analysis result */}
+                              {analysis && (
+                                <div className="mt-2 pt-3 border-t border-border">
+                                  <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                                    <Sparkles className="w-3 h-3 text-orange-500" /> AI 分析結果
+                                  </p>
+                                  <div className="prose prose-sm dark:prose-invert max-w-none text-xs">
+                                    <Streamdown>{analysis}</Streamdown>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </TabsContent>
 
         {/* AI Coach tab */}
@@ -857,20 +1175,28 @@ export default function Running() {
                 onValueChange={(v) => f("runningShoes", v === "__none__" ? "" : v)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="選擇跑鞋..." />
+                  <SelectValue placeholder={t('running.shoe_name') + '...'} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">— 不選擇 —</SelectItem>
-                  {(activeShoes as any[]).map((shoe: any) => (
-                    <SelectItem key={shoe.id} value={shoe.shoes_name}>
-                      <span className="flex items-center gap-2">
-                        {shoe.shoes_name}
-                        {shoe.status === "Not Yet Opened" && (
-                          <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1">未開封</Badge>
-                        )}
-                      </span>
-                    </SelectItem>
-                  ))}
+                  {(activeShoes as any[]).map((shoe: any) => {
+                    const sHasRetire = !!shoe.retirement_date;
+                    const sHasFirst = !!shoe.firstusedate;
+                    const sStatus = sHasRetire ? 'Retired' : sHasFirst ? 'Active' : 'Not Yet Opened';
+                    return (
+                      <SelectItem key={shoe.id} value={shoe.shoes_name}>
+                        <span className="flex items-center gap-2">
+                          {shoe.shoes_name}
+                          {sStatus === 'Active' && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1 border-emerald-400 text-emerald-600">{t('running.status_active')}</Badge>
+                          )}
+                          {sStatus === 'Not Yet Opened' && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1 border-blue-400 text-blue-600">{t('running.status_not_opened')}</Badge>
+                          )}
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -908,50 +1234,51 @@ export default function Running() {
       <Dialog open={showShoeDialog} onOpenChange={(o) => { setShowShoeDialog(o); if (!o) { setEditShoe(null); } }}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editShoe ? '編輯跑鞋' : '新增跑鞋'}</DialogTitle>
+            <DialogTitle>{editShoe ? t('running.edit_shoe') : t('running.add_shoe')}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-2">
             <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">跑鞋名稱 *</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('running.shoe_name')} *</label>
               <Input placeholder="例: Nike Vaporfly 3" value={shoeForm.shoesName} onChange={(e) => setShoeForm((p: any) => ({ ...p, shoesName: e.target.value }))} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">品牌</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('running.brand')}</label>
               <Input placeholder="例: Nike" value={shoeForm.brand} onChange={(e) => setShoeForm((p: any) => ({ ...p, brand: e.target.value }))} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">型號</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('running.model')}</label>
               <Input placeholder="例: Vaporfly 3" value={shoeForm.model} onChange={(e) => setShoeForm((p: any) => ({ ...p, model: e.target.value }))} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">狀態</label>
-              <Select value={shoeForm.status} onValueChange={(v) => setShoeForm((p: any) => ({ ...p, status: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Active">使用中</SelectItem>
-                  <SelectItem value="Not Yet Opened">未開封</SelectItem>
-                  <SelectItem value="Retired">已退役</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">購買日期</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('running.purchase_date')}</label>
               <Input type="date" value={shoeForm.purchaseDate} onChange={(e) => setShoeForm((p: any) => ({ ...p, purchaseDate: e.target.value }))} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">首次使用日</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('running.first_use_date')}</label>
               <Input type="date" value={shoeForm.firstUseDate} onChange={(e) => setShoeForm((p: any) => ({ ...p, firstUseDate: e.target.value }))} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">起始里程 (km)</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('running.retirement_date')}</label>
+              <Input type="date" value={shoeForm.retirementDate} onChange={(e) => setShoeForm((p: any) => ({ ...p, retirementDate: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('running.initial_km')}</label>
               <Input type="number" step="0.1" placeholder="0" value={shoeForm.initialKm} onChange={(e) => setShoeForm((p: any) => ({ ...p, initialKm: e.target.value }))} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">價格 (HKD)</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('running.max_km')}</label>
+              <Input type="number" step="1" placeholder="800" value={shoeForm.maxKm} onChange={(e) => setShoeForm((p: any) => ({ ...p, maxKm: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('running.price')}</label>
               <Input type="number" step="0.01" placeholder="例: 1500" value={shoeForm.price} onChange={(e) => setShoeForm((p: any) => ({ ...p, price: e.target.value }))} />
             </div>
             <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">備註</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('running.photo_url')}</label>
+              <Input placeholder="https://..." value={shoeForm.photoUrl} onChange={(e) => setShoeForm((p: any) => ({ ...p, photoUrl: e.target.value }))} />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('running.race_notes')}</label>
               <Input placeholder="..." value={shoeForm.notes} onChange={(e) => setShoeForm((p: any) => ({ ...p, notes: e.target.value }))} />
             </div>
           </div>
@@ -960,16 +1287,21 @@ export default function Running() {
             <Button className="hero-gradient text-white"
               disabled={addShoeMutation.isPending || updateShoeMutation.isPending || !shoeForm.shoesName}
               onClick={() => {
+                // Derive status from dates
+                const derivedStatus = shoeForm.retirementDate ? 'Retired' : shoeForm.firstUseDate ? 'Active' : 'Not Yet Opened';
                 const payload = {
                   shoesName: shoeForm.shoesName,
                   brand: shoeForm.brand || undefined,
                   model: shoeForm.model || undefined,
-                  status: shoeForm.status || 'Active',
+                  status: derivedStatus,
                   purchaseDate: shoeForm.purchaseDate || undefined,
+                  firstUseDate: shoeForm.firstUseDate || undefined,
+                  retirementDate: shoeForm.retirementDate || undefined,
                   initialKm: shoeForm.initialKm ? parseFloat(shoeForm.initialKm) : 0,
+                  maxKm: shoeForm.maxKm ? parseFloat(shoeForm.maxKm) : 800,
                   notes: shoeForm.notes || undefined,
                   price: shoeForm.price ? parseFloat(shoeForm.price) : undefined,
-                  firstUseDate: shoeForm.firstUseDate || undefined,
+                  photoUrl: shoeForm.photoUrl || undefined,
                 };
                 if (editShoe) {
                   updateShoeMutation.mutate({ id: Number(editShoe.id), ...payload });
@@ -1098,13 +1430,60 @@ export default function Running() {
       {/* Delete Race Confirm */}
       <Dialog open={deleteRaceConfirm !== null} onOpenChange={(o) => { if (!o) setDeleteRaceConfirm(null); }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>確認刪除</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">確定要刪除這個賽事記錄？此操作無法復原。</p>
+          <DialogHeader><DialogTitle>{t('running.confirm_delete')}</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">{t('running.confirm_delete_race_msg')}</p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteRaceConfirm(null)}>取消</Button>
+            <Button variant="outline" onClick={() => setDeleteRaceConfirm(null)}>{t('running.cancel')}</Button>
             <Button variant="destructive" onClick={() => deleteRaceConfirm !== null && deleteRaceMutation.mutate({ id: deleteRaceConfirm })} disabled={deleteRaceMutation.isPending}>
-              {deleteRaceMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}刪除
+              {deleteRaceMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}{t('running.delete')}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Shoe Run History Modal */}
+      <Dialog open={!!shoeHistoryModal} onOpenChange={(o) => { if (!o) setShoeHistoryModal(null); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-orange-500" />
+              {shoeHistoryModal?.shoe?.shoes_name} — {t('running.run_history')}
+            </DialogTitle>
+          </DialogHeader>
+          {shoeHistoryModal?.runs.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Activity className="w-10 h-10 mx-auto mb-3 opacity-20" />
+              <p>{t('running.no_runs_for_shoe')}</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {(shoeHistoryModal?.runs || []).map((run: any, i: number) => {
+                const dur = (run.hour || run.minutes || run.second)
+                  ? formatDuration(run.hour || 0, run.minutes || 0, run.second || 0)
+                  : null;
+                return (
+                  <div key={run.id ?? i} className="bg-muted/40 rounded-xl p-3 flex flex-wrap gap-3 items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm text-foreground">{run.date}</span>
+                        {run.running_type && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{run.running_type}</Badge>}
+                      </div>
+                      {run.notes && <p className="text-xs text-muted-foreground mt-0.5 truncate">{run.notes}</p>}
+                    </div>
+                    <div className="flex gap-3 text-xs text-muted-foreground flex-wrap shrink-0">
+                      {run.distance_km && <span className="font-semibold text-foreground">{parseFloat(run.distance_km).toFixed(2)} km</span>}
+                      {dur && <span className="flex items-center gap-0.5"><Clock className="w-3 h-3" />{dur}</span>}
+                      {run.average_pace && <span className="flex items-center gap-0.5"><Timer className="w-3 h-3" />{formatPace(parsePaceField(run.average_pace))}</span>}
+                      {run.average_heart_rate && <span className="flex items-center gap-0.5"><Heart className="w-3 h-3 text-red-400" />{run.average_heart_rate} bpm</span>}
+                      {run.average_cadence && <span>{parseFloat(run.average_cadence).toFixed(0)} spm</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShoeHistoryModal(null)}>{t('running.close')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

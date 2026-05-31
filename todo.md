@@ -441,3 +441,19 @@
 - [x] ExerciseDetailModal: add demo images (Wikimedia Commons) for key exercises (Bench Press, Deadlift, etc.)
 - [x] Import.tsx: add camera capture button, image remove button (×), Chinese UI text, larger preview
 - [x] Version bump to v1.2.0
+
+## Phase 46: Shoe Locker Redesign & Race Tab Overhaul
+- [ ] Shoe status logic: retirement_date → Retired; firstusedate → Active; purchase_date only → Not Yet Opened (bilingual)
+- [ ] Running log shoe selector: show 使用中/未開封 badge next to shoe name
+- [ ] Shoe Locker card redesign: large photo, status badge overlay, mileage bar (custom max_km), sessions/price/$/km stats, run history modal, dates row
+- [ ] Running page header: 4 stat cards (total shoes, finished races, total activities, latest resting HR) + Next Race countdown + HR Zones
+- [ ] Race tab: PB cards moved here (removed from shoe tab), completed race rich cards with all fields, upcoming countdown list
+- [x] AI coach enhanced: race history, time predictions for upcoming races, pace/shoe/weather strategy
+- [x] Fix shoe mileage: use both shoes_id FK and running_shoes text matching for total_km
+- [x] addLog/updateLog: auto-populate shoes_id by looking up shoes_name in running_shoes table
+- [x] addShoe/updateShoe: add maxKm field (custom replacement distance, default 800 km)
+- [x] Add max_km column to running_shoes table
+- [x] Add getShoeRunHistory procedure (view all runs for a specific shoe)
+- [x] Add getRacesEnriched procedure (lookup running performance by date+distance from running_logs)
+- [x] Fix AI food photo analysis: convert /manus-storage/ relative path to S3 signed URL before LLM call
+- [x] Version bump to v1.3.0
