@@ -551,3 +551,17 @@
 
 - [x] Insert 20 supplements from user data into the database (name, nameZh, brand, category, servingSize, timeOfDay, source)
 - [x] Verify all 20 appear correctly in the Supplements page
+
+## Phase 55: Supplement Purchase Cost Analytics
+- [x] Add monthly/yearly spend bar chart to Purchases tab (recharts BarChart)
+- [x] Group by brand OR category toggle (switch between views)
+- [x] Show total spend summary cards (this month, this year, all time)
+- [x] Currency-aware display (USD/HKD/CNY/EUR)
+
+## Phase 56: Today's Supplement Schedule (服用時間表)
+- [x] Add "今日計劃" tab to Supplements page
+- [x] Group active supplements by time_of_day (morning, pre_workout, with_meal, evening, night, etc.)
+- [x] Show each supplement with name, brand, daily dose, and "已服用" toggle button
+- [x] One-tap log: clicking "已服用" creates an intake log entry for today
+- [x] Show "已完成 X/Y" progress indicator at top
+- [x] Highlight supplements already logged today (green checkmark)

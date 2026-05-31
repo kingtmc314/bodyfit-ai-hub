@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { todayHKString, formatHKDate } from "@/lib/hkTime";
@@ -12,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Plus, Pill, Trash2, Edit2, Loader2, ArrowUpDown, AlertTriangle, Package, RefreshCw, Download, ShoppingCart, History, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-const CATEGORIES = ['protein', 'vitamin', 'mineral', 'omega3', 'pre_workout', 'post_workout', 'probiotic', 'collagen', 'creatine', 'bcaa', 'electrolyte', 'other'] as const;
+const CATEGORIES = ['protein', 'vitamin', 'mineral', 'omega3', 'pre_workout', 'post_workout', 'probiotic', 'collagen', 'creatine', 'bcaa', 'electrolyte', 'antioxidant', 'joint', 'liver', 'hormone', 'adaptogen', 'nmn', 'amino_acid', 'diuretic', 'other'] as const;
 const TIME_OF_DAY = ['morning', 'afternoon', 'evening', 'night', 'pre_workout', 'post_workout', 'with_meal'] as const;
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -27,6 +28,14 @@ const CATEGORY_COLORS: Record<string, string> = {
   creatine: 'bg-indigo-500/20 text-indigo-400',
   bcaa: 'bg-teal-500/20 text-teal-400',
   electrolyte: 'bg-sky-500/20 text-sky-400',
+  antioxidant: 'bg-amber-500/20 text-amber-400',
+  joint: 'bg-lime-500/20 text-lime-400',
+  liver: 'bg-emerald-500/20 text-emerald-400',
+  hormone: 'bg-rose-500/20 text-rose-400',
+  adaptogen: 'bg-violet-500/20 text-violet-400',
+  nmn: 'bg-fuchsia-500/20 text-fuchsia-400',
+  amino_acid: 'bg-orange-500/20 text-orange-400',
+  diuretic: 'bg-blue-400/20 text-blue-300',
   other: 'bg-muted text-muted-foreground',
 };
 
@@ -54,6 +63,8 @@ export default function Supplements() {
   const [purchaseFilter, setPurchaseFilter] = useState<string>('all');
   const [stockFilter, setStockFilter] = useState<string>('all');
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
+  const [analyticsView, setAnalyticsView] = useState<'monthly' | 'yearly'>('monthly');
+  const [analyticsGroup, setAnalyticsGroup] = useState<'brand' | 'category'>('brand');
 
   const utils = trpc.useUtils();
   const { data: supplements = [], isLoading } = trpc.supplements.getAll.useQuery();
@@ -153,6 +164,62 @@ export default function Supplements() {
 
   const suppMap = useMemo(() => new Map(supplements.map((s: any) => [s.id, s])), [supplements]);
 
+  // Purchase analytics
+  const purchaseAnalytics = useMemo(() => {
+    const today = new Date();
+    const grouped: Record<string, number> = {};
+    let thisMonth = 0, thisYear = 0, allTime = 0;
+
+    purchases.forEach((p: any) => {
+      const total = parseFloat(p.totalPrice ?? '0') || 0;
+      const date = new Date(p.purchaseDate);
+      const key = analyticsGroup === 'brand'
+        ? (suppMap.get(p.supplementId)?.brand ?? 'Unknown')
+        : t(`supplements.cat_${suppMap.get(p.supplementId)?.category ?? 'other'}`);
+      const periodKey = analyticsView === 'monthly'
+        ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+        : String(date.getFullYear());
+      const chartKey = `${periodKey}|${key}`;
+      grouped[chartKey] = (grouped[chartKey] ?? 0) + total;
+      allTime += total;
+      if (date.getFullYear() === today.getFullYear()) {
+        thisYear += total;
+        if (date.getMonth() === today.getMonth()) thisMonth += total;
+      }
+    });
+
+    // Build chart data: group by period, stack by brand/category
+    const periodMap: Record<string, Record<string, number>> = {};
+    Object.entries(grouped).forEach(([k, v]) => {
+      const [period, label] = k.split('|');
+      if (!periodMap[period]) periodMap[period] = {};
+      periodMap[period][label] = (periodMap[period][label] ?? 0) + v;
+    });
+    const periods = Object.keys(periodMap).sort();
+    const allLabels = Array.from(new Set(Object.values(periodMap).flatMap(m => Object.keys(m))));
+    const chartData = periods.map(period => ({ period, ...periodMap[period] }));
+
+    return { chartData, allLabels, thisMonth, thisYear, allTime };
+  }, [purchases, analyticsView, analyticsGroup, suppMap, t]);
+
+  // Today's schedule: active supplements grouped by time_of_day
+  const todaySchedule = useMemo(() => {
+    const today = todayHKString();
+    const takenToday = new Set(logs.filter((l: any) => l.date === today).map((l: any) => l.supplementId));
+    const active = supplements.filter((s: any) => s.isActive);
+    const groups: Record<string, any[]> = {};
+    TIME_OF_DAY.forEach(t => { groups[t] = []; });
+    groups['other'] = [];
+    active.forEach((s: any) => {
+      const tod = s.timeOfDay ?? 'morning';
+      if (groups[tod]) groups[tod].push({ ...s, takenToday: takenToday.has(s.id) });
+      else groups['other'].push({ ...s, takenToday: takenToday.has(s.id) });
+    });
+    const totalActive = active.length;
+    const totalTaken = active.filter((s: any) => takenToday.has(s.id)).length;
+    return { groups, totalActive, totalTaken };
+  }, [supplements, logs]);
+
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto">
       {/* Header */}
@@ -221,6 +288,7 @@ export default function Supplements() {
           <TabsTrigger value="log">{t('supplements.intake_log')}</TabsTrigger>
           <TabsTrigger value="purchases" className="gap-1"><ShoppingCart className="w-3 h-3" />{t('supplements.purchases')}</TabsTrigger>
           <TabsTrigger value="stock" className="gap-1"><History className="w-3 h-3" />{t('supplements.stock_history')}</TabsTrigger>
+          <TabsTrigger value="schedule" className="gap-1">📋 {t('supplements.today_schedule')}</TabsTrigger>
         </TabsList>
 
         {/* Inventory Tab */}
@@ -403,7 +471,63 @@ export default function Supplements() {
         </TabsContent>
 
         {/* Purchase Records Tab */}
-        <TabsContent value="purchases" className="mt-4 space-y-3">
+        <TabsContent value="purchases" className="mt-4 space-y-4">
+
+          {/* Analytics Summary Cards */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-card border border-border rounded-2xl p-4 text-center">
+              <p className="text-xs text-muted-foreground mb-1">{t('supplements.spend_this_month')}</p>
+              <p className="text-xl font-bold text-primary">USD {purchaseAnalytics.thisMonth.toFixed(2)}</p>
+            </div>
+            <div className="bg-card border border-border rounded-2xl p-4 text-center">
+              <p className="text-xs text-muted-foreground mb-1">{t('supplements.spend_this_year')}</p>
+              <p className="text-xl font-bold text-foreground">USD {purchaseAnalytics.thisYear.toFixed(2)}</p>
+            </div>
+            <div className="bg-card border border-border rounded-2xl p-4 text-center">
+              <p className="text-xs text-muted-foreground mb-1">{t('supplements.spend_all_time')}</p>
+              <p className="text-xl font-bold text-foreground">USD {purchaseAnalytics.allTime.toFixed(2)}</p>
+            </div>
+          </div>
+
+          {/* Analytics Chart */}
+          {purchaseAnalytics.chartData.length > 0 && (
+            <div className="bg-card border border-border rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">{t('supplements.spend_chart')}</h3>
+                <div className="flex gap-2">
+                  <div className="flex rounded-lg border border-border overflow-hidden text-xs">
+                    <button onClick={() => setAnalyticsView('monthly')} className={`px-3 py-1 transition-colors ${analyticsView === 'monthly' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>{t('supplements.monthly')}</button>
+                    <button onClick={() => setAnalyticsView('yearly')} className={`px-3 py-1 transition-colors ${analyticsView === 'yearly' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>{t('supplements.yearly')}</button>
+                  </div>
+                  <div className="flex rounded-lg border border-border overflow-hidden text-xs">
+                    <button onClick={() => setAnalyticsGroup('brand')} className={`px-3 py-1 transition-colors ${analyticsGroup === 'brand' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>{t('supplements.by_brand')}</button>
+                    <button onClick={() => setAnalyticsGroup('category')} className={`px-3 py-1 transition-colors ${analyticsGroup === 'category' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>{t('supplements.by_category')}</button>
+                  </div>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={purchaseAnalytics.chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="period" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                  <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" tickFormatter={v => `$${v}`} />
+                  <Tooltip formatter={(v: any, name: string) => [`USD ${Number(v).toFixed(2)}`, name]} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8 }} />
+                  {purchaseAnalytics.allLabels.map((label, i) => (
+                    <Bar key={label} dataKey={label} stackId="a" fill={`hsl(${(i * 47) % 360}, 60%, 55%)`} radius={i === purchaseAnalytics.allLabels.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+              {/* Legend */}
+              <div className="flex flex-wrap gap-2 mt-2">
+                {purchaseAnalytics.allLabels.map((label, i) => (
+                  <div key={label} className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: `hsl(${(i * 47) % 360}, 60%, 55%)` }} />
+                    {label}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-2">
             <Select value={purchaseFilter} onValueChange={setPurchaseFilter}>
               <SelectTrigger className="h-8 w-48 text-xs"><SelectValue /></SelectTrigger>
@@ -507,6 +631,70 @@ export default function Supplements() {
               </table>
             </div>
           </div>
+        </TabsContent>
+
+        {/* Today's Schedule Tab */}
+        <TabsContent value="schedule" className="mt-4 space-y-4">
+          {/* Progress bar */}
+          <div className="bg-card border border-border rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold">{t('supplements.today_progress')}</h3>
+              <span className="text-sm font-bold text-primary">{todaySchedule.totalTaken} / {todaySchedule.totalActive}</span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2">
+              <div className="bg-primary h-2 rounded-full transition-all" style={{ width: todaySchedule.totalActive > 0 ? `${(todaySchedule.totalTaken / todaySchedule.totalActive) * 100}%` : '0%' }} />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">{t('supplements.today_date')}: {todayHKString()}</p>
+          </div>
+
+          {/* Groups by time of day */}
+          {([
+            { key: 'morning', label: t('supplements.tod_morning'), icon: '🌅' },
+            { key: 'with_meal', label: t('supplements.tod_with_meal'), icon: '🍽️' },
+            { key: 'afternoon', label: t('supplements.tod_afternoon'), icon: '☀️' },
+            { key: 'pre_workout', label: t('supplements.tod_pre_workout'), icon: '💪' },
+            { key: 'post_workout', label: t('supplements.tod_post_workout'), icon: '🏋️' },
+            { key: 'evening', label: t('supplements.tod_evening'), icon: '🌆' },
+            { key: 'night', label: t('supplements.tod_night'), icon: '🌙' },
+            { key: 'other', label: t('supplements.tod_other'), icon: '💊' },
+          ] as const).map(({ key, label, icon }) => {
+            const items = todaySchedule.groups[key] ?? [];
+            if (items.length === 0) return null;
+            return (
+              <div key={key} className="bg-card border border-border rounded-2xl p-4">
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <span>{icon}</span> {label}
+                  <span className="ml-auto text-xs text-muted-foreground">{items.filter((i: any) => i.takenToday).length}/{items.length}</span>
+                </h3>
+                <div className="space-y-2">
+                  {items.map((s: any) => (
+                    <div key={s.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${s.takenToday ? 'bg-green-500/10 border-green-500/30' : 'bg-muted/30 border-border'}`}>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium truncate ${s.takenToday ? 'line-through text-muted-foreground' : 'text-foreground'}`}>{s.name}</p>
+                        <p className="text-xs text-muted-foreground">{s.brand} · {s.dailyDose ?? 1} {t('supplements.units')}</p>
+                      </div>
+                      {s.takenToday ? (
+                        <span className="text-green-400 text-xs font-medium flex items-center gap-1">✓ {t('supplements.taken')}</span>
+                      ) : (
+                        <Button size="sm" className="h-7 text-xs px-3" onClick={() => {
+                          addLog.mutate({ supplementId: s.id, date: todayHKString(), quantity: s.dailyDose ?? 1, timeOfDay: key === 'other' ? 'morning' : key as any, notes: '' });
+                        }} disabled={addLog.isPending}>
+                          {addLog.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : t('supplements.mark_taken')}
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {todaySchedule.totalActive === 0 && (
+            <div className="text-center py-12 text-muted-foreground">
+              <Pill className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">{t('supplements.no_active_supplements')}</p>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
