@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot, Trophy, Star, MapPin, Calendar, Clock, Award, Flag, Zap, Package, Camera, ImageIcon, ArrowUpDown, Thermometer, Wind, Droplets, Download } from "lucide-react";
-import LogPhotoUploader from "@/components/LogPhotoUploader";
+import LogPhotoUploader, { LogPhotoUploaderRef } from "@/components/LogPhotoUploader";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart, Area
@@ -178,9 +178,15 @@ export default function Running() {
     }
   }, [loadingShoeHistory, shoeHistoryQuery.isLoading, shoeHistoryQuery.data]);
 
+  // ─── Photo uploader ref ──────────────────────────────────────────────────────
+  const photoUploaderRef = useRef<LogPhotoUploaderRef>(null);
+
   // ─── Mutations ───────────────────────────────────────────────────────────────
   const addMutation = trpc.running.addLog.useMutation({
-    onSuccess: () => {
+    onSuccess: async (newRecord) => {
+      if (photoUploaderRef.current?.hasStagedFiles()) {
+        await photoUploaderRef.current.uploadStagedFiles(newRecord.id);
+      }
       utils.running.getLogs.invalidate();
       utils.running.getStats.invalidate();
       toast.success(t("running.add_record"));
@@ -1548,17 +1554,10 @@ export default function Running() {
               <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.notes")}</label>
               <Input type="text" placeholder="..."  value={form.notes} onChange={(e) => f("notes", e.target.value)} />
             </div>
-            {editEntry && (
-              <div className="col-span-2">
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">截圖上載</label>
-                <LogPhotoUploader logId={editEntry.id} type="running" />
-              </div>
-            )}
-            {!editEntry && (
-              <div className="col-span-2">
-                <p className="text-xs text-muted-foreground italic">儲存記錄後可上載截圖</p>
-              </div>
-            )}
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">截圖上載</label>
+              <LogPhotoUploader ref={photoUploaderRef} logId={editEntry ? editEntry.id : null} type="running" />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowDialog(false); setEditEntry(null); setForm(defaultForm); }}>{t("running.cancel")}</Button>

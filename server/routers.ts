@@ -1583,7 +1583,7 @@ const runningRouter = router({
         const found = ((shoeRow as any).rows ?? shoeRow)[0];
         if (found) shoesId = Number(found.id);
       }
-      await db.execute(sql`
+      const result = await db.execute(sql`
         INSERT INTO running_logs (
           date, running_type, running_shoes, shoes_id, distance_km, hour, minutes, second,
           average_pace, best_pace, average_heart_rate, maximum_heart_rate,
@@ -1613,9 +1613,11 @@ const runningRouter = router({
           ${input.temperature ?? null},
           ${input.humidity ?? null},
           ${input.notes ?? null}
-        )
+        ) RETURNING id
       `);
-      return { success: true };
+      const rows = (result as any).rows ?? result;
+      const newId = rows[0]?.id ? Number(rows[0].id) : 0;
+      return { success: true, id: newId };
     }),
 
   updateLog: publicProcedure

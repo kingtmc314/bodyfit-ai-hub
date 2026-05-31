@@ -565,3 +565,22 @@
 - [x] One-tap log: clicking "已服用" creates an intake log entry for today
 - [x] Show "已完成 X/Y" progress indicator at top
 - [x] Highlight supplements already logged today (green checkmark)
+## Phase 57: Multi-Image Upload for Running & Steps Logs
+- [x] Create LogPhotoUploader component with forwardRef (LogPhotoUploaderRef)
+- [x] Support staging mode (logId=null): store files locally, expose uploadStagedFiles(logId) and hasStagedFiles()
+- [x] Support direct mode (logId=number): upload immediately for editing
+- [x] Add photo upload UI to Running log dialog (new and edit modes)
+- [x] Add photo upload UI to Steps log dialog (new and edit modes)
+- [x] running.addLog returns { success: true, id: newId } via RETURNING id
+- [x] steps.add returns full row with id via .returning()
+- [x] Running.tsx addMutation calls uploadStagedFiles(newRecord.id) on success
+- [x] Steps.tsx addMutation calls uploadStagedFiles(newRecord.id) on success
+## Phase 58: Heart Rate & Sleep Fixes
+- [x] Fix HRV chart in HeartRate.tsx to use sleep_logs HRV data (not heart_rate_logs.hrv)
+- [x] Fix max HR to use all-time max from entire heart_rate_logs table
+- [x] Fix Sleep bedtime/waketime chart to horizontal range bar (yin-yang bracelet style)
+## Phase 59: v2.3.0 Pre-Save Photo Staging Refinement
+- [x] Refactor LogPhotoUploader to support pre-save photo staging
+- [x] Verify TypeScript 0 errors after all changes
+- [x] All 35 tests passing
+- [x] Bump version to v2.3.0

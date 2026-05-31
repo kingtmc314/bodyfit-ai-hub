@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { todayHKString, formatHKDate } from "@/lib/hkTime";
@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Footprints, Trash2, Edit2, Loader2, ArrowUpDown, TrendingUp, Building2 } from "lucide-react";
-import LogPhotoUploader from "@/components/LogPhotoUploader";
+import LogPhotoUploader, { LogPhotoUploaderRef } from "@/components/LogPhotoUploader";
 import { useTranslation } from "react-i18next";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -63,6 +63,7 @@ export default function Steps() {
   const [showDialog, setShowDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
+  const photoUploaderRef = useRef<LogPhotoUploaderRef>(null);
   const [sort, setSort] = useState<'date_desc' | 'date_asc' | 'steps_desc' | 'floors_desc'>('date_desc');
   const [search, setSearch] = useState('');
 
@@ -70,7 +71,15 @@ export default function Steps() {
   const { data: records = [], isLoading } = trpc.steps.getAll.useQuery({ limit: 365 });
 
   const addMutation = trpc.steps.add.useMutation({
-    onSuccess: () => { utils.steps.getAll.invalidate(); toast.success(t('steps.logged')); setShowDialog(false); setForm(defaultForm); },
+    onSuccess: async (newRecord) => {
+      if (photoUploaderRef.current?.hasStagedFiles()) {
+        await photoUploaderRef.current.uploadStagedFiles(newRecord.id);
+      }
+      utils.steps.getAll.invalidate();
+      toast.success(t('steps.logged'));
+      setShowDialog(false);
+      setForm(defaultForm);
+    },
     onError: (e) => toast.error(e.message),
   });
   const updateMutation = trpc.steps.update.useMutation({
@@ -291,17 +300,10 @@ export default function Steps() {
               <label className="text-xs text-muted-foreground mb-1 block">{t('common.notes')}</label>
               <Input placeholder={t('common.optional_notes')} value={form.notes} onChange={e => setForm((f: any) => ({ ...f, notes: e.target.value }))} />
             </div>
-            {editEntry && (
-              <div className="col-span-2">
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">截圖上載</label>
-                <LogPhotoUploader logId={editEntry.id} type="steps" />
-              </div>
-            )}
-            {!editEntry && (
-              <div className="col-span-2">
-                <p className="text-xs text-muted-foreground italic">儲存記錄後可上載截圖</p>
-              </div>
-            )}
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">截圖上載</label>
+              <LogPhotoUploader ref={photoUploaderRef} logId={editEntry ? editEntry.id : null} type="steps" />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowDialog(false); setEditEntry(null); }}>{t('common.cancel')}</Button>
