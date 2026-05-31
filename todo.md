@@ -146,3 +146,8 @@
 - [x] Steps calorie backfill: confirmed working (dev server was temporarily down, all 4 records now have calories)
 - [x] Fix TypeScript errors: runningLogs.userId does not exist → removed userId filter (single-user app)
 - [x] Fix Workout finishSession: add totalVolume and exerciseCount to return value
+
+## v3.4.1 TypeScript Fix (2026-06-01)
+- [x] Fix api/index.ts: add explicit Request/Response types to Express route handlers to fix Vercel TypeScript warnings
+- [x] Add api/**/* to tsconfig.json include so local tsc also checks api/ directory
+- [x] Fix server/routers.ts updateShoe: date fields empty string → null in backend raw SQL

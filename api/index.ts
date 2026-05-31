@@ -1,5 +1,5 @@
 import "dotenv/config";
-import express from "express";
+import express, { type Request, type Response } from "express";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "../server/_core/oauth";
 import { registerStorageProxy } from "../server/_core/storageProxy";
@@ -18,7 +18,7 @@ registerStorageProxy(app);
 registerOAuthRoutes(app);
 
 // Health check
-app.get("/api/health", (_req, res) => res.json({ ok: true, version: "1.0.0" }));
+app.get("/api/health", (_req: Request, res: Response) => res.json({ ok: true, version: "1.0.0" }));
 
 // Scheduled cron handlers
 app.post("/api/scheduled/daily-reminder", dailyReminderHandler);
@@ -36,7 +36,7 @@ app.use(
 const staticDir = path.join(process.cwd(), "dist/public");
 if (fs.existsSync(staticDir)) {
   app.use(express.static(staticDir));
-  app.get("*", (_req, res) => {
+  app.get("*", (_req: Request, res: Response) => {
     res.sendFile(path.join(staticDir, "index.html"));
   });
 }
