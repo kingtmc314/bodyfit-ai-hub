@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { todayHKString, toHKDateString, formatHKChartDate } from "@/lib/hkTime";
@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Dumbbell, Trash2, Edit2, Search, ChevronRight, Loader2,
-  Flame, Timer, Weight, BarChart2, X, Check, Trophy, Target, Star, ArrowUpDown
+  Flame, Timer, Weight, BarChart2, X, Check, Trophy, Target, Star, ArrowUpDown,
+  Camera, Sparkles, PlusCircle, AlertCircle, CheckCircle2
 } from "lucide-react";
 import MuscleMap, { MUSCLE_GROUPS } from "@/components/MuscleMap";
 import ExerciseDetailModal from "@/components/ExerciseDetailModal";
@@ -222,7 +223,6 @@ export default function Workout() {
     } else {
       addSet.mutate({
         sessionId: activeSession.id,
-        exerciseId: 1,
         exerciseName: selectedExercise.name,
         setNumber: setNum,
         reps: setForm.reps,

@@ -10,7 +10,7 @@ import {
   healthGoals, runningLogs, runningShoes, races, favouriteExercises,
   dailySteps, medicalConditions, medicalVisits, medicalAttachments,
   supplements, supplementLogs, supplementPurchases, supplementStockAdjustments,
-  runningLogPhotos, stepLogPhotos
+  runningLogPhotos, stepLogPhotos, customExercises
 } from "../drizzle/schema";
 import { eq, and, desc, gte, lte, like, or, sql } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -318,7 +318,7 @@ const workoutRouter = router({
   addSet: publicProcedure
     .input(z.object({
       sessionId: z.number(),
-      exerciseId: z.number(),
+      exerciseId: z.number().optional().nullable(),
       exerciseName: z.string(),
       setNumber: z.number(),
       reps: z.number().optional(),
@@ -330,7 +330,16 @@ const workoutRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(workoutSets).values(input);
+      const { exerciseId, ...rest } = input;
+      // exerciseId is optional; use raw SQL to insert NULL when not provided
+      if (exerciseId != null) {
+        await db.insert(workoutSets).values({ ...rest, exerciseId });
+      } else {
+        await db.execute(sql`
+          INSERT INTO workout_sets ("sessionId", "exerciseName", "setNumber", reps, weight, duration, distance, notes)
+          VALUES (${rest.sessionId}, ${rest.exerciseName}, ${rest.setNumber}, ${rest.reps ?? null}, ${rest.weight ?? null}, ${rest.duration ?? null}, ${rest.distance ?? null}, ${rest.notes ?? null})
+        `);
+      }
       return { success: true };
     }),
 
@@ -397,6 +406,108 @@ const workoutRouter = router({
         `);
         return { isFavourite: true };
       }
+    }),
+
+  // ── Custom Exercises ──────────────────────────────────────────────────────
+  getCustomExercises: publicProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(customExercises)
+        .where(eq(customExercises.userId, OWNER_USER_ID))
+        .orderBy(desc(customExercises.createdAt));
+    }),
+
+  createCustomExercise: publicProcedure
+    .input(z.object({
+      name: z.string().min(1).max(200),
+      nameZh: z.string().max(200).optional(),
+      muscleGroup: z.string().min(1),
+      equipment: z.string().min(1),
+      instructions: z.string().optional(),
+      photoBase64: z.string().optional(),
+      photoMimeType: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      let photoUrl: string | undefined;
+      let fileKey: string | undefined;
+      if (input.photoBase64 && input.photoMimeType) {
+        const buf = Buffer.from(input.photoBase64, 'base64');
+        const ext = input.photoMimeType.split('/')[1] ?? 'jpg';
+        fileKey = `custom-exercises/${OWNER_USER_ID}-${nanoid(8)}.${ext}`;
+        const stored = await storagePut(fileKey, buf, input.photoMimeType);
+        photoUrl = stored.url;
+      }
+      const [row] = await db.insert(customExercises).values({
+        userId: OWNER_USER_ID,
+        name: input.name,
+        nameZh: input.nameZh ?? '',
+        muscleGroup: input.muscleGroup,
+        equipment: input.equipment,
+        instructions: input.instructions ?? '',
+        photoUrl,
+        fileKey,
+      }).returning();
+      return row;
+    }),
+
+  deleteCustomExercise: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.delete(customExercises)
+        .where(and(eq(customExercises.id, input.id), eq(customExercises.userId, OWNER_USER_ID)));
+      return { success: true };
+    }),
+
+  identifyExerciseFromPhoto: publicProcedure
+    .input(z.object({ base64: z.string(), mimeType: z.string() }))
+    .mutation(async ({ input }) => {
+      const imageUrl = `data:${input.mimeType};base64,${input.base64}`;
+      const response = await invokeLLM({
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a fitness expert. Analyze the image and identify the exercise being performed or the gym equipment shown. Return structured JSON only.',
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: imageUrl, detail: 'high' } },
+              { type: 'text', text: 'Identify the exercise or equipment in this image. Return JSON with: name (English), nameZh (Chinese), muscleGroup (one of: chest, back, lats, shoulders, biceps, triceps, quads, hamstrings, glutes, calves, core, cardio, other), equipment (one of: Barbell, Dumbbell, Cable, Machine, Smith Machine, Kettlebell, Resistance Band, Bodyweight, TRX / Suspension, Pull-up Bar, Dip Bar, EZ Bar, Trap Bar, Plate, Foam Roller, Medicine Ball, Battle Rope, Cardio Machine, Other), instructions (brief 1-2 sentence description), confidence (high/medium/low).' },
+            ],
+          },
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'exercise_identification',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                nameZh: { type: 'string' },
+                muscleGroup: { type: 'string' },
+                equipment: { type: 'string' },
+                instructions: { type: 'string' },
+                confidence: { type: 'string' },
+              },
+              required: ['name', 'nameZh', 'muscleGroup', 'equipment', 'instructions', 'confidence'],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+      const rawMsg = response.choices[0]?.message?.content;
+      const contentStr = typeof rawMsg === 'string' ? rawMsg : '{}';
+      return JSON.parse(contentStr) as {
+        name: string; nameZh: string; muscleGroup: string;
+        equipment: string; instructions: string; confidence: string;
+      };
     }),
 });
 

@@ -597,3 +597,10 @@
 - [x] Show extracted fields preview with confidence badge before applying to form
 - [x] Full zh/en i18n for new UI
 - [x] Bump version to v2.4.0
+
+## Bug Fix: Log Set 無反應
+- [x] 診斷：workout_sets.exerciseId 有 NOT NULL + FK 約束，但 exercises 表是空的，導致插入失敗
+- [x] 修復：ALTER TABLE workout_sets DROP CONSTRAINT workout_sets_exerciseId_fkey; ALTER COLUMN exerciseId DROP NOT NULL
+- [x] 修復：addSet procedure 改為 exerciseId optional，使用 raw SQL 插入（不傳 exerciseId）
+- [x] 修復：handleAddSet 前端不再傳 exerciseId: 1
+- [x] TypeScript: 0 errors

@@ -539,3 +539,19 @@ export const stepLogPhotos = pgTable("step_log_photos", {
 });
 export type StepLogPhoto = typeof stepLogPhotos.$inferSelect;
 export type InsertStepLogPhoto = typeof stepLogPhotos.$inferInsert;
+
+// ─── Custom Exercises (user-created) ─────────────────────────────────────────
+export const customExercises = pgTable("custom_exercises", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  nameZh: text("name_zh").default(""),
+  muscleGroup: text("muscle_group").notNull().default("other"),
+  equipment: text("equipment").notNull().default("Other"),
+  instructions: text("instructions").default(""),
+  photoUrl: text("photo_url"),
+  fileKey: text("file_key"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type CustomExercise = typeof customExercises.$inferSelect;
+export type InsertCustomExercise = typeof customExercises.$inferInsert;
