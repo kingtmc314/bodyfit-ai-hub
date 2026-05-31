@@ -473,6 +473,90 @@ const workoutRouter = router({
       return { success: true };
     }),
 
+  // Finish session: set endTime and auto-calculate duration in minutes
+  finishSession: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const rows = await db.select().from(workoutSessions)
+        .where(and(eq(workoutSessions.id, input.id), eq(workoutSessions.userId, OWNER_USER_ID))).limit(1);
+      if (!rows.length) throw new Error('Session not found');
+      const session = rows[0];
+      const endTime = new Date();
+      const startTime = session.startTime ? new Date(session.startTime) : endTime;
+      const durationMin = Math.max(1, Math.round((endTime.getTime() - startTime.getTime()) / 60000));
+      await db.update(workoutSessions).set({ endTime, duration: durationMin })
+        .where(eq(workoutSessions.id, input.id));
+      return { success: true, duration: durationMin };
+    }),
+
+  // AI exercise analysis: analyze user's past sets and return personalized recommendations
+  analyzeExercise: publicProcedure
+    .input(z.object({ exerciseName: z.string() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      // Filter via session join since workoutSets has no userId column
+      const sets = await db.select({
+        reps: workoutSets.reps,
+        weight: workoutSets.weight,
+        notes: workoutSets.notes,
+        createdAt: workoutSets.createdAt,
+      }).from(workoutSets)
+        .innerJoin(workoutSessions, eq(workoutSets.sessionId, workoutSessions.id))
+        .where(and(
+          eq(workoutSessions.userId, OWNER_USER_ID),
+          eq(workoutSets.exerciseName, input.exerciseName),
+        ))
+        .orderBy(desc(workoutSets.createdAt))
+        .limit(30);
+      if (sets.length === 0) {
+        return {
+          analysis: `尚未找到「${input.exerciseName}」的訓練記錄。開始記錄組數後即可獲得個人化建議！`,
+          recommendations: [],
+        };
+      }
+      const setsSummary = sets.map(s => `Reps: ${s.reps ?? '-'}, Weight: ${s.weight ?? 0}kg${s.notes ? ', Notes: ' + s.notes : ''}`).join('\n');
+      const aiResponse = await invokeLLM({
+        messages: [
+          { role: 'system', content: 'You are an expert personal trainer and strength coach. Analyze training data and provide concise, actionable recommendations in Traditional Chinese (繁體中文). Be specific with numbers and percentages.' },
+          { role: 'user', content: `Exercise: ${input.exerciseName}\n\nRecent training sets (newest first, max 30):\n${setsSummary}\n\nProvide a brief trend analysis and exactly 3 specific recommendations covering: (1) progressive overload suggestion, (2) optimal rep/set scheme, (3) recovery or form tip. Return JSON only.` },
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'exercise_analysis',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                analysis: { type: 'string' },
+                recommendations: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      title: { type: 'string' },
+                      detail: { type: 'string' },
+                      type: { type: 'string' },
+                    },
+                    required: ['title', 'detail', 'type'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ['analysis', 'recommendations'],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+      const rawMsg = aiResponse.choices[0]?.message?.content;
+      const contentStr = typeof rawMsg === 'string' ? rawMsg : '{"analysis":"","recommendations":[]}';
+      return JSON.parse(contentStr) as { analysis: string; recommendations: Array<{ title: string; detail: string; type: string }> };
+    }),
+
   identifyExerciseFromPhoto: publicProcedure
     .input(z.object({ base64: z.string(), mimeType: z.string() }))
     .mutation(async ({ input }) => {

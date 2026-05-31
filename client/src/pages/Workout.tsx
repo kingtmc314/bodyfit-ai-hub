@@ -250,8 +250,22 @@ export default function Workout() {
     if (!sessionDetail?.sets) return [];
     const muscles = new Set<string>();
     sessionDetail.sets.forEach(s => {
-      const ex = allExercises.find(e => e.name === s.exerciseName);
-      if (ex) muscles.add(ex.muscleGroup);
+      if (!s.exerciseName) return;
+      // Match by English name, Chinese name, or direct muscleGroup value
+      const ex = allExercises.find(e =>
+        e.name === s.exerciseName ||
+        (e as any).nameZh === s.exerciseName ||
+        e.name.toLowerCase() === (s.exerciseName ?? '').toLowerCase()
+      );
+      if (ex) {
+        muscles.add(ex.muscleGroup);
+      } else {
+        // Fallback: if exerciseName itself is a valid muscle group id, use it directly
+        const validMuscles = ['chest','back','lats','shoulders','biceps','triceps','quads','hamstrings','glutes','calves','core','abs','cardio'];
+        if (validMuscles.includes(s.exerciseName.toLowerCase())) {
+          muscles.add(s.exerciseName.toLowerCase());
+        }
+      }
     });
     return Array.from(muscles);
   }, [sessionDetail, allExercises]);
@@ -478,7 +492,7 @@ export default function Workout() {
             <div className="space-y-4">
               <div className="bg-card border border-border rounded-2xl p-4">
                 <h3 className="font-semibold text-foreground text-sm mb-3">Filter by Muscle</h3>
-                <MuscleMap selectedMuscle={selectedMuscle} onSelect={m => setSelectedMuscle(prev => prev === m ? null : m)} />
+                <MuscleMap activeMuscles={activeMuscles} selectedMuscle={selectedMuscle} onSelect={m => setSelectedMuscle(prev => prev === m ? null : m)} />
                 {selectedMuscle && (
                   <Button variant="ghost" size="sm" className="w-full mt-2 text-xs" onClick={() => setSelectedMuscle(null)}>
                     <X className="w-3 h-3 mr-1" /> Clear filter

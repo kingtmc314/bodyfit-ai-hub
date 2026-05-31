@@ -618,3 +618,20 @@
 - [x] Feature: Select Exercise dialog shows "No match? Add custom" button when search has no results
 - [x] Fix: Log Set real-time update (already fixed in v2.4.2, confirm working)
 - [x] Bump version to v2.5.0
+
+## Phase 62: Three New Features (v2.6.0)
+- [ ] Running screenshot import: add ScreenshotImporter button to Running log dialog (Garmin/Strava/NRC)
+- [ ] Running screenshot: AI extracts distance, pace, duration, HR, calories, cadence from screenshot
+- [ ] Workout session end-time: add "結束訓練" button in active session header
+- [ ] Workout session end-time: auto-calculate duration (endTime - startTime in minutes), update session record
+- [ ] Workout session end-time: history list shows "XX 分鐘" duration
+- [ ] AI exercise analysis: add AI coaching tab in ExerciseDetailModal
+- [ ] AI exercise analysis: server procedure analyzes user's past sets for this exercise, returns recommendations
+- [ ] AI exercise analysis: shows progressive overload suggestion, optimal rep range, volume recommendation
+- [ ] Bump version to v2.6.0
+
+## Bug Fix v2.5.1: 動作庫肌肉圖不顯示今日訓練肌肉
+- [x] 修復：動作庫 tab 的 MuscleMap 加入 activeMuscles prop（之前沒有傳入）
+- [x] 修復：activeMuscles useMemo 改為同時比對英文名、中文名（nameZh）和大小寫不敏感匹配
+- [x] 修復：server/routers.ts 移除重複的 finishSession 和 analyzeExercise 程序（duplicate property 錯誤）
+- [x] TypeScript: 0 errors | 35 tests passing
