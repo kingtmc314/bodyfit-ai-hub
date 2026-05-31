@@ -155,3 +155,8 @@
 - [x] Fix api/index.ts: add explicit Request/Response types to Express route handlers to fix Vercel TypeScript warnings
 - [x] Add api/**/* to tsconfig.json include so local tsc also checks api/ directory
 - [x] Fix server/routers.ts updateShoe: date fields empty string → null in backend raw SQL
+
+## v3.4.3 CSV/Image Import Field Fixes (2026-06-01)
+- [x] Fix CSV import sleep: restingHr was stored as notes text instead of restingHr DB column
+- [x] Fix imageImport.save sleep: restingHr field was missing from schema and DB insert
+- [x] Update version to v3.4.3 in AppLayout sidebar

@@ -1285,7 +1285,7 @@ const csvImportRouter = router({
               respiration: r.respiration,
               sleepQuality: r.sleepQuality,
               hrv: r.hrv,
-              notes: r.restingHr ? `Resting HR: ${r.restingHr} bpm` : undefined,
+              restingHr: r.restingHr,
               source: "csv",
             }).onConflictDoNothing();
             inserted++;
@@ -1857,6 +1857,7 @@ For steps data: extract daily step count, floors climbed, distance, active minut
         bodyBattery: z.number().nullable().optional(),
         pulseOx: z.number().nullable().optional(),
         hrv: z.number().nullable().optional(),
+        restingHr: z.number().nullable().optional(),
       }).optional(),
       heartrate: z.object({
         restingHr: z.number().nullable().optional(),
@@ -1898,6 +1899,7 @@ For steps data: extract daily step count, floors climbed, distance, active minut
           bodyBattery: input.sleep.bodyBattery ?? undefined,
           pulseOx: input.sleep.pulseOx ?? undefined,
           hrv: input.sleep.hrv ?? undefined,
+          restingHr: input.sleep.restingHr ?? undefined,
           source: "image",
         }).onConflictDoNothing();
       } else if (input.dataType === "heartrate" && input.heartrate) {
