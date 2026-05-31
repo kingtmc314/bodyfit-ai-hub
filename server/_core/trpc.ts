@@ -43,3 +43,11 @@ export const adminProcedure = t.procedure.use(
     });
   }),
 );
+
+/**
+ * ownerProcedure: Only the app owner (role='admin') can execute mutations.
+ * All other users (including logged-in non-owner users) get FORBIDDEN.
+ * The owner is identified by email kingsleytsemc314@gmail.com — all OAuth providers
+ * (Google, GitHub, Manus) are merged into the same user row with role='admin'.
+ */
+export const ownerProcedure = adminProcedure;

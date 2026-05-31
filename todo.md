@@ -643,3 +643,59 @@
 - [x] finishSession server procedure: calculates duration from startTime→endTime, updates workoutSessions.duration
 - [x] analyzeExercise server procedure: fetches last 30 sets via session join, calls LLM with structured JSON schema for analysis + 3 recommendations
 - [x] Bump version to v2.6.0 | TypeScript: 0 errors | 35 tests passing
+
+## Bug Fix v2.6.1: 日期錯配 / 數據同步問題
+- [ ] Fix server chartsRouter: calorieHistory date grouping to use HK timezone (AT TIME ZONE '+08:00')
+- [ ] Fix server chartsRouter: bodyHistory, sleepHistory, heartRateHistory, workoutHistory date grouping to use HK timezone
+- [ ] Fix Nutrition.tsx: Weekly Calorie Intake chart — week starts Monday HK time, today maps to correct day
+- [ ] Fix Dashboard.tsx: weekly calorie chart day grouping uses HK timezone
+- [ ] Fix Trends.tsx: all chart date labels use HK date string (not UTC date)
+- [ ] Verify: today's data (05/31 HK) appears on correct day in all charts
+
+## Bug Fix v2.6.1 (additional): 自訂動作無標籤
+- [ ] Fix: Custom exercises in session exercise groups show no muscle/equipment badges — need to merge customExercises into allExercises lookup so session cards display correct tags
+
+## Phase 63: Owner-Only Write Access (v2.7.0)
+- [ ] Fix: getMealLogs/getMealLogsRange use HK midnight boundaries (UTC+8)
+- [ ] Fix: Nutrition.tsx weekChartData X-axis uses HK-aware date calculation
+- [ ] Fix: Dashboard.tsx weekCalories uses HK-aware date calculation
+- [ ] Fix: Custom exercise cards in session show muscleGroup/equipment badges (use allExercises not BUILT_IN_EXERCISES)
+- [ ] Feature: Server-side ownerProcedure — all mutation procedures check ctx.user.openId === OWNER_OPEN_ID, throw FORBIDDEN for others
+- [ ] Feature: Client-side useIsOwner() hook — returns true only if logged-in user is the owner
+- [ ] Feature: All Add/Edit/Delete buttons hidden or disabled for non-owner visitors
+- [ ] Feature: Read-only banner shown to non-owner visitors ("You are viewing in read-only mode. Log in as owner to edit.")
+- [ ] Feature: Login button in header for unauthenticated visitors
+- [ ] Bump version to v2.7.0
+
+## Phase 63 (updated): Account Merging + Owner-Only Write Access (v2.7.0)
+- [ ] Modify OAuth callback upsert logic: if user email === OWNER_EMAIL (kingsleytsemc314@gmail.com), always upsert to the fixed owner user row (id=2) regardless of openId/provider
+- [ ] Add OWNER_EMAIL constant to env.ts
+- [ ] Add ownerProcedure to server/_core/trpc.ts: checks ctx.user.id === OWNER_USER_ID (id=2)
+- [ ] Replace publicProcedure with ownerProcedure for all mutation procedures (addMealLog, updateMealLog, deleteMealLog, addRunLog, updateRunLog, deleteRunLog, addStepsLog, updateStepsLog, deleteStepsLog, addBodyLog, updateBodyLog, deleteBodyLog, addSleepLog, updateSleepLog, deleteSleepLog, addHeartRateLog, updateHeartRateLog, deleteHeartRateLog, addWorkoutSession, updateSession, finishSession, addSet, updateSet, deleteSet, createCustomExercise, deleteCustomExercise, etc.)
+- [ ] Add useIsOwner() hook in client: returns true if trpc.auth.me user.id === 2 (owner user id)
+- [ ] Add read-only banner in App.tsx for non-owner visitors
+- [ ] Hide/disable all Add/Edit/Delete/Save buttons for non-owner visitors across all pages
+- [ ] Bump version to v2.7.0
+
+## Phase 43: Workout Bug Fixes & UI Improvements
+- [ ] Fix "+ Add Exercise" button in active workout session not allowing new exercises to be added (exerciseId NOT NULL constraint issue)
+- [ ] Show total volume per exercise (sum of all sets) next to exercise name header in active session
+
+## Phase 43: Workout Bug Fixes & Calories
+- [x] Fix "+ Add Exercise" button (exerciseId NOT NULL constraint — made nullable in DB)
+- [x] Show total volume per exercise next to exercise name in active session
+- [ ] Add calories burned estimate per workout session (store in workoutSessions.caloriesBurned)
+- [ ] Show calories burned in active session header and workout history cards
+- [ ] Deduct workout calories from daily net calorie balance on Nutrition page and Dashboard
+
+## v2.8.0 Changes (2026-05-31)
+- [x] Fix "+ Add Exercise" button in active workout session (exerciseId made nullable in workout_sets)
+- [x] Show total volume per exercise in active session exercise card header
+- [x] Show live calories estimate in active session header
+- [x] Show calories burned in workout history cards (orange kcal badge)
+- [x] Add getDailyCaloriesBurned procedure to workout router
+- [x] Show workout calories burned + net calorie balance on Nutrition page
+- [x] Add useIsOwner to Workout.tsx - hide Start/Add/Finish/Delete for visitors
+- [x] Add useIsOwner to ProgressPhotos.tsx - hide Upload/Delete for visitors
+- [x] Bump version to v2.8.0
+- [x] All 35 tests pass

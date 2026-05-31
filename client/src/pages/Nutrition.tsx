@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { useIsOwner } from "@/contexts/OwnerContext";
 import { toast } from "sonner";
 import { todayHKString, toHKDateString } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export default function Nutrition() {
   const { t } = useTranslation();
+  const isOwner = useIsOwner();
   const [selectedDate, setSelectedDate] = useState(todayHKString);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showPhotoDialog, setShowPhotoDialog] = useState(false);
@@ -68,8 +70,14 @@ export default function Nutrition() {
 
   const utils = trpc.useUtils();
   const { data: meals = [], isLoading } = trpc.nutrition.getMealLogs.useQuery({ date: selectedDate });
+  // Calculate 6 days ago in HK timezone: use HK midnight offset to avoid UTC date boundary issues
+  const [weekStartDate] = useState(() => {
+    const hkNow = new Date(Date.now() + 8 * 3600 * 1000);
+    hkNow.setUTCDate(hkNow.getUTCDate() - 6);
+    return hkNow.toISOString().slice(0, 10);
+  });
   const { data: weekMeals = [] } = trpc.nutrition.getMealLogsRange.useQuery({
-    startDate: toHKDateString(new Date(Date.now() - 6 * 86400000)),
+    startDate: weekStartDate,
     endDate: selectedDate,
   });
   const { data: searchResults = [] } = trpc.nutrition.searchFoods.useQuery(
@@ -94,6 +102,11 @@ export default function Nutrition() {
 
   const resetForm = () => setForm({ name: "", quantity: 100, calories: 0, protein: 0, carbs: 0, fat: 0 });
 
+  // Fetch workout calories burned for the selected date
+  const { data: workoutCalData } = trpc.workout.getDailyCaloriesBurned.useQuery({ date: selectedDate });
+  const workoutCaloriesBurned = workoutCalData?.caloriesBurned ?? 0;
+  const workoutSessions = workoutCalData?.sessions ?? [];
+
   const totals = meals.reduce((acc, m) => ({
     calories: acc.calories + (m.calories ?? 0),
     protein: acc.protein + (m.protein ?? 0),
@@ -117,8 +130,11 @@ export default function Nutrition() {
       map[dateKey].fat += (m.fat ?? 0);
     });
     return Array.from({ length: 7 }, (_, i) => {
-      const d = toHKDateString(new Date(Date.now() - (6 - i) * 86400000));
-      const day = new Date(Date.now() - (6 - i) * 86400000).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'Asia/Hong_Kong' });
+      // Compute HK date string for (6-i) days ago using HK midnight offset
+      const hkTs = new Date(Date.now() + 8 * 3600 * 1000);
+      hkTs.setUTCDate(hkTs.getUTCDate() - (6 - i));
+      const d = hkTs.toISOString().slice(0, 10);
+      const day = new Date(d + 'T12:00:00+08:00').toLocaleDateString('en-US', { weekday: 'short', timeZone: 'Asia/Hong_Kong' });
       return { date: day, ...(map[d] || { cal: 0, protein: 0, carbs: 0, fat: 0 }) };
     });
   })();
@@ -179,12 +195,16 @@ export default function Nutrition() {
         <div className="flex items-center gap-2">
           <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
             className="w-40 text-sm" />
-          <Button onClick={() => setShowPhotoDialog(true)} variant="outline" size="sm" className="gap-2">
-            <Camera className="w-4 h-4" /> AI Photo
-          </Button>
-          <Button onClick={() => { setEditEntry(null); resetForm(); setShowAddDialog(true); }} size="sm" className="gap-2">
-            <Plus className="w-4 h-4" /> Log Meal
-          </Button>
+          {isOwner && (
+            <Button onClick={() => setShowPhotoDialog(true)} variant="outline" size="sm" className="gap-2">
+              <Camera className="w-4 h-4" /> AI Photo
+            </Button>
+          )}
+          {isOwner && (
+            <Button onClick={() => { setEditEntry(null); resetForm(); setShowAddDialog(true); }} size="sm" className="gap-2">
+              <Plus className="w-4 h-4" /> Log Meal
+            </Button>
+          )}
         </div>
       </div>
 
@@ -207,6 +227,43 @@ export default function Nutrition() {
           </div>
         ))}
       </div>
+
+      {/* Workout Calories Burned + Net Balance */}
+      {workoutCaloriesBurned > 0 && (
+        <div className="bg-card border border-orange-200 dark:border-orange-900/50 rounded-2xl p-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-orange-100 dark:bg-orange-950/40 flex items-center justify-center">
+                <Flame className="w-5 h-5 text-orange-500" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-foreground">Workout Calories Burned</p>
+                <p className="text-xs text-muted-foreground">
+                  {workoutSessions.map((s: any) => `${s.name || 'Workout'}${s.duration ? ` (${s.duration} min)` : ''}`).join(' · ')}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-6">
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">Burned</p>
+                <p className="text-lg font-bold text-orange-500">-{Math.round(workoutCaloriesBurned)} kcal</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">Net Balance</p>
+                <p className={`text-lg font-bold ${Math.round(totals.calories - workoutCaloriesBurned) < 0 ? 'text-blue-500' : 'text-green-500'}`}>
+                  {Math.round(totals.calories - workoutCaloriesBurned) >= 0 ? '+' : ''}{Math.round(totals.calories - workoutCaloriesBurned)} kcal
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">Remaining</p>
+                <p className="text-lg font-bold text-foreground">
+                  {Math.max(0, GOALS.calories - Math.round(totals.calories - workoutCaloriesBurned))} kcal
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Tabs defaultValue="log">
         <TabsList className="bg-muted/50">
@@ -242,14 +299,16 @@ export default function Nutrition() {
                       </div>
 
                       <span className="text-sm font-semibold text-foreground shrink-0">{Math.round(m.calories ?? 0)} kcal</span>
-                      <div className="flex gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditEntry(m); setForm({ name: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0 }); setMealType(m.mealType as MealType); setShowAddDialog(true); }}>
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: m.id })}>
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
+                      {isOwner && (
+                        <div className="flex gap-1 shrink-0">
+                          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditEntry(m); setForm({ name: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0 }); setMealType(m.mealType as MealType); setShowAddDialog(true); }}>
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: m.id })}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

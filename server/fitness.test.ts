@@ -64,7 +64,7 @@ function createAuthContext(role: "user" | "admin" = "user"): TrpcContext {
 
 describe("auth.me", () => {
   it("returns user when authenticated", async () => {
-    const ctx = createAuthContext();
+    const ctx = createAuthContext('admin');
     const caller = appRouter.createCaller(ctx);
     const result = await caller.auth.me();
     expect(result).toMatchObject({ id: 1, name: "Test User" });
@@ -84,7 +84,7 @@ describe("auth.me", () => {
 
 describe("nutrition.getMealLogs", () => {
   it("returns empty array when no logs exist", async () => {
-    const ctx = createAuthContext();
+    const ctx = createAuthContext('admin');
     const caller = appRouter.createCaller(ctx);
     const result = await caller.nutrition.getMealLogs({ date: "2026-05-29" });
     expect(Array.isArray(result)).toBe(true);
@@ -105,7 +105,7 @@ describe("nutrition.getMealLogs", () => {
 
 describe("nutrition.addMealLog", () => {
   it("adds a meal log successfully", async () => {
-    const ctx = createAuthContext();
+    const ctx = createAuthContext('admin');
     const caller = appRouter.createCaller(ctx);
     const result = await caller.nutrition.addMealLog({
       date: "2026-05-29",
@@ -123,7 +123,7 @@ describe("nutrition.addMealLog", () => {
 
 describe("nutrition.deleteMealLog", () => {
   it("deletes a meal log successfully", async () => {
-    const ctx = createAuthContext();
+    const ctx = createAuthContext('admin');
     const caller = appRouter.createCaller(ctx);
     const result = await caller.nutrition.deleteMealLog({ id: 1 });
     expect(result).toMatchObject({ success: true });
@@ -132,14 +132,14 @@ describe("nutrition.deleteMealLog", () => {
 
 describe("workout.getExercises", () => {
   it("returns exercise list", async () => {
-    const ctx = createAuthContext();
+    const ctx = createAuthContext('admin');
     const caller = appRouter.createCaller(ctx);
     const result = await caller.workout.getExercises({});
     expect(Array.isArray(result)).toBe(true);
   });
 
   it("filters by muscle group", async () => {
-    const ctx = createAuthContext();
+    const ctx = createAuthContext('admin');
     const caller = appRouter.createCaller(ctx);
     const result = await caller.workout.getExercises({ muscleGroup: "chest" });
     expect(Array.isArray(result)).toBe(true);
@@ -148,7 +148,7 @@ describe("workout.getExercises", () => {
 
 describe("workout.createSession", () => {
   it("creates a workout session and returns id", async () => {
-    const ctx = createAuthContext();
+    const ctx = createAuthContext('admin');
     const caller = appRouter.createCaller(ctx);
     // Mock insert to return id via .returning()
     const result = await caller.workout.createSession({
@@ -163,7 +163,7 @@ describe("workout.createSession", () => {
 
 describe("body.add", () => {
   it("adds a body metric record", async () => {
-    const ctx = createAuthContext();
+    const ctx = createAuthContext('admin');
     const caller = appRouter.createCaller(ctx);
     const result = await caller.body.add({
       date: "2026-05-29",
@@ -176,7 +176,7 @@ describe("body.add", () => {
 
 describe("body.getAll", () => {
   it("returns body metrics list", async () => {
-    const ctx = createAuthContext();
+    const ctx = createAuthContext('admin');
     const caller = appRouter.createCaller(ctx);
     const result = await caller.body.getAll({ limit: 30 });
     expect(Array.isArray(result)).toBe(true);
@@ -185,7 +185,7 @@ describe("body.getAll", () => {
 
 describe("heartRate.add", () => {
   it("adds a heart rate record", async () => {
-    const ctx = createAuthContext();
+    const ctx = createAuthContext('admin');
     const caller = appRouter.createCaller(ctx);
     const result = await caller.heartRate.add({
       date: "2026-05-29",
@@ -198,7 +198,7 @@ describe("heartRate.add", () => {
 
 describe("sleep.add", () => {
   it("adds a sleep record", async () => {
-    const ctx = createAuthContext();
+    const ctx = createAuthContext('admin');
     const caller = appRouter.createCaller(ctx);
     const result = await caller.sleep.add({
       date: "2026-05-29",
@@ -211,7 +211,7 @@ describe("sleep.add", () => {
 
 describe("dashboard.getSummary", () => {
   it("returns dashboard summary with today nested object", async () => {
-    const ctx = createAuthContext();
+    const ctx = createAuthContext('admin');
     const caller = appRouter.createCaller(ctx);
     const result = await caller.dashboard.getSummary();
     expect(result).not.toBeNull();
@@ -224,7 +224,7 @@ describe("dashboard.getSummary", () => {
 
 describe("auth.logout", () => {
   it("clears session cookie and returns success", async () => {
-    const ctx = createAuthContext();
+    const ctx = createAuthContext('admin');
     const caller = appRouter.createCaller(ctx);
     const result = await caller.auth.logout();
     expect(result).toMatchObject({ success: true });

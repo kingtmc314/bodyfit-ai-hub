@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useState, useRef } from "react";
+import { useIsOwner } from "@/contexts/OwnerContext";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -15,6 +16,7 @@ const POSE_OPTIONS = ["front", "back", "side_left", "side_right", "other"];
 
 export default function ProgressPhotos() {
   const { t } = useTranslation();
+  const isOwner = useIsOwner();
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<any>(null);
@@ -81,14 +83,16 @@ export default function ProgressPhotos() {
             <h1 className="text-xl font-extrabold text-white">{t('photos.title')}</h1>
             <p className="text-white/70 text-sm mt-0.5">{t('photos.subtitle')}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="gap-2 bg-white/20 hover:bg-white/30 text-white border-0" onClick={() => { cameraInputRef.current?.click(); setShowUploadDialog(true); }}>
-              <Camera className="w-4 h-4" /> {t('photos.camera')}
-            </Button>
-            <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { resetForm(); setShowUploadDialog(true); }}>
-              <Plus className="w-4 h-4" /> {t('photos.upload')}
-            </Button>
-          </div>
+          {isOwner && (
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" className="gap-2 bg-white/20 hover:bg-white/30 text-white border-0" onClick={() => { cameraInputRef.current?.click(); setShowUploadDialog(true); }}>
+                <Camera className="w-4 h-4" /> {t('photos.camera')}
+              </Button>
+              <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { resetForm(); setShowUploadDialog(true); }}>
+                <Plus className="w-4 h-4" /> {t('photos.upload')}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -225,10 +229,12 @@ export default function ProgressPhotos() {
                     </div>
                     {selectedPhoto.notes && <p className="text-white/70 text-xs mt-1">{selectedPhoto.notes}</p>}
                   </div>
-                  <Button variant="destructive" size="sm" className="gap-1"
-                    onClick={() => deleteMutation.mutate({ id: selectedPhoto.id })}>
-                    <Trash2 className="w-3.5 h-3.5" /> Delete
-                  </Button>
+                  {isOwner && (
+                    <Button variant="destructive" size="sm" className="gap-1"
+                      onClick={() => deleteMutation.mutate({ id: selectedPhoto.id })}>
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>

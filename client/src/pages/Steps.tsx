@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { trpc } from "@/lib/trpc";
+import { useIsOwner } from "@/contexts/OwnerContext";
 import { toast } from "sonner";
 import { todayHKString, formatHKDate } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export default function Steps() {
   const { t } = useTranslation();
+  const isOwner = useIsOwner();
   const [showDialog, setShowDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
@@ -146,9 +148,11 @@ export default function Steps() {
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">{t('steps.subtitle')}</p>
         </div>
-        <Button onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }} className="gap-2">
-          <Plus className="w-4 h-4" /> {t('steps.add')}
-        </Button>
+        {isOwner && (
+          <Button onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }} className="gap-2">
+            <Plus className="w-4 h-4" /> {t('steps.add')}
+          </Button>
+        )}
       </div>
 
       {/* Today's summary */}
@@ -254,6 +258,7 @@ export default function Steps() {
                       <td className="px-4 py-3">
                         <LogPhotoUploader logId={r.id} type="steps" compact />
                       </td>
+                      {isOwner && (
                       <td className="px-4 py-3">
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => {
@@ -264,6 +269,7 @@ export default function Steps() {
                           <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: r.id })}><Trash2 className="w-3.5 h-3.5" /></Button>
                         </div>
                       </td>
+                      )}
                     </tr>
                   ))}
                   {sortedList.length === 0 && (

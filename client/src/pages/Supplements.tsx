@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { trpc } from "@/lib/trpc";
+import { useIsOwner } from "@/contexts/OwnerContext";
 import { toast } from "sonner";
 import { todayHKString, formatHKDate } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ const defaultPurchaseForm = { supplementId: '', purchaseDate: '', quantity: '', 
 
 export default function Supplements() {
   const { t } = useTranslation();
+  const isOwner = useIsOwner();
   const [showSupplementDialog, setShowSupplementDialog] = useState(false);
   const [showLogDialog, setShowLogDialog] = useState(false);
   const [showRestockDialog, setShowRestockDialog] = useState(false);
@@ -231,14 +233,16 @@ export default function Supplements() {
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">{t('supplements.subtitle')}</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { setShowLogDialog(true); setLogForm(defaultLogForm); }} className="gap-2 text-sm">
-            <Plus className="w-4 h-4" /> {t('supplements.log_intake')}
-          </Button>
-          <Button onClick={() => { setEditSupplement(null); setSupplementForm(defaultSupplementForm); setShowSupplementDialog(true); }} className="gap-2 text-sm">
-            <Plus className="w-4 h-4" /> {t('supplements.add')}
-          </Button>
-        </div>
+        {isOwner && (
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => { setShowLogDialog(true); setLogForm(defaultLogForm); }} className="gap-2 text-sm">
+              <Plus className="w-4 h-4" /> {t('supplements.log_intake')}
+            </Button>
+            <Button onClick={() => { setEditSupplement(null); setSupplementForm(defaultSupplementForm); setShowSupplementDialog(true); }} className="gap-2 text-sm">
+              <Plus className="w-4 h-4" /> {t('supplements.add')}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Low stock alerts */}
@@ -346,14 +350,16 @@ export default function Supplements() {
                           )}
                         </div>
                       </div>
-                      <div className="flex gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" className="w-6 h-6" onClick={() => {
-                          setEditSupplement(s);
-                          setSupplementForm({ name: s.name, brand: s.brand || '', category: s.category || 'vitamin', servingSize: s.servingSize || '', currentStock: s.currentStock ?? '', lowStockThreshold: s.lowStockThreshold ?? 30, purchaseDate: s.purchaseDate || '', expiryDate: s.expiryDate || '', notes: s.notes || '', isActive: s.isActive ?? true, reminderEnabled: s.reminderEnabled ?? false, reminderTime: s.reminderTime || '08:00' });
-                          setShowSupplementDialog(true);
-                        }}><Edit2 className="w-3 h-3" /></Button>
-                        <Button variant="ghost" size="icon" className="w-6 h-6 text-destructive" onClick={() => deleteSupplement.mutate({ id: s.id })}><Trash2 className="w-3 h-3" /></Button>
-                      </div>
+                      {isOwner && (
+                        <div className="flex gap-1 shrink-0">
+                          <Button variant="ghost" size="icon" className="w-6 h-6" onClick={() => {
+                            setEditSupplement(s);
+                            setSupplementForm({ name: s.name, brand: s.brand || '', category: s.category || 'vitamin', servingSize: s.servingSize || '', currentStock: s.currentStock ?? '', lowStockThreshold: s.lowStockThreshold ?? 30, purchaseDate: s.purchaseDate || '', expiryDate: s.expiryDate || '', notes: s.notes || '', isActive: s.isActive ?? true, reminderEnabled: s.reminderEnabled ?? false, reminderTime: s.reminderTime || '08:00' });
+                            setShowSupplementDialog(true);
+                          }}><Edit2 className="w-3 h-3" /></Button>
+                          <Button variant="ghost" size="icon" className="w-6 h-6 text-destructive" onClick={() => deleteSupplement.mutate({ id: s.id })}><Trash2 className="w-3 h-3" /></Button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Stock bar */}
@@ -391,14 +397,16 @@ export default function Supplements() {
                     )}
 
                     {/* Actions */}
-                    <div className="flex gap-2 mt-3">
-                      <Button size="sm" variant="outline" className="flex-1 h-7 text-xs gap-1" onClick={() => { setLogForm({ ...defaultLogForm, supplementId: String(s.id) }); setShowLogDialog(true); }}>
-                        <Plus className="w-3 h-3" /> {t('supplements.log_intake')}
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => { setRestockForm({ supplementId: String(s.id), quantity: '' }); setShowRestockDialog(true); }}>
-                        <RefreshCw className="w-3 h-3" /> {t('supplements.restock')}
-                      </Button>
-                    </div>
+                    {isOwner && (
+                      <div className="flex gap-2 mt-3">
+                        <Button size="sm" variant="outline" className="flex-1 h-7 text-xs gap-1" onClick={() => { setLogForm({ ...defaultLogForm, supplementId: String(s.id) }); setShowLogDialog(true); }}>
+                          <Plus className="w-3 h-3" /> {t('supplements.log_intake')}
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => { setRestockForm({ supplementId: String(s.id), quantity: '' }); setShowRestockDialog(true); }}>
+                          <RefreshCw className="w-3 h-3" /> {t('supplements.restock')}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -537,9 +545,11 @@ export default function Supplements() {
               </SelectContent>
             </Select>
             <span className="text-xs text-muted-foreground">{displayPurchases.length} {t('common.records')}</span>
-            <Button className="ml-auto gap-1 h-8 text-xs" onClick={() => { setEditPurchase(null); setPurchaseForm(defaultPurchaseForm); setShowPurchaseDialog(true); }}>
-              <Plus className="w-3 h-3" /> {t('supplements.add_purchase')}
-            </Button>
+            {isOwner && (
+              <Button className="ml-auto gap-1 h-8 text-xs" onClick={() => { setEditPurchase(null); setPurchaseForm(defaultPurchaseForm); setShowPurchaseDialog(true); }}>
+                <Plus className="w-3 h-3" /> {t('supplements.add_purchase')}
+              </Button>
+            )}
           </div>
           <div className="bg-card border border-border rounded-2xl overflow-hidden">
             <div className="overflow-x-auto">
@@ -566,12 +576,14 @@ export default function Supplements() {
                       <td className="px-4 py-3">{p.totalPrice ? `${p.currency ?? 'USD'} ${p.totalPrice}` : '—'}</td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">{p.source ?? '—'}</td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">{p.orderNo ?? '—'}</td>
+                      {isOwner && (
                       <td className="px-4 py-3">
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditPurchase(p); setPurchaseForm({ supplementId: String(p.supplementId), purchaseDate: p.purchaseDate, quantity: String(p.quantity), unitPrice: p.unitPrice ?? '', totalPrice: p.totalPrice ?? '', currency: p.currency ?? 'USD', source: p.source ?? 'iHerb', orderNo: p.orderNo ?? '', notes: p.notes ?? '', addToStock: false }); setShowPurchaseDialog(true); }}><Edit2 className="w-3.5 h-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deletePurchase.mutate({ id: p.id })}><Trash2 className="w-3.5 h-3.5" /></Button>
                         </div>
                       </td>
+                      )}
                     </tr>
                   ))}
                   {displayPurchases.length === 0 && (

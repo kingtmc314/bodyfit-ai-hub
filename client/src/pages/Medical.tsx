@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
+import { useIsOwner } from "@/contexts/OwnerContext";
 import { toast } from "sonner";
 import { todayHKString, formatHKDate } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,7 @@ const defaultVisitForm = { visitDate: todayHKString(), visitType: 'consultation'
 
 export default function Medical() {
   const { t } = useTranslation();
+  const isOwner = useIsOwner();
   const [showConditionDialog, setShowConditionDialog] = useState(false);
   const [showVisitDialog, setShowVisitDialog] = useState(false);
   const [editCondition, setEditCondition] = useState<any>(null);
@@ -156,9 +158,11 @@ export default function Medical() {
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">{t('medical.subtitle')}</p>
         </div>
-        <Button onClick={() => { setEditCondition(null); setConditionForm(defaultConditionForm); setShowConditionDialog(true); }} className="gap-2">
-          <Plus className="w-4 h-4" /> {t('medical.add_condition')}
-        </Button>
+        {isOwner && (
+          <Button onClick={() => { setEditCondition(null); setConditionForm(defaultConditionForm); setShowConditionDialog(true); }} className="gap-2">
+            <Plus className="w-4 h-4" /> {t('medical.add_condition')}
+          </Button>
+        )}
       </div>
 
       {/* Stats row */}
@@ -240,14 +244,16 @@ export default function Medical() {
                   </div>
                   {cond.notes && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{cond.notes}</p>}
                 </div>
-                <div className="flex gap-1 shrink-0">
-                  <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => {
-                    setEditCondition(cond);
-                    setConditionForm({ title: cond.title, category: cond.category || 'illness', status: cond.status || 'active', startDate: cond.startDate || '', endDate: cond.endDate || '', notes: cond.notes || '' });
-                    setShowConditionDialog(true);
-                  }}><Edit2 className="w-3.5 h-3.5" /></Button>
-                  <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteCondition.mutate({ id: cond.id })}><Trash2 className="w-3.5 h-3.5" /></Button>
-                </div>
+                {isOwner && (
+                  <div className="flex gap-1 shrink-0">
+                    <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => {
+                      setEditCondition(cond);
+                      setConditionForm({ title: cond.title, category: cond.category || 'illness', status: cond.status || 'active', startDate: cond.startDate || '', endDate: cond.endDate || '', notes: cond.notes || '' });
+                      setShowConditionDialog(true);
+                    }}><Edit2 className="w-3.5 h-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteCondition.mutate({ id: cond.id })}><Trash2 className="w-3.5 h-3.5" /></Button>
+                  </div>
+                )}
               </div>
 
               {/* Expanded: visits */}
@@ -255,14 +261,16 @@ export default function Medical() {
                 <div className="border-t border-border bg-muted/10 p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="text-sm font-semibold text-foreground">{t('medical.visits')}</h4>
-                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => {
-                      setSelectedCondition(cond);
-                      setEditVisit(null);
-                      setVisitForm({ ...defaultVisitForm, conditionId: cond.id });
-                      setShowVisitDialog(true);
-                    }}>
-                      <Plus className="w-3 h-3" /> {t('medical.add_visit')}
-                    </Button>
+                    {isOwner && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => {
+                        setSelectedCondition(cond);
+                        setEditVisit(null);
+                        setVisitForm({ ...defaultVisitForm, conditionId: cond.id });
+                        setShowVisitDialog(true);
+                      }}>
+                        <Plus className="w-3 h-3" /> {t('medical.add_visit')}
+                      </Button>
+                    )}
                   </div>
                   <VisitsList
                     conditionId={cond.id}

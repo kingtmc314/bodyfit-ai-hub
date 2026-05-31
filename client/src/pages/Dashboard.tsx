@@ -195,8 +195,12 @@ export default function Dashboard() {
       map[dateKey] = (map[dateKey] || 0) + (m.calories ?? 0);
     });
     return Array.from({ length: 7 }, (_, i) => {
-      const d = toHKDateString(subDays(new Date(), 6 - i));
-      return { date: format(subDays(new Date(), 6 - i), "EEE"), cal: Math.round(map[d] || 0) };
+      // Use HK midnight offset to get correct HK date string
+      const hkTs = new Date(Date.now() + 8 * 3600 * 1000);
+      hkTs.setUTCDate(hkTs.getUTCDate() - (6 - i));
+      const d = hkTs.toISOString().slice(0, 10);
+      const day = new Date(d + 'T12:00:00+08:00').toLocaleDateString('en-US', { weekday: 'short', timeZone: 'Asia/Hong_Kong' });
+      return { date: day, cal: Math.round(map[d] || 0) };
     });
   }, [summary]);
 

@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useState, useMemo, useRef, useEffect } from "react";
+import { useIsOwner } from "@/contexts/OwnerContext";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { todayHKString, toHKDateString, formatHKChartDate } from "@/lib/hkTime";
@@ -115,6 +116,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export default function Workout() {
   const { t } = useTranslation();
+  const isOwner = useIsOwner();
   const [selectedDate, setSelectedDate] = useState(() => todayHKString());
   const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -187,7 +189,8 @@ export default function Workout() {
     onSuccess: (data) => {
       utils.workout.getSessions.invalidate();
       setFinishLoading(false);
-      toast.success(`訓練完成！共 ${data.duration} 分鐘 🎉`);
+      const calMsg = data.caloriesBurned ? ` · 消耗 ${data.caloriesBurned} kcal 🔥` : '';
+      toast.success(`訓練完成！共 ${data.duration} 分鐘${calMsg} 🎉`);
       setActiveSession(null);
     },
     onError: (e) => { setFinishLoading(false); toast.error('錯誤: ' + e.message); },
@@ -300,6 +303,17 @@ export default function Workout() {
     });
     return Object.entries(map).map(([name, vol]) => ({ name: name.split(" ").slice(0, 2).join(" "), vol: Math.round(vol) }));
   }, [sessionDetail]);
+
+  // Live calories estimate for active session (before finishing)
+  const liveCaloriesEstimate = useMemo(() => {
+    if (!sessionDetail?.sets?.length) return 0;
+    const totalVol = sessionDetail.sets.reduce((sum, s) => sum + (s.reps || 0) * (s.weight || 0), 0);
+    const met = totalVol > 5000 ? 6 : totalVol > 2000 ? 5.5 : 5;
+    // Estimate duration from session start time
+    const startTime = activeSession?.startTime ? new Date(activeSession.startTime) : null;
+    const durationMin = startTime ? Math.max(1, Math.round((Date.now() - startTime.getTime()) / 60000)) : 30;
+    return Math.round(met * 70 * (durationMin / 60));
+  }, [sessionDetail, activeSession]);
 
   const weeklyVolume = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
@@ -416,31 +430,38 @@ export default function Workout() {
               {!activeSession ? (
                 <div className="bg-card border border-border rounded-2xl p-8 text-center">
                   <Dumbbell className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground text-sm">No active session. Start a workout to begin logging.</p>
-                  <Button className="mt-4 gap-2" onClick={() => setShowSessionDialog(true)}>
-                    <Plus className="w-4 h-4" /> Start Workout
-                  </Button>
+                  <p className="text-muted-foreground text-sm">No active session. {isOwner ? 'Start a workout to begin logging.' : 'No workout session today.'}</p>
+                  {isOwner && (
+                    <Button className="mt-4 gap-2" onClick={() => setShowSessionDialog(true)}>
+                      <Plus className="w-4 h-4" /> Start Workout
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <>
                   <div className="flex items-center justify-between bg-card border border-border rounded-2xl px-5 py-3">
                     <div>
                       <p className="font-semibold text-foreground">{activeSession.name}</p>
-                      <p className="text-xs text-muted-foreground">{activeSession.date}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-xs text-muted-foreground">{activeSession.date}</p>
+                        {liveCaloriesEstimate > 0 && (
+                          <span className="text-xs font-medium text-orange-500">{liveCaloriesEstimate} kcal est.</span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex gap-2">
-                      <Button size="sm" variant="outline" className="gap-2" onClick={() => setShowExerciseDialog(true)}>
+                      {isOwner && <Button size="sm" variant="outline" className="gap-2" onClick={() => { setSearchQuery(''); setShowExerciseDialog(true); }}>
                         <Plus className="w-3.5 h-3.5" /> Add Exercise
-                      </Button>
-                      <Button size="sm" className="gap-2 bg-green-500 hover:bg-green-600 text-white"
+                      </Button>}
+                      {isOwner && <Button size="sm" className="gap-2 bg-green-500 hover:bg-green-600 text-white"
                         disabled={finishLoading}
                         onClick={() => { setFinishLoading(true); finishSession.mutate({ id: activeSession.id }); }}>
                         {finishLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                         結束訓練
-                      </Button>
-                      <Button size="sm" variant="destructive" onClick={() => deleteSession.mutate({ id: activeSession.id })}>
+                      </Button>}
+                      {isOwner && <Button size="sm" variant="destructive" onClick={() => deleteSession.mutate({ id: activeSession.id })}>
                         <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
+                      </Button>}
                     </div>
                   </div>
 
@@ -450,22 +471,26 @@ export default function Workout() {
                     </div>
                   ) : (
                     Object.entries(exerciseGroups).map(([exerciseName, sets]) => {
-                      const ex = BUILT_IN_EXERCISES.find(e => e.name === exerciseName);
+                      const ex = allExercises.find(e => e.name === exerciseName || (e as any).nameZh === exerciseName);
+                      const totalVol = sets.reduce((sum, s) => sum + Math.round((s.reps || 0) * (s.weight || 0)), 0);
                       return (
                         <div key={exerciseName} className="bg-card border border-border rounded-2xl overflow-hidden">
                           <div className="flex items-center justify-between px-5 py-3 border-b border-border">
                             <div>
-                              <p className="font-semibold text-foreground text-sm">{exerciseName}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="font-semibold text-foreground text-sm">{exerciseName}</p>
+                                {totalVol > 0 && <span className="text-xs font-medium text-orange-500 bg-orange-50 dark:bg-orange-950/30 px-2 py-0.5 rounded-full">{totalVol.toLocaleString()} kg</span>}
+                              </div>
                               <div className="flex items-center gap-2 mt-0.5">
                                 {ex && <Badge variant="secondary" className="text-xs capitalize">{ex.muscleGroup}</Badge>}
                                 {ex?.equipment && <Badge variant="outline" className="text-xs">{ex.equipment}</Badge>}
                               </div>
                             </div>
                             <div className="flex gap-1">
-                              <Button size="sm" variant="ghost" className="gap-1 text-xs"
+                              {isOwner && <Button size="sm" variant="ghost" className="gap-1 text-xs"
                                 onClick={() => { setSelectedExercise(ex || { name: exerciseName }); setSetForm({ reps: 10, weight: sets[sets.length - 1]?.weight || 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
                                 <Plus className="w-3.5 h-3.5" /> Set
-                              </Button>
+                              </Button>}
                               <Button size="sm" variant="ghost" className="gap-1 text-xs text-purple-500 hover:text-purple-600"
                                 onClick={() => { setAiAnalysisExercise(exerciseName); setAiAnalysisResult(null); setShowAiAnalysis(true); setAiAnalysisLoading(true); analyzeExercise.mutate({ exerciseName }); }}>
                                 <Sparkles className="w-3.5 h-3.5" /> AI
@@ -478,7 +503,7 @@ export default function Workout() {
                                 <span className="text-xs text-muted-foreground w-8">Set {i + 1}</span>
                                 <span className="text-sm font-semibold text-foreground flex-1">{s.reps} reps × {s.weight} kg</span>
                                 <span className="text-xs text-muted-foreground">{Math.round((s.reps || 0) * (s.weight || 0))} kg vol</span>
-                                <div className="flex gap-1">
+                                {isOwner && <div className="flex gap-1">
                                   <Button variant="ghost" size="icon" className="w-6 h-6"
                                     onClick={() => { setEditSet(s); setSelectedExercise(ex || { name: exerciseName }); setSetForm({ reps: s.reps || 10, weight: s.weight || 0, notes: s.notes || "" }); setShowAddSetDialog(true); }}>
                                     <Edit2 className="w-3 h-3" />
@@ -487,7 +512,7 @@ export default function Workout() {
                                     onClick={() => deleteSet.mutate({ id: s.id })}>
                                     <Trash2 className="w-3 h-3" />
                                   </Button>
-                                </div>
+                                </div>}
                               </div>
                             ))}
                           </div>
@@ -702,15 +727,16 @@ export default function Workout() {
                       <p className="text-xs text-muted-foreground">{toHKDateString(new Date(s.startTime))}{s.duration ? ` · ${s.duration} min` : ""}</p>
                     </div>
                     <div className="flex items-center gap-2">
+                      {(s as any).caloriesBurned ? <span className="text-xs font-semibold text-orange-500">{Math.round((s as any).caloriesBurned)} kcal</span> : null}
                       {s.totalVolume && <span className="text-xs font-semibold text-primary">{Math.round(s.totalVolume)} kg</span>}
                       <Button variant="ghost" size="icon" className="w-7 h-7"
                         onClick={() => { setActiveSession(s); setActiveTab('session'); }}>
                         <ChevronRight className="w-3.5 h-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive"
+                      {isOwner && <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive"
                         onClick={() => deleteSession.mutate({ id: s.id })}>
                         <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
+                      </Button>}
                     </div>
                   </div>
                 ))}

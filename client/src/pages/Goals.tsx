@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useIsOwner } from "@/contexts/OwnerContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +53,7 @@ const GOAL_CONFIGS: GoalConfig[] = [
 export default function Goals() {
   const { i18n } = useTranslation();
   const isZh = i18n.language === 'zh';
+  const isOwner = useIsOwner();
 
   const { data: goals, refetch } = trpc.goals.getGoals.useQuery();
   const setGoalMutation = trpc.goals.setGoal.useMutation({
@@ -143,16 +145,18 @@ export default function Goals() {
                       className="h-9 text-sm"
                     />
                   </div>
-                  <Button
-                    size="sm"
-                    className="h-9 px-3 gap-1.5"
-                    onClick={() => handleSave(cfg.type, cfg.unit)}
-                    disabled={setGoalMutation.isPending}
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    {isZh ? "儲存" : "Save"}
-                  </Button>
-                  {existing && (
+                  {isOwner && (
+                    <Button
+                      size="sm"
+                      className="h-9 px-3 gap-1.5"
+                      onClick={() => handleSave(cfg.type, cfg.unit)}
+                      disabled={setGoalMutation.isPending}
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      {isZh ? "儲存" : "Save"}
+                    </Button>
+                  )}
+                  {isOwner && existing && (
                     <Button
                       size="sm"
                       variant="ghost"

@@ -110,6 +110,7 @@ export const workoutSessions = pgTable("workout_sessions", {
   startTime: timestamp("startTime").defaultNow().notNull(),
   endTime: timestamp("endTime"),
   totalVolume: real("totalVolume"),
+  caloriesBurned: real("caloriesBurned"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
@@ -121,7 +122,7 @@ export type InsertWorkoutSession = typeof workoutSessions.$inferInsert;
 export const workoutSets = pgTable("workout_sets", {
   id: serial("id").primaryKey(),
   sessionId: integer("sessionId").notNull().references(() => workoutSessions.id, { onDelete: "cascade" }),
-  exerciseId: integer("exerciseId").notNull().references(() => exercises.id),
+  exerciseId: integer("exerciseId").references(() => exercises.id),
   exerciseName: varchar("exerciseName", { length: 255 }),
   setNumber: integer("setNumber").notNull().default(1),
   reps: integer("reps"),

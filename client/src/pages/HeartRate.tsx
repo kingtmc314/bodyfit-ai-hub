@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { useIsOwner } from "@/contexts/OwnerContext";
 import { toast } from "sonner";
 import { todayHKString, formatHKChartDate, formatHKDate } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ const defaultForm = { date: todayHKString(), restingHr: "", highHr: "", notes: "
 
 export default function HeartRate() {
   const { t } = useTranslation();
+  const isOwner = useIsOwner();
   const [showDialog, setShowDialog] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
@@ -145,14 +147,16 @@ export default function HeartRate() {
             <h1 className="text-xl font-extrabold text-white">{t('heartrate.title')}</h1>
             <p className="text-white/70 text-sm mt-0.5">{t('heartrate.subtitle')}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" className="gap-2 bg-white/20 border-white/40 text-white hover:bg-white/30" onClick={() => setShowImport(true)}>
-              <Upload className="w-4 h-4" /> 匯入
-            </Button>
-            <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
-              <Plus className="w-4 h-4" /> {t('heartrate.add_record')}
-            </Button>
-          </div>
+          {isOwner && (
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" className="gap-2 bg-white/20 border-white/40 text-white hover:bg-white/30" onClick={() => setShowImport(true)}>
+                <Upload className="w-4 h-4" /> 匯入
+              </Button>
+              <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
+                <Plus className="w-4 h-4" /> {t('heartrate.add_record')}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
       <QuickImportModal open={showImport} onClose={() => setShowImport(false)} dataType="heartrate" onSuccess={() => utils.heartRate.getAll.invalidate()} />
@@ -277,6 +281,7 @@ export default function HeartRate() {
                       <td className="px-4 py-3">{r.avgHr ? `${r.avgHr} bpm` : "—"}</td>
                       <td className="px-4 py-3">{r.hrv != null ? `${Number(r.hrv).toFixed(0)} ms` : "—"}</td>
                       <td className="px-4 py-3 max-w-32 truncate text-muted-foreground">{r.notes || "—"}</td>
+                      {isOwner && (
                       <td className="px-4 py-3">
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => {
@@ -287,6 +292,7 @@ export default function HeartRate() {
                           <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: r.id })}><Trash2 className="w-3.5 h-3.5" /></Button>
                         </div>
                       </td>
+                      )}
                     </tr>
                   ))}
                   {hrList.length === 0 && (

@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, router, ownerProcedure } from "./_core/trpc";
 import { z } from "zod";
 import { getDb } from "./db";
 import {
@@ -42,8 +42,14 @@ const nutritionRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
+      // HK midnight = UTC midnight - 8h
+      const hkMidnight = (dateStr: string, endOfDay = false) => {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const utcMs = Date.UTC(y, m - 1, d) - 8 * 3600 * 1000;
+        return new Date(endOfDay ? utcMs + 86400000 - 1 : utcMs);
+      };
       return db.select().from(mealLogs)
-        .where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.loggedAt} >= ${new Date(input.date + "T00:00:00")}`, sql`${mealLogs.loggedAt} <= ${new Date(input.date + "T23:59:59")}`))
+        .where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.loggedAt} >= ${hkMidnight(input.date)}`, sql`${mealLogs.loggedAt} < ${hkMidnight(input.date, true)}`))       
         .orderBy(mealLogs.createdAt);
     }),
 
@@ -53,11 +59,16 @@ const nutritionRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
+      const hkMidnight = (dateStr: string, endOfDay = false) => {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const utcMs = Date.UTC(y, m - 1, d) - 8 * 3600 * 1000;
+        return new Date(endOfDay ? utcMs + 86400000 - 1 : utcMs);
+      };
       return db.select().from(mealLogs)
         .where(and(
           eq(mealLogs.userId, OWNER_USER_ID),
-          sql`${mealLogs.loggedAt} >= ${new Date(input.startDate)}`,
-          sql`${mealLogs.loggedAt} <= ${new Date(input.endDate)}`
+          sql`${mealLogs.loggedAt} >= ${hkMidnight(input.startDate)}`,
+          sql`${mealLogs.loggedAt} < ${hkMidnight(input.endDate, true)}`
         ))
         .orderBy(desc(mealLogs.loggedAt));
     }),
@@ -87,7 +98,7 @@ const nutritionRouter = router({
     }),
 
   // Update meal log
-  updateMealLog: publicProcedure
+  updateMealLog: ownerProcedure
     .input(z.object({
       id: z.number(),
       foodName: z.string().optional(),
@@ -108,7 +119,7 @@ const nutritionRouter = router({
     }),
 
   // Delete meal log
-  deleteMealLog: publicProcedure
+  deleteMealLog: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -118,7 +129,7 @@ const nutritionRouter = router({
     }),
 
   // AI food photo analysis
-  analyzeFoodPhoto: publicProcedure
+  analyzeFoodPhoto: ownerProcedure
     .input(z.object({ imageUrl: z.string(), imageBase64: z.string().optional() }))
     .mutation(async ({ input }) => {
       // If imageUrl is a relative /manus-storage/ path, resolve to a real signed S3 URL
@@ -200,7 +211,7 @@ const nutritionRouter = router({
     }),
 
   // Upload food photo to storage
-  uploadFoodPhoto: publicProcedure
+  uploadFoodPhoto: ownerProcedure
     .input(z.object({ base64: z.string(), mimeType: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const buffer = Buffer.from(input.base64, "base64");
@@ -228,7 +239,7 @@ const workoutRouter = router({
     }),
 
   // Add custom exercise
-  addExercise: publicProcedure
+  addExercise: ownerProcedure
     .input(z.object({
       name: z.string(),
       nameZh: z.string().optional(),
@@ -271,8 +282,34 @@ const workoutRouter = router({
       return { session: sessions[0], sets };
     }),
 
+  // Get calories burned for a specific date (for daily net calorie calculation)
+  getDailyCaloriesBurned: publicProcedure
+    .input(z.object({ date: z.string() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { caloriesBurned: 0, sessions: [] };
+      const dayStart = new Date(input.date + 'T00:00:00+08:00');
+      const dayEnd = new Date(input.date + 'T23:59:59+08:00');
+      const sessions = await db.select({
+        id: workoutSessions.id,
+        name: workoutSessions.name,
+        duration: workoutSessions.duration,
+        caloriesBurned: workoutSessions.caloriesBurned,
+        totalVolume: workoutSessions.totalVolume,
+        startTime: workoutSessions.startTime,
+      }).from(workoutSessions)
+        .where(and(
+          eq(workoutSessions.userId, OWNER_USER_ID),
+          sql`${workoutSessions.startTime} >= ${dayStart}`,
+          sql`${workoutSessions.startTime} <= ${dayEnd}`,
+        ))
+        .orderBy(desc(workoutSessions.startTime));
+      const caloriesBurned = sessions.reduce((sum, s) => sum + (s.caloriesBurned ?? 0), 0);
+      return { caloriesBurned, sessions };
+    }),
+
   // Create workout session
-  createSession: publicProcedure
+  createSession: ownerProcedure
     .input(z.object({
       date: z.string(),
       name: z.string().optional(),
@@ -287,7 +324,7 @@ const workoutRouter = router({
     }),
 
   // Update session
-  updateSession: publicProcedure
+  updateSession: ownerProcedure
     .input(z.object({
       id: z.number(),
       name: z.string().optional(),
@@ -304,7 +341,7 @@ const workoutRouter = router({
     }),
 
   // Delete session
-  deleteSession: publicProcedure
+  deleteSession: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -315,7 +352,7 @@ const workoutRouter = router({
     }),
 
   // Add workout set
-  addSet: publicProcedure
+  addSet: ownerProcedure
     .input(z.object({
       sessionId: z.number(),
       exerciseId: z.number().optional().nullable(),
@@ -331,15 +368,11 @@ const workoutRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const { exerciseId, ...rest } = input;
-      // exerciseId is optional; use raw SQL to insert NULL when not provided
-      if (exerciseId != null) {
-        await db.insert(workoutSets).values({ ...rest, exerciseId });
-      } else {
-        await db.execute(sql`
-          INSERT INTO workout_sets ("sessionId", "exerciseName", "setNumber", reps, weight, duration, distance, notes)
-          VALUES (${rest.sessionId}, ${rest.exerciseName}, ${rest.setNumber}, ${rest.reps ?? null}, ${rest.weight ?? null}, ${rest.duration ?? null}, ${rest.distance ?? null}, ${rest.notes ?? null})
-        `);
-      }
+      // Always use raw SQL to avoid Drizzle type issues with nullable exerciseId
+      await db.execute(sql`
+        INSERT INTO workout_sets ("sessionId", "exerciseId", "exerciseName", "setNumber", reps, weight, duration, distance, notes)
+        VALUES (${rest.sessionId}, ${exerciseId ?? null}, ${rest.exerciseName}, ${rest.setNumber}, ${rest.reps ?? null}, ${rest.weight ?? null}, ${rest.duration ?? null}, ${rest.distance ?? null}, ${rest.notes ?? null})
+      `);
       // Recalculate and update totalVolume on the session
       const volumeResult = await db.execute(sql`
         SELECT COALESCE(SUM(reps * weight), 0) as total
@@ -354,7 +387,7 @@ const workoutRouter = router({
     }),
 
   // Update set
-  updateSet: publicProcedure
+  updateSet: ownerProcedure
     .input(z.object({
       id: z.number(),
       reps: z.number().optional(),
@@ -371,7 +404,7 @@ const workoutRouter = router({
     }),
 
   // Delete set
-  deleteSet: publicProcedure
+  deleteSet: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -393,7 +426,7 @@ const workoutRouter = router({
       return ((rows as any).rows ?? rows).map((r: any) => r.exercise_name as string);
     }),
 
-  toggleFavourite: publicProcedure
+  toggleFavourite: ownerProcedure
     .input(z.object({ exerciseName: z.string().min(1) }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -428,7 +461,7 @@ const workoutRouter = router({
         .orderBy(desc(customExercises.createdAt));
     }),
 
-  createCustomExercise: publicProcedure
+  createCustomExercise: ownerProcedure
     .input(z.object({
       name: z.string().min(1).max(200),
       nameZh: z.string().max(200).optional(),
@@ -463,7 +496,7 @@ const workoutRouter = router({
       return row;
     }),
 
-  deleteCustomExercise: publicProcedure
+  deleteCustomExercise: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -474,7 +507,7 @@ const workoutRouter = router({
     }),
 
   // Finish session: set endTime and auto-calculate duration in minutes
-  finishSession: publicProcedure
+  finishSession: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -486,13 +519,25 @@ const workoutRouter = router({
       const endTime = new Date();
       const startTime = session.startTime ? new Date(session.startTime) : endTime;
       const durationMin = Math.max(1, Math.round((endTime.getTime() - startTime.getTime()) / 60000));
-      await db.update(workoutSessions).set({ endTime, duration: durationMin })
+      // Estimate calories burned: MET ~5 for moderate weight training, 70kg avg body weight
+      // Calories = MET × weight_kg × duration_hours
+      // We use volume-adjusted formula: base 5 MET + bonus for high volume
+      const volumeResult = await db.execute(sql`
+        SELECT COALESCE(SUM(reps * weight), 0) as total
+        FROM workout_sets WHERE "sessionId" = ${input.id}
+        AND reps IS NOT NULL AND weight IS NOT NULL
+      `);
+      const totalVolume = Number(((volumeResult as any).rows?.[0] ?? (volumeResult as any)[0])?.total ?? 0);
+      // MET 5 = moderate resistance training; scale up slightly for high volume
+      const met = totalVolume > 5000 ? 6 : totalVolume > 2000 ? 5.5 : 5;
+      const caloriesBurned = Math.round(met * 70 * (durationMin / 60));
+      await db.update(workoutSessions).set({ endTime, duration: durationMin, caloriesBurned, totalVolume })
         .where(eq(workoutSessions.id, input.id));
-      return { success: true, duration: durationMin };
+      return { success: true, duration: durationMin, caloriesBurned };
     }),
 
   // AI exercise analysis: analyze user's past sets and return personalized recommendations
-  analyzeExercise: publicProcedure
+  analyzeExercise: ownerProcedure
     .input(z.object({ exerciseName: z.string() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -557,7 +602,7 @@ const workoutRouter = router({
       return JSON.parse(contentStr) as { analysis: string; recommendations: Array<{ title: string; detail: string; type: string }> };
     }),
 
-  identifyExerciseFromPhoto: publicProcedure
+  identifyExerciseFromPhoto: ownerProcedure
     .input(z.object({ base64: z.string(), mimeType: z.string() }))
     .mutation(async ({ input }) => {
       const imageUrl = `data:${input.mimeType};base64,${input.base64}`;
@@ -618,7 +663,7 @@ const bodyRouter = router({
         .limit(input?.limit || 100);
     }),
 
-  add: publicProcedure
+  add: ownerProcedure
     .input(z.object({
       date: z.string(),
       weight: z.number().optional(),
@@ -638,7 +683,7 @@ const bodyRouter = router({
       return { success: true };
     }),
 
-  update: publicProcedure
+  update: ownerProcedure
     .input(z.object({
       id: z.number(),
       date: z.string().optional(),
@@ -659,7 +704,7 @@ const bodyRouter = router({
       return { success: true };
     }),
 
-  delete: publicProcedure
+  delete: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -669,7 +714,7 @@ const bodyRouter = router({
     }),
 
   // Bulk import from Google Sheets
-  bulkImport: publicProcedure
+  bulkImport: ownerProcedure
     .input(z.array(z.object({
       date: z.string(),
       weight: z.number().optional(),
@@ -704,7 +749,7 @@ const heartRateRouter = router({
         .limit(input?.limit || 200);
     }),
 
-  add: publicProcedure
+  add: ownerProcedure
     .input(z.object({
       date: z.string(),
       restingHr: z.number().optional(),
@@ -721,7 +766,7 @@ const heartRateRouter = router({
       return { success: true };
     }),
 
-  update: publicProcedure
+  update: ownerProcedure
     .input(z.object({
       id: z.number(),
       date: z.string().optional(),
@@ -738,7 +783,7 @@ const heartRateRouter = router({
       return { success: true };
     }),
 
-  delete: publicProcedure
+  delete: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -747,7 +792,7 @@ const heartRateRouter = router({
       return { success: true };
     }),
 
-  bulkImport: publicProcedure
+  bulkImport: ownerProcedure
     .input(z.array(z.object({
       date: z.string(),
       restingHr: z.number().optional(),
@@ -855,7 +900,7 @@ const sleepRouter = router({
       return { success: true };
     }),
 
-  delete: publicProcedure
+  delete: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -908,7 +953,7 @@ const photosRouter = router({
       .orderBy(desc(progressPhotos.date));
   }),
 
-  upload: publicProcedure
+  upload: ownerProcedure
     .input(z.object({
       base64: z.string(),
       mimeType: z.string(),
@@ -935,7 +980,7 @@ const photosRouter = router({
       return { success: true, url };
     }),
 
-  delete: publicProcedure
+  delete: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -957,7 +1002,7 @@ const insightsRouter = router({
     return results;
   }),
 
-  generate: publicProcedure
+  generate: ownerProcedure
     .input(z.object({ type: z.enum(["nutrition", "workout", "recovery", "overall"]).optional() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -1061,7 +1106,7 @@ const csvImportRouter = router({
    * Parse a CSV string and return a preview (first 5 rows) + detected type.
    * No data is written to the DB at this stage.
    */
-  preview: publicProcedure
+  preview: ownerProcedure
     .input(z.object({
       csvText: z.string().max(5_000_000), // 5 MB limit
       dataType: z.enum(["body", "sleep", "heartrate", "workout", "nutrition", "running", "auto"]).default("auto"),
@@ -1095,7 +1140,7 @@ const csvImportRouter = router({
    * Import all rows from a CSV string into the database.
    * Returns counts of inserted / skipped rows.
    */
-  importData: publicProcedure
+  importData: ownerProcedure
     .input(z.object({
       csvText: z.string().max(5_000_000),
       dataType: z.enum(["body", "sleep", "heartrate", "workout", "nutrition", "running"]),
@@ -1418,7 +1463,7 @@ const goalsRouter = router({
       .orderBy(healthGoals.goalType);
   }),
 
-  setGoal: publicProcedure
+  setGoal: ownerProcedure
     .input(z.object({
       goalType: z.enum([
         "weight", "body_fat_pct", "muscle_mass",
@@ -1448,7 +1493,7 @@ const goalsRouter = router({
       return goal;
     }),
 
-  deleteGoal: publicProcedure
+  deleteGoal: ownerProcedure
     .input(z.object({ goalType: z.enum([
       "weight", "body_fat_pct", "muscle_mass",
       "sleep_duration", "sleep_score",
@@ -1472,7 +1517,7 @@ const imageImportRouter = router({
    * Upload an image and extract health data using AI vision.
    * Returns extracted fields for user review before saving.
    */
-  extract: publicProcedure
+  extract: ownerProcedure
     .input(z.object({
       base64: z.string(),
       mimeType: z.string().default("image/jpeg"),
@@ -1910,7 +1955,7 @@ const runningRouter = router({
       return { success: true };
     }),
 
-  deleteLog: publicProcedure
+  deleteLog: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -1919,7 +1964,7 @@ const runningRouter = router({
       return { success: true };
     }),
 
-  getAIAnalysis: publicProcedure
+  getAIAnalysis: ownerProcedure
     .input(z.object({ weeks: z.number().optional().default(12) }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2080,7 +2125,7 @@ ${activeShoeSummary || '暫無跑鞋記錄'}
     }),
 
   // ─── Personalized Training Plan ─────────────────────────────────────────────
-  generateTrainingPlan: publicProcedure
+  generateTrainingPlan: ownerProcedure
     .input(z.object({
       goalRaceId: z.number().optional(),
       goalRaceName: z.string().optional(),
@@ -2355,7 +2400,7 @@ ${shoesSummary || '無記錄'}
       return { success: true };
     }),
 
-  deleteShoe: publicProcedure
+  deleteShoe: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2497,7 +2542,7 @@ ${shoesSummary || '無記錄'}
       return { success: true };
     }),
 
-  deleteRace: publicProcedure
+  deleteRace: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2552,7 +2597,7 @@ ${shoesSummary || '無記錄'}
       return enriched;
     }),
 
-  analyzeRace: publicProcedure
+  analyzeRace: ownerProcedure
     .input(z.object({ raceId: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2618,7 +2663,7 @@ ${trainingSummary || '無訓練記錄'}
         .where(and(eq(runningLogPhotos.runningLogId, input.runningLogId), eq(runningLogPhotos.userId, OWNER_USER_ID)))
         .orderBy(runningLogPhotos.sortOrder, runningLogPhotos.createdAt);
     }),
-  uploadLogPhoto: publicProcedure
+  uploadLogPhoto: ownerProcedure
     .input(z.object({ runningLogId: z.number(), base64: z.string(), mimeType: z.string(), caption: z.string().optional() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2633,7 +2678,7 @@ ${trainingSummary || '無訓練記錄'}
       await db.insert(runningLogPhotos).values({ userId: OWNER_USER_ID, runningLogId: input.runningLogId, photoUrl: url, fileKey: key, caption: input.caption, sortOrder });
       return { url, key };
     }),
-  deleteLogPhoto: publicProcedure
+  deleteLogPhoto: ownerProcedure
     .input(z.object({ photoId: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2657,7 +2702,7 @@ const stepsRouter = router({
         .limit(input?.limit ?? 365);
       return rows;
     }),
-  add: publicProcedure
+  add: ownerProcedure
     .input(z.object({
       date: z.string(),
       steps: z.number().optional(),
@@ -2682,7 +2727,7 @@ const stepsRouter = router({
       }).returning();
       return row;
     }),
-  update: publicProcedure
+  update: ownerProcedure
     .input(z.object({
       id: z.number(),
       date: z.string().optional(),
@@ -2700,7 +2745,7 @@ const stepsRouter = router({
       const [row] = await db.update(dailySteps).set(rest).where(and(eq(dailySteps.id, id), eq(dailySteps.userId, OWNER_USER_ID))).returning();
       return row;
     }),
-  delete: publicProcedure
+  delete: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2718,7 +2763,7 @@ const stepsRouter = router({
         .where(and(eq(stepLogPhotos.stepLogId, input.stepLogId), eq(stepLogPhotos.userId, OWNER_USER_ID)))
         .orderBy(stepLogPhotos.sortOrder, stepLogPhotos.createdAt);
     }),
-  uploadLogPhoto: publicProcedure
+  uploadLogPhoto: ownerProcedure
     .input(z.object({ stepLogId: z.number(), base64: z.string(), mimeType: z.string(), caption: z.string().optional() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2733,7 +2778,7 @@ const stepsRouter = router({
       await db.insert(stepLogPhotos).values({ userId: OWNER_USER_ID, stepLogId: input.stepLogId, photoUrl: url, fileKey: key, caption: input.caption, sortOrder });
       return { url, key };
     }),
-  deleteLogPhoto: publicProcedure
+  deleteLogPhoto: ownerProcedure
     .input(z.object({ photoId: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2752,7 +2797,7 @@ const medicalRouter = router({
       .where(eq(medicalConditions.userId, OWNER_USER_ID))
       .orderBy(desc(medicalConditions.createdAt));
   }),
-  addCondition: publicProcedure
+  addCondition: ownerProcedure
     .input(z.object({
       title: z.string(),
       category: z.string().optional(),
@@ -2775,7 +2820,7 @@ const medicalRouter = router({
       }).returning();
       return row;
     }),
-  updateCondition: publicProcedure
+  updateCondition: ownerProcedure
     .input(z.object({
       id: z.number(),
       title: z.string().optional(),
@@ -2793,7 +2838,7 @@ const medicalRouter = router({
         .where(and(eq(medicalConditions.id, id), eq(medicalConditions.userId, OWNER_USER_ID))).returning();
       return row;
     }),
-  deleteCondition: publicProcedure
+  deleteCondition: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2810,7 +2855,7 @@ const medicalRouter = router({
         .where(and(eq(medicalVisits.conditionId, input.conditionId), eq(medicalVisits.userId, OWNER_USER_ID)))
         .orderBy(desc(medicalVisits.visitDate));
     }),
-  addVisit: publicProcedure
+  addVisit: ownerProcedure
     .input(z.object({
       conditionId: z.number(),
       visitDate: z.string(),
@@ -2839,7 +2884,7 @@ const medicalRouter = router({
       }).returning();
       return row;
     }),
-  updateVisit: publicProcedure
+  updateVisit: ownerProcedure
     .input(z.object({
       id: z.number(),
       visitDate: z.string().optional(),
@@ -2859,7 +2904,7 @@ const medicalRouter = router({
         .where(and(eq(medicalVisits.id, id), eq(medicalVisits.userId, OWNER_USER_ID))).returning();
       return row;
     }),
-  deleteVisit: publicProcedure
+  deleteVisit: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2876,7 +2921,7 @@ const medicalRouter = router({
         .where(and(eq(medicalAttachments.visitId, input.visitId), eq(medicalAttachments.userId, OWNER_USER_ID)))
         .orderBy(desc(medicalAttachments.createdAt));
     }),
-  uploadAttachment: publicProcedure
+  uploadAttachment: ownerProcedure
     .input(z.object({
       visitId: z.number(),
       fileName: z.string(),
@@ -2903,7 +2948,7 @@ const medicalRouter = router({
       }).returning();
       return row;
     }),
-  deleteAttachment: publicProcedure
+  deleteAttachment: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2979,7 +3024,7 @@ const supplementsRouter = router({
         .where(and(eq(supplements.id, id), eq(supplements.userId, OWNER_USER_ID))).returning();
       return row;
     }),
-  delete: publicProcedure
+  delete: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2999,7 +3044,7 @@ const supplementsRouter = router({
         .orderBy(desc(supplementLogs.date))
         .limit(input.limit ?? 200);
     }),
-  addLog: publicProcedure
+  addLog: ownerProcedure
     .input(z.object({
       supplementId: z.number(),
       date: z.string(),
@@ -3022,7 +3067,7 @@ const supplementsRouter = router({
       await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock - ${input.quantity ?? 1}), "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
       return row;
     }),
-  deleteLog: publicProcedure
+  deleteLog: ownerProcedure
     .input(z.object({ id: z.number(), quantity: z.number().optional(), supplementId: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -3032,7 +3077,7 @@ const supplementsRouter = router({
       await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${input.quantity ?? 1}, "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
       return { success: true };
     }),
-  restockSupplement: publicProcedure
+  restockSupplement: ownerProcedure
     .input(z.object({ id: z.number(), quantity: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -3082,7 +3127,7 @@ const supplementsRouter = router({
         .orderBy(desc(supplementPurchases.purchaseDate));
     }),
 
-  addPurchase: publicProcedure
+  addPurchase: ownerProcedure
     .input(z.object({
       supplementId: z.number(),
       purchaseDate: z.string(),
@@ -3121,7 +3166,7 @@ const supplementsRouter = router({
       return row;
     }),
 
-  updatePurchase: publicProcedure
+  updatePurchase: ownerProcedure
     .input(z.object({
       id: z.number(),
       purchaseDate: z.string().optional(),
@@ -3142,7 +3187,7 @@ const supplementsRouter = router({
       return row;
     }),
 
-  deletePurchase: publicProcedure
+  deletePurchase: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -3177,7 +3222,7 @@ const supplementsRouter = router({
         .limit(input.limit ?? 200);
     }),
 
-  addStockAdjustment: publicProcedure
+  addStockAdjustment: ownerProcedure
     .input(z.object({
       supplementId: z.number(),
       adjustDate: z.string(),

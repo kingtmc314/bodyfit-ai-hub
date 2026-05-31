@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
+import { useIsOwner } from "@/contexts/OwnerContext";
 import { toast } from "sonner";
 import { todayHKString, formatHKDate, formatHKChartDate } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
@@ -86,6 +87,7 @@ const defaultForm = {
 export default function Running() {
   const { t, i18n } = useTranslation();
   const isZh = i18n.language === 'zh';
+  const isOwner = useIsOwner();
   const [showDialog, setShowDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
@@ -451,9 +453,11 @@ export default function Running() {
             </h1>
             <p className="text-white/70 text-sm mt-0.5">{t('running.subtitle')}</p>
           </div>
-          <Button onClick={openAdd} size="sm" className="bg-white text-orange-600 hover:bg-white/90 font-semibold">
-            <Plus className="w-4 h-4 mr-1" /> {t('running.add_record')}
-          </Button>
+          {isOwner && (
+            <Button onClick={openAdd} size="sm" className="bg-white text-orange-600 hover:bg-white/90 font-semibold">
+              <Plus className="w-4 h-4 mr-1" /> {t('running.add_record')}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -725,6 +729,7 @@ export default function Running() {
                         <td className="px-4 py-3">
                           <LogPhotoUploader logId={row.id} type="running" compact />
                         </td>
+                        {isOwner && (
                         <td className="px-4 py-3">
                           <div className="flex gap-1">
                             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(row)}>
@@ -736,6 +741,7 @@ export default function Running() {
                             </Button>
                           </div>
                         </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -765,9 +771,11 @@ export default function Running() {
                   <SelectItem value="purchase">{t('running.sort_by_purchase')}</SelectItem>
                 </SelectContent>
               </Select>
-              <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditShoe(null); setShoeForm({ shoesName: '', brand: '', model: '', status: 'Active', purchaseDate: '', firstUseDate: '', retirementDate: '', initialKm: '', maxKm: '800', notes: '', price: '', photoUrl: '' }); setShowShoeDialog(true); }}>
-                <Plus className="w-3.5 h-3.5 mr-1" /> {t('running.add_shoe')}
-              </Button>
+              {isOwner && (
+                <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditShoe(null); setShoeForm({ shoesName: '', brand: '', model: '', status: 'Active', purchaseDate: '', firstUseDate: '', retirementDate: '', initialKm: '', maxKm: '800', notes: '', price: '', photoUrl: '' }); setShowShoeDialog(true); }}>
+                  <Plus className="w-3.5 h-3.5 mr-1" /> {t('running.add_shoe')}
+                </Button>
+              )}
             </div>
           </div>
 
@@ -859,29 +867,33 @@ export default function Running() {
 
                       {/* Action buttons */}
                       <div className="flex gap-2 mb-3">
-                        <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" onClick={() => {
-                          setEditShoe(shoe);
-                          setShoeForm({
-                            shoesName: shoe.shoes_name || '',
-                            brand: shoe.brand || '',
-                            model: shoe.model || '',
-                            status: shoeStatus,
-                            purchaseDate: shoe.purchase_date || '',
-                            firstUseDate: shoe.firstusedate || '',
-                            retirementDate: shoe.retirement_date || '',
-                            initialKm: shoe.initial_km != null ? String(shoe.initial_km) : '',
-                            maxKm: shoe.max_km != null ? String(shoe.max_km) : '800',
-                            notes: shoe.notes || '',
-                            price: shoe.price != null ? String(shoe.price) : '',
-                            photoUrl: shoe.photo_url || '',
-                          });
-                          setShowShoeDialog(true);
-                        }}>
-                          <Edit2 className="w-3 h-3 mr-1" /> {t('running.edit')}
-                        </Button>
-                        <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteShoeConfirm(Number(shoe.id))}>
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
+                        {isOwner && (
+                          <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" onClick={() => {
+                            setEditShoe(shoe);
+                            setShoeForm({
+                              shoesName: shoe.shoes_name || '',
+                              brand: shoe.brand || '',
+                              model: shoe.model || '',
+                              status: shoeStatus,
+                              purchaseDate: shoe.purchase_date || '',
+                              firstUseDate: shoe.firstusedate || '',
+                              retirementDate: shoe.retirement_date || '',
+                              initialKm: shoe.initial_km != null ? String(shoe.initial_km) : '',
+                              maxKm: shoe.max_km != null ? String(shoe.max_km) : '800',
+                              notes: shoe.notes || '',
+                              price: shoe.price != null ? String(shoe.price) : '',
+                              photoUrl: shoe.photo_url || '',
+                            });
+                            setShowShoeDialog(true);
+                          }}>
+                            <Edit2 className="w-3 h-3 mr-1" /> {t('running.edit')}
+                          </Button>
+                        )}
+                        {isOwner && (
+                          <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteShoeConfirm(Number(shoe.id))}>
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        )}
                         <Button size="sm" variant="outline" className="flex-1 h-8 text-xs text-blue-600 hover:text-blue-700 border-blue-200 hover:border-blue-400"
                           onClick={() => openShoeHistory(shoe)}
                           disabled={loadingShoeHistory === Number(shoe.id)}>
@@ -936,9 +948,11 @@ export default function Running() {
                   <SelectItem value="name">{t('running.sort_by_name')}</SelectItem>
                 </SelectContent>
               </Select>
-              <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditRace(null); setRaceForm({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', finishHr: '', finishMin: '', finishSec: '', targetHr: '', targetMin: '', targetSec: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' }); setShowRaceDialog(true); }}>
-                <Plus className="w-3.5 h-3.5 mr-1" /> {t('running.add_race')}
-              </Button>
+              {isOwner && (
+                <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditRace(null); setRaceForm({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', finishHr: '', finishMin: '', finishSec: '', targetHr: '', targetMin: '', targetSec: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' }); setShowRaceDialog(true); }}>
+                  <Plus className="w-3.5 h-3.5 mr-1" /> {t('running.add_race')}
+                </Button>
+              )}
             </div>
           </div>
 
@@ -1017,8 +1031,8 @@ export default function Running() {
                             </div>
                             <div className="flex items-center justify-between">
                               <div className="flex gap-1">
-                                <Button size="sm" variant="outline" className="h-6 text-[11px] px-2" onClick={() => openEditRace(race)}><Edit2 className="w-2.5 h-2.5 mr-0.5" />{t('running.edit')}</Button>
-                                <Button size="sm" variant="outline" className="h-6 w-6 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteRaceConfirm(Number(race.id))}><Trash2 className="w-2.5 h-2.5" /></Button>
+                                {isOwner && <Button size="sm" variant="outline" className="h-6 text-[11px] px-2" onClick={() => openEditRace(race)}><Edit2 className="w-2.5 h-2.5 mr-0.5" />{t('running.edit')}</Button>}
+                                {isOwner && <Button size="sm" variant="outline" className="h-6 w-6 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteRaceConfirm(Number(race.id))}><Trash2 className="w-2.5 h-2.5" /></Button>}
                               </div>
                               <div className="text-right">
                                 <span className={`text-lg font-extrabold ${isNext ? 'text-blue-500' : 'text-foreground'}`}>{diffDays}</span>
@@ -1272,10 +1286,12 @@ export default function Running() {
                               )}
 
                               {/* Action buttons — no per-race AI button */}
-                              <div className="flex gap-2 pt-1">
-                                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openEditRace(race)}><Edit2 className="w-3 h-3 mr-1" />{t('running.edit')}</Button>
-                                <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteRaceConfirm(Number(race.id))}><Trash2 className="w-3 h-3" /></Button>
-                              </div>
+                              {isOwner && (
+                                <div className="flex gap-2 pt-1">
+                                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openEditRace(race)}><Edit2 className="w-3 h-3 mr-1" />{t('running.edit')}</Button>
+                                  <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteRaceConfirm(Number(race.id))}><Trash2 className="w-3 h-3" /></Button>
+                                </div>
+                              )}
                             </div>
                           </div>
                         );

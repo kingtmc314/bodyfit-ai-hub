@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useIsOwner } from "@/contexts/OwnerContext";
 import { toast } from "sonner";
 import { todayHKString, formatHKChartDate, formatHKDate } from "@/lib/hkTime";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,7 @@ const defaultForm = {
 
 export default function Sleep() {
   const { t } = useTranslation();
+  const isOwner = useIsOwner();
   const [showDialog, setShowDialog] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
@@ -189,14 +191,16 @@ export default function Sleep() {
             <h1 className="text-xl font-extrabold text-white">{t('sleep.title')}</h1>
             <p className="text-white/70 text-sm mt-0.5">{t('sleep.subtitle')}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" className="gap-2 bg-white/20 border-white/40 text-white hover:bg-white/30" onClick={() => setShowImport(true)}>
-              <Upload className="w-4 h-4" /> 匯入
-            </Button>
-            <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
-              <Plus className="w-4 h-4" /> {t('sleep.add_record')}
-            </Button>
-          </div>
+          {isOwner && (
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" className="gap-2 bg-white/20 border-white/40 text-white hover:bg-white/30" onClick={() => setShowImport(true)}>
+                <Upload className="w-4 h-4" /> 匯入
+              </Button>
+              <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
+                <Plus className="w-4 h-4" /> {t('sleep.add_record')}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
       <QuickImportModal open={showImport} onClose={() => setShowImport(false)} dataType="sleep" onSuccess={() => utils.sleep.getAll.invalidate()} />
@@ -427,6 +431,7 @@ export default function Sleep() {
                       <td className="px-4 py-3">{r.bodyBattery ?? "—"}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{r.bedtime ? String(r.bedtime).slice(0, 5) : "—"}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{r.waketime ? String(r.waketime).slice(0, 5) : "—"}</td>
+                      {isOwner && (
                       <td className="px-4 py-3">
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => {
@@ -448,6 +453,7 @@ export default function Sleep() {
                           <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: r.id })}><Trash2 className="w-3.5 h-3.5" /></Button>
                         </div>
                       </td>
+                      )}
                     </tr>
                   ))}
                   {sleepList.length === 0 && (
