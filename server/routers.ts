@@ -903,13 +903,14 @@ const sleepRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const { score, quality, duration, restingHr: _rhr, ...rest } = input;
+      const { score, quality, duration, restingHr, ...rest } = input;
       await db.insert(sleepLogs).values({
         ...rest,
         userId: OWNER_USER_ID,
         sleepScore: score,
         sleepQuality: quality,
         sleepDuration: duration,
+        restingHr,
       });
       return { success: true };
     }),
@@ -934,8 +935,8 @@ const sleepRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const { id, score, quality, duration, restingHr: _rhr, ...rest } = input;
-      const data = { ...rest, sleepScore: score, sleepQuality: quality, sleepDuration: duration };
+      const { id, score, quality, duration, restingHr, ...rest } = input;
+      const data = { ...rest, sleepScore: score, sleepQuality: quality, sleepDuration: duration, restingHr };
       await db.update(sleepLogs).set(data).where(and(eq(sleepLogs.id, id), eq(sleepLogs.userId, OWNER_USER_ID)));
       return { success: true };
     }),
@@ -969,7 +970,7 @@ const sleepRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       for (const row of input) {
-        const { score, quality, duration, restingHr: _rhr, ...rest } = row;
+        const { score, quality, duration, restingHr, ...rest } = row;
         await db.insert(sleepLogs).values({
           ...rest,
           userId: OWNER_USER_ID,
@@ -977,6 +978,7 @@ const sleepRouter = router({
           sleepScore: score,
           sleepQuality: quality,
           sleepDuration: duration,
+          restingHr,
         }).catch(() => {});
       }
       return { success: true, count: input.length };

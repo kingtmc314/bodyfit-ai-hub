@@ -147,6 +147,10 @@
 - [x] Fix TypeScript errors: runningLogs.userId does not exist → removed userId filter (single-user app)
 - [x] Fix Workout finishSession: add totalVolume and exerciseCount to return value
 
+## v3.4.2 Sleep restingHr Fix (2026-06-01)
+- [x] Fix sleep add/update/bulkImport: restingHr was destructured as _rhr and discarded, never stored in DB
+- [x] Confirmed HRV values (59-61ms) are real Garmin data, not a display bug
+
 ## v3.4.1 TypeScript Fix (2026-06-01)
 - [x] Fix api/index.ts: add explicit Request/Response types to Express route handlers to fix Vercel TypeScript warnings
 - [x] Add api/**/* to tsconfig.json include so local tsc also checks api/ directory
