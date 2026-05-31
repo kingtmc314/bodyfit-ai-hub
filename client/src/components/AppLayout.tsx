@@ -21,14 +21,10 @@ import {
   Footprints,
   Stethoscope,
   Pill,
-  Eye,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
-import { OwnerProvider, useIsOwner } from "@/contexts/OwnerContext";
-import { useAuth } from "@/_core/hooks/useAuth";
-// Supabase Auth: login is now at /login route
 
 type NavGroup = {
   groupKey: string;
@@ -73,28 +69,15 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-// Flat list for active detection
-const navItems = navGroups.flatMap(g => g.items);
-
 interface AppLayoutProps {
   children: React.ReactNode;
 }
 
 export default function AppLayout({ children }: AppLayoutProps) {
-  return (
-    <OwnerProvider>
-      <AppLayoutInner>{children}</AppLayoutInner>
-    </OwnerProvider>
-  );
-}
-
-function AppLayoutInner({ children }: AppLayoutProps) {
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const { t, i18n } = useTranslation();
-  const { user, loading } = useAuth();
-  const isOwner = useIsOwner();
 
   const toggleLanguage = () => {
     const next = i18n.language === 'zh' ? 'en' : 'zh';
@@ -179,25 +162,6 @@ function AppLayoutInner({ children }: AppLayoutProps) {
             </Button>
           </div>
         </div>
-        {/* Visitor badge / login button for non-owner */}
-        {!loading && !isOwner && (
-          <div className="mt-2 space-y-1.5">
-            <div className="px-2 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 flex items-center gap-1.5">
-              <Eye className="w-3 h-3 text-blue-500 shrink-0" />
-              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium leading-tight">
-                {i18n.language === 'zh' ? '訪客瀏覽模式' : 'Read-only visitor'}
-              </span>
-            </div>
-            {!user && (
-              <button
-                onClick={() => { window.location.href = '/login'; }}
-                className="w-full text-[11px] font-semibold text-white bg-primary hover:bg-primary/90 rounded-lg py-1.5 transition-colors"
-              >
-                {i18n.language === 'zh' ? '登入' : 'Log In'}
-              </button>
-            )}
-          </div>
-        )}
         <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v3.0.0</p>
       </div>
     </div>
@@ -245,30 +209,6 @@ function AppLayoutInner({ children }: AppLayoutProps) {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto">
-          {/* Read-only banner for visitors */}
-          {!loading && !isOwner && (
-            <div className="mx-4 mt-4 px-4 py-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 flex items-center gap-3">
-              <Eye className="w-4 h-4 text-blue-500 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
-                  {i18n.language === 'zh' ? '訪客瀏覽模式' : 'Read-only Mode'}
-                </p>
-                <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
-                  {i18n.language === 'zh'
-                    ? '您正在瀏覽 kingmath 的健身數據（唯讀）。'
-                    : "You're viewing kingmath's fitness data in read-only mode."}
-                </p>
-              </div>
-              {!user && (
-                <button
-                  onClick={() => { window.location.href = '/login'; }}
-                  className="shrink-0 text-xs font-semibold text-white bg-primary hover:bg-primary/90 rounded-lg px-3 py-1.5 transition-colors"
-                >
-                  {i18n.language === 'zh' ? '登入' : 'Log In'}
-                </button>
-              )}
-            </div>
-          )}
           {children}
         </main>
       </div>
