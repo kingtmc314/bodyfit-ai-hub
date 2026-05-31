@@ -165,3 +165,10 @@
 - [x] Fix 庫存記錄 showing 0 records: addLog now writes intake adjustment to supplement_stock_adjustments
 - [x] Fix deleteLog: also writes intake_reversal adjustment to supplement_stock_adjustments
 - [x] Update version to v3.4.4 in AppLayout sidebar
+
+## v3.4.5 Supplement Log Edit Feature (2026-06-01)
+- [x] Add updateLog procedure to supplements router (with stock adjustment on quantity change)
+- [x] Add Edit button (pencil icon) to intake log table rows
+- [x] Add Edit Log dialog with date, quantity, time of day, notes fields
+- [x] Fix deleteLog to also invalidate stockHistory cache
+- [x] Update version to v3.4.5 in AppLayout sidebar

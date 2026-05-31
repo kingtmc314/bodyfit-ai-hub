@@ -61,6 +61,7 @@ export default function Supplements() {
   const [logSearch, setLogSearch] = useState('');
   const [showPurchaseDialog, setShowPurchaseDialog] = useState(false);
   const [editPurchase, setEditPurchase] = useState<any>(null);
+  const [editLog, setEditLog] = useState<any>(null);
   const [purchaseForm, setPurchaseForm] = useState<any>(defaultPurchaseForm);
   const [purchaseFilter, setPurchaseFilter] = useState<string>('all');
   const [stockFilter, setStockFilter] = useState<string>('all');
@@ -91,7 +92,11 @@ export default function Supplements() {
     onError: (e) => toast.error(e.message),
   });
   const deleteLog = trpc.supplements.deleteLog.useMutation({
-    onSuccess: () => { utils.supplements.getLogs.invalidate(); utils.supplements.getAll.invalidate(); toast.success(t('common.deleted')); },
+    onSuccess: () => { utils.supplements.getLogs.invalidate(); utils.supplements.getAll.invalidate(); utils.supplements.getStockHistory.invalidate(); toast.success(t('common.deleted')); },
+    onError: (e) => toast.error(e.message),
+  });
+  const updateLog = trpc.supplements.updateLog.useMutation({
+    onSuccess: () => { utils.supplements.getLogs.invalidate(); utils.supplements.getAll.invalidate(); utils.supplements.getStockHistory.invalidate(); toast.success(t('common.updated')); setEditLog(null); },
     onError: (e) => toast.error(e.message),
   });
   const restock = trpc.supplements.restockSupplement.useMutation({
@@ -462,9 +467,14 @@ export default function Supplements() {
                         <td className="px-4 py-3">{l.timeOfDay ? t(`supplements.time_${l.timeOfDay}`) : '—'}</td>
                         <td className="px-4 py-3 text-muted-foreground text-xs max-w-32 truncate">{l.notes ?? '—'}</td>
                         <td className="px-4 py-3">
-                          <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteLog.mutate({ id: l.id, quantity: l.quantity ?? 1, supplementId: l.supplementId })}>
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => setEditLog({ ...l, _originalQuantity: l.quantity ?? 1 })}>
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteLog.mutate({ id: l.id, quantity: l.quantity ?? 1, supplementId: l.supplementId })}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -803,6 +813,56 @@ export default function Supplements() {
       </Dialog>
 
       {/* Log Intake Dialog */}
+      {/* Edit Log Dialog */}
+      <Dialog open={!!editLog} onOpenChange={open => { if (!open) setEditLog(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>{t('supplements.edit_intake', { defaultValue: '修改進食記錄' })}</DialogTitle></DialogHeader>
+          {editLog && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">{t('common.date')}</label>
+                  <Input type="date" value={editLog.date} onChange={e => setEditLog((f: any) => ({ ...f, date: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">{t('supplements.quantity')}</label>
+                  <Input type="number" min="1" value={editLog.quantity ?? 1} onChange={e => setEditLog((f: any) => ({ ...f, quantity: Number(e.target.value) }))} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('supplements.time_of_day')}</label>
+                <Select value={editLog.timeOfDay ?? ''} onValueChange={v => setEditLog((f: any) => ({ ...f, timeOfDay: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{TIME_OF_DAY.map(t2 => <SelectItem key={t2} value={t2}>{t(`supplements.time_${t2}`)}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('common.notes')}</label>
+                <Input placeholder={t('common.optional_notes')} value={editLog.notes ?? ''} onChange={e => setEditLog((f: any) => ({ ...f, notes: e.target.value }))} />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditLog(null)}>{t('common.cancel')}</Button>
+            <Button onClick={() => {
+              if (!editLog) return;
+              updateLog.mutate({
+                id: editLog.id,
+                supplementId: editLog.supplementId,
+                date: editLog.date,
+                quantity: Number(editLog.quantity) || 1,
+                timeOfDay: editLog.timeOfDay,
+                notes: editLog.notes || undefined,
+                oldQuantity: editLog._originalQuantity ?? editLog.quantity,
+              });
+            }} disabled={updateLog.isPending}>
+              {updateLog.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {t('common.save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showLogDialog} onOpenChange={setShowLogDialog}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>{t('supplements.log_intake')}</DialogTitle></DialogHeader>

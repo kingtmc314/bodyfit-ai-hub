@@ -3331,6 +3331,50 @@ const supplementsRouter = router({
       });
       return row;
     }),
+  updateLog: ownerProcedure
+    .input(z.object({
+      id: z.number(),
+      supplementId: z.number(),
+      date: z.string().optional(),
+      quantity: z.number().optional(),
+      timeOfDay: z.string().optional(),
+      notes: z.string().optional(),
+      oldQuantity: z.number().optional(), // original quantity for stock adjustment
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { id, supplementId, date, quantity, timeOfDay, notes, oldQuantity } = input;
+      const updateData: Record<string, unknown> = {};
+      if (date !== undefined) updateData.date = date;
+      if (quantity !== undefined) updateData.quantity = quantity;
+      if (timeOfDay !== undefined) updateData.timeOfDay = timeOfDay;
+      if (notes !== undefined) updateData.notes = notes || null;
+      const [row] = await db.update(supplementLogs).set(updateData)
+        .where(and(eq(supplementLogs.id, id), eq(supplementLogs.userId, OWNER_USER_ID))).returning();
+      // Adjust stock if quantity changed
+      if (quantity !== undefined && oldQuantity !== undefined && quantity !== oldQuantity) {
+        const diff = oldQuantity - quantity; // positive = restore stock, negative = deduct more
+        const [suppCur] = await db.select({ stock: supplements.currentStock }).from(supplements).where(and(eq(supplements.id, supplementId), eq(supplements.userId, OWNER_USER_ID)));
+        const stockAfter = Math.max(0, (suppCur?.stock ?? 0) + diff);
+        if (diff > 0) {
+          await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${diff}, "updatedAt" = NOW() WHERE id = ${supplementId} AND "userId" = ${OWNER_USER_ID}`);
+        } else {
+          await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock - ${Math.abs(diff)}), "updatedAt" = NOW() WHERE id = ${supplementId} AND "userId" = ${OWNER_USER_ID}`);
+        }
+        await db.insert(supplementStockAdjustments).values({
+          supplementId,
+          userId: OWNER_USER_ID,
+          adjustDate: date ?? todayHK(),
+          adjustType: 'intake_edit',
+          delta: diff,
+          stockAfter,
+          reason: `修改進食數量 (${oldQuantity}→${quantity})`,
+        });
+      }
+      return row;
+    }),
+
   deleteLog: ownerProcedure
     .input(z.object({ id: z.number(), quantity: z.number().optional(), supplementId: z.number() }))
     .mutation(async ({ input }) => {
