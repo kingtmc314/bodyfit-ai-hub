@@ -374,8 +374,9 @@ export default function Medical() {
             <Button variant="outline" onClick={() => { setShowConditionDialog(false); setEditCondition(null); }}>{t('common.cancel')}</Button>
             <Button onClick={() => {
               if (!conditionForm.title.trim()) { toast.error(t('medical.title_required')); return; }
-              if (editCondition) updateCondition.mutate({ id: editCondition.id, ...conditionForm });
-              else addCondition.mutate(conditionForm);
+              const condPayload = { ...conditionForm, endDate: conditionForm.endDate || undefined };
+              if (editCondition) updateCondition.mutate({ id: editCondition.id, ...condPayload });
+              else addCondition.mutate(condPayload);
             }} disabled={addCondition.isPending || updateCondition.isPending}>
               {(addCondition.isPending || updateCondition.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {t('common.save')}
@@ -432,8 +433,9 @@ export default function Medical() {
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowVisitDialog(false); setEditVisit(null); }}>{t('common.cancel')}</Button>
             <Button onClick={() => {
-              if (editVisit) updateVisit.mutate({ id: editVisit.id, ...visitForm });
-              else addVisit.mutate({ conditionId: selectedCondition?.id, ...visitForm });
+              const visitPayload = { ...visitForm, followUpDate: visitForm.followUpDate || undefined };
+              if (editVisit) updateVisit.mutate({ id: editVisit.id, ...visitPayload });
+              else addVisit.mutate({ conditionId: selectedCondition?.id, ...visitPayload });
             }} disabled={addVisit.isPending || updateVisit.isPending}>
               {(addVisit.isPending || updateVisit.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {t('common.save')}

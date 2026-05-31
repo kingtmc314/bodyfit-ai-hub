@@ -308,10 +308,7 @@ const workoutRouter = router({
       // Running calories for the day
       const runningRows = await db.select({ calories: runningLogs.calories })
         .from(runningLogs)
-        .where(and(
-          eq(runningLogs.userId, OWNER_USER_ID),
-          sql`${runningLogs.date} = ${input.date}`,
-        ));
+        .where(sql`${runningLogs.date} = ${input.date}`);
       const runningBurned = runningRows.reduce((s, r) => s + (r.calories ?? 0), 0);
       // Steps calories for the day
       const stepsRows = await db.select({ calories: dailySteps.calories })
@@ -550,7 +547,13 @@ const workoutRouter = router({
       const caloriesBurned = Math.round(met * 70 * (durationMin / 60));
       await db.update(workoutSessions).set({ endTime, duration: durationMin, caloriesBurned, totalVolume })
         .where(eq(workoutSessions.id, input.id));
-      return { success: true, duration: durationMin, caloriesBurned };
+      // Count distinct exercises in this session
+      const exerciseCountResult = await db.execute(sql`
+        SELECT COUNT(DISTINCT "exerciseId") as cnt
+        FROM workout_sets WHERE "sessionId" = ${input.id}
+      `);
+      const exerciseCount = Number(((exerciseCountResult as any).rows?.[0] ?? (exerciseCountResult as any)[0])?.cnt ?? 0);
+      return { success: true, duration: durationMin, caloriesBurned, totalVolume, exerciseCount };
     }),
 
   // AI exercise analysis: analyze user's past sets and return personalized recommendations
@@ -1538,10 +1541,7 @@ const chartsRouter = router({
         date: runningLogs.date,
         calories: sql<number>`COALESCE(SUM(${runningLogs.calories}), 0)`.as('calories'),
       }).from(runningLogs)
-        .where(and(
-          eq(runningLogs.userId, OWNER_USER_ID),
-          sql`${runningLogs.date} >= ${sinceDateStr}`,
-        ))
+        .where(sql`${runningLogs.date} >= ${sinceDateStr}`)
         .groupBy(runningLogs.date);
       // Steps calories per day
       const stepsRows = await db.select({
@@ -2543,13 +2543,13 @@ ${shoesSummary || '無記錄'}
       if (fields.brand !== undefined) { sets.push(`brand = $${sets.length+1}`); vals.push(fields.brand); }
       if (fields.model !== undefined) { sets.push(`model = $${sets.length+1}`); vals.push(fields.model); }
       if (fields.status !== undefined) { sets.push(`status = $${sets.length+1}`); vals.push(fields.status); }
-      if (fields.purchaseDate !== undefined) { sets.push(`purchase_date = $${sets.length+1}`); vals.push(fields.purchaseDate); }
-      if (fields.retirementDate !== undefined) { sets.push(`retirement_date = $${sets.length+1}`); vals.push(fields.retirementDate); }
+      if (fields.purchaseDate !== undefined) { sets.push(`purchase_date = $${sets.length+1}`); vals.push(fields.purchaseDate || null); }
+      if (fields.retirementDate !== undefined) { sets.push(`retirement_date = $${sets.length+1}`); vals.push(fields.retirementDate || null); }
       if (fields.initialKm !== undefined) { sets.push(`initial_km = $${sets.length+1}`); vals.push(fields.initialKm); }
       if ((fields as any).maxKm !== undefined) { sets.push(`max_km = $${sets.length+1}`); vals.push((fields as any).maxKm); }
       if (fields.notes !== undefined) { sets.push(`notes = $${sets.length+1}`); vals.push(fields.notes); }
       if (fields.price !== undefined) { sets.push(`price = $${sets.length+1}`); vals.push(fields.price); }
-      if (fields.firstUseDate !== undefined) { sets.push(`firstusedate = $${sets.length+1}`); vals.push(fields.firstUseDate); }
+      if (fields.firstUseDate !== undefined) { sets.push(`firstusedate = $${sets.length+1}`); vals.push(fields.firstUseDate || null); }
       if ((fields as any).photoUrl !== undefined) { sets.push(`photo_url = $${sets.length+1}`); vals.push((fields as any).photoUrl); }
       if (sets.length === 0) return { success: true };
       vals.push(id);
@@ -3020,8 +3020,8 @@ const medicalRouter = router({
         title: input.title,
         category: input.category,
         status: input.status ?? 'active',
-        startDate: input.startDate,
-        endDate: input.endDate,
+        startDate: input.startDate || null,
+        endDate: input.endDate || null,
         notes: input.notes,
       }).returning();
       return row;
@@ -3039,8 +3039,15 @@ const medicalRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
-      const { id, ...rest } = input;
-      const [row] = await db.update(medicalConditions).set({ ...rest, updatedAt: new Date() })
+      const { id, title, category, status, startDate, endDate, notes: condNotes } = input;
+      const condUpdateData: Record<string, unknown> = { updatedAt: new Date() };
+      if (title !== undefined) condUpdateData.title = title;
+      if (category !== undefined) condUpdateData.category = category;
+      if (status !== undefined) condUpdateData.status = status;
+      if (startDate !== undefined) condUpdateData.startDate = startDate || null;
+      if (endDate !== undefined) condUpdateData.endDate = endDate || null;
+      if (condNotes !== undefined) condUpdateData.notes = condNotes;
+      const [row] = await db.update(medicalConditions).set(condUpdateData as any)
         .where(and(eq(medicalConditions.id, id), eq(medicalConditions.userId, OWNER_USER_ID))).returning();
       return row;
     }),
@@ -3085,7 +3092,7 @@ const medicalRouter = router({
         clinic: input.clinic,
         diagnosis: input.diagnosis,
         prescription: input.prescription,
-        followUpDate: input.followUpDate,
+        followUpDate: input.followUpDate || null,
         notes: input.notes,
       }).returning();
       return row;
@@ -3105,8 +3112,17 @@ const medicalRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
-      const { id, ...rest } = input;
-      const [row] = await db.update(medicalVisits).set(rest)
+      const { id, visitDate, visitType, doctorName, clinic, diagnosis, prescription, followUpDate, notes: visitNotes } = input;
+      const visitUpdateData: Record<string, unknown> = {};
+      if (visitDate !== undefined) visitUpdateData.visitDate = visitDate;
+      if (visitType !== undefined) visitUpdateData.visitType = visitType;
+      if (doctorName !== undefined) visitUpdateData.doctorName = doctorName;
+      if (clinic !== undefined) visitUpdateData.clinic = clinic;
+      if (diagnosis !== undefined) visitUpdateData.diagnosis = diagnosis;
+      if (prescription !== undefined) visitUpdateData.prescription = prescription;
+      if (followUpDate !== undefined) visitUpdateData.followUpDate = followUpDate || null;
+      if (visitNotes !== undefined) visitUpdateData.notes = visitNotes;
+      const [row] = await db.update(medicalVisits).set(visitUpdateData as any)
         .where(and(eq(medicalVisits.id, id), eq(medicalVisits.userId, OWNER_USER_ID))).returning();
       return row;
     }),

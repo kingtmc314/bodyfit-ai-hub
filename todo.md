@@ -138,3 +138,11 @@
 
 ## v3.3.2 Bug Fix (2026-06-01)
 - [x] Fix supplements add/update: empty string "" passed to PostgreSQL date columns (purchaseDate, expiryDate) causes "Failed query" — convert empty strings to null in backend and to undefined in frontend payload
+
+## v3.4.0 Changes (2026-06-01)
+- [x] Update version to v3.4.0
+- [x] Fix Medical: endDate/followUpDate empty string → null/undefined in backend and frontend
+- [x] Fix Running shoes: purchaseDate/retirementDate/firstUseDate already handled correctly in frontend (|| undefined)
+- [x] Steps calorie backfill: confirmed working (dev server was temporarily down, all 4 records now have calories)
+- [x] Fix TypeScript errors: runningLogs.userId does not exist → removed userId filter (single-user app)
+- [x] Fix Workout finishSession: add totalVolume and exerciseCount to return value
