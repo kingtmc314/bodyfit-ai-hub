@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot, Trophy, Star, MapPin, Calendar, Clock, Award, Flag, Zap, Package, Camera, ImageIcon, ArrowUpDown, Thermometer, Wind, Droplets } from "lucide-react";
+import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot, Trophy, Star, MapPin, Calendar, Clock, Award, Flag, Zap, Package, Camera, ImageIcon, ArrowUpDown, Thermometer, Wind, Droplets, Download } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart, Area
@@ -646,7 +646,15 @@ export default function Running() {
                 <SelectItem value="hr_asc">{t('running.sort_hr')}</SelectItem>
               </SelectContent>
             </Select>
-            <span className="text-xs text-muted-foreground ml-auto">{sortedFilteredLogs.length} {t('common.records')}</span>
+            <span className="text-xs text-muted-foreground">{sortedFilteredLogs.length} {t('common.records')}</span>
+            <div className="ml-auto flex items-center gap-1">
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => window.open('/api/export/running/csv', '_blank')}>
+                <Download className="w-3 h-3" /> CSV
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => window.open('/api/export/running/pdf', '_blank')}>
+                <Download className="w-3 h-3" /> PDF
+              </Button>
+            </div>
           </div>
           <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
             {isLoading ? (

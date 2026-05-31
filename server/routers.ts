@@ -2610,6 +2610,8 @@ const supplementsRouter = router({
       purchaseDate: z.string().optional(),
       expiryDate: z.string().optional(),
       notes: z.string().optional(),
+      reminderEnabled: z.boolean().optional(),
+      reminderTime: z.string().max(5).optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -2633,6 +2635,8 @@ const supplementsRouter = router({
       expiryDate: z.string().optional(),
       notes: z.string().optional(),
       isActive: z.boolean().optional(),
+      reminderEnabled: z.boolean().optional(),
+      reminderTime: z.string().max(5).optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();

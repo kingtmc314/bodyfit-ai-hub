@@ -9,6 +9,9 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { dailyReminderHandler } from "../reminderHandler";
+import { exportRunningLogsHandler, exportBodyCompositionHandler, exportSupplementLogsHandler } from "../exportHandler";
+import { supplementReminderHandler } from "../supplementReminderHandler";
+import { weeklyHealthSummaryHandler } from "../weeklyHealthSummaryHandler";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -38,7 +41,7 @@ async function startServer() {
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   // Health check for Render/uptime monitoring
-  app.get("/api/health", (_req, res) => res.json({ ok: true, version: "1.0.0" }));
+  app.get("/api/health", (_req, res) => res.json({ ok: true, version: "1.9.0" }));
 
   // Proxy for wger.de exercise images (no CORS headers on wger media)
   app.get("/api/wger-img", async (req, res) => {
@@ -58,8 +61,16 @@ async function startServer() {
       res.status(500).end();
     }
   });
+
+  // Data export endpoints (CSV / HTML-PDF)
+  app.get("/api/export/running/:format", exportRunningLogsHandler);
+  app.get("/api/export/body/:format", exportBodyCompositionHandler);
+  app.get("/api/export/supplements/:format", exportSupplementLogsHandler);
+
   // Scheduled cron handlers — must be before Vite/static fallthrough
   app.post("/api/scheduled/daily-reminder", dailyReminderHandler);
+  app.post("/api/scheduled/supplement-reminder", supplementReminderHandler);
+  app.post("/api/scheduled/weekly-health-summary", weeklyHealthSummaryHandler);
 
   // tRPC API
   app.use(

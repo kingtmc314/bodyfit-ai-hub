@@ -501,3 +501,35 @@
 - [x] Add exercise machine/movement illustrations to Workout page
 - [x] Full zh/en i18n for all new pages
 - [x] Bump version to v1.6.0
+
+## Phase 50: Data Export (CSV/PDF)
+
+- [x] Add tRPC exportRouter with exportRunningLogs, exportBodyComposition, exportSupplementLogs procedures
+- [x] Server-side CSV generation for running logs (all fields: date, distance, duration, pace, HR, cadence, shoes, notes)
+- [x] Server-side CSV generation for body composition (date, weight, BMI, body fat %, fat mass, muscle mass, BMR, visceral fat)
+- [x] Server-side CSV generation for supplement logs (date, supplement name, dose, unit, notes)
+- [x] Server-side PDF generation for all three data types using html-to-pdf approach
+- [x] Add Export button (CSV + PDF options) to Running Log tab in Running.tsx
+- [x] Add Export button (CSV + PDF options) to BodyComposition.tsx
+- [x] Add Export button (CSV + PDF options) to Supplements.tsx
+- [x] Full zh/en i18n for export UI
+
+## Phase 51: Supplement Reminder Notifications
+
+- [x] Add reminder_enabled, reminder_time (HH:MM) fields to supplements table via migration
+- [x] Add tRPC procedures: updateSupplementReminder (toggle + set time)
+- [x] Add reminder toggle + time picker UI to Supplements.tsx per supplement
+- [x] Add /api/scheduled/supplement-reminder Express handler (checks due supplements, sends notifyOwner)
+- [x] Mount handler in server/_core/index.ts before Vite fallthrough
+- [x] Create daily heartbeat cron job via manus-heartbeat CLI (runs at 08:00 HKT = 00:00 UTC)
+- [x] Full zh/en i18n for reminder UI
+
+## Phase 52: Weekly AI Health Summary
+
+- [x] Add /api/scheduled/weekly-health-summary Express handler
+- [x] Handler aggregates past 7 days: running stats, body metrics, sleep averages, nutrition totals, workout sessions
+- [x] Handler calls invokeLLM to generate comprehensive bilingual health summary
+- [x] Handler sends summary via notifyOwner with formatted title + content
+- [x] Mount handler in server/_core/index.ts
+- [x] Create weekly heartbeat cron job via manus-heartbeat CLI (runs Monday 09:00 HKT = Monday 01:00 UTC)
+- [x] Bump version to v1.9.0

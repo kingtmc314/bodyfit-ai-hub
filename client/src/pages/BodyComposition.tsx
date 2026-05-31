@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Scale, Trash2, Edit2, Loader2, TrendingUp, TrendingDown, Minus, Upload, ArrowUpDown } from "lucide-react";
+import { Plus, Scale, Trash2, Edit2, Loader2, TrendingUp, TrendingDown, Minus, Upload, ArrowUpDown, Download } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import QuickImportModal from "@/components/QuickImportModal";
 import {
@@ -283,7 +283,15 @@ export default function BodyComposition() {
                       <SelectItem value="bf_asc">{t('body.sort_bf_asc')}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <span className="text-xs text-muted-foreground ml-auto">{sortedBodyRecords.length} {t('common.records')}</span>
+                  <span className="text-xs text-muted-foreground">{sortedBodyRecords.length} {t('common.records')}</span>
+                  <div className="ml-auto flex items-center gap-1">
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => window.open('/api/export/body/csv', '_blank')}>
+                      <Download className="w-3 h-3" /> CSV
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => window.open('/api/export/body/pdf', '_blank')}>
+                      <Download className="w-3 h-3" /> PDF
+                    </Button>
+                  </div>
                 </div>
                 <div className="bg-card border border-border rounded-2xl overflow-hidden">
                   <div className="overflow-x-auto">

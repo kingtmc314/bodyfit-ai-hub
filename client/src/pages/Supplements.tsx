@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Pill, Trash2, Edit2, Loader2, ArrowUpDown, AlertTriangle, Package, RefreshCw } from "lucide-react";
+import { Plus, Pill, Trash2, Edit2, Loader2, ArrowUpDown, AlertTriangle, Package, RefreshCw, Download } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 const CATEGORIES = ['protein', 'vitamin', 'mineral', 'omega3', 'pre_workout', 'post_workout', 'probiotic', 'collagen', 'creatine', 'bcaa', 'electrolyte', 'other'] as const;
@@ -30,7 +30,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   other: 'bg-muted text-muted-foreground',
 };
 
-const defaultSupplementForm = { name: '', brand: '', category: 'vitamin', servingSize: '', currentStock: '', lowStockThreshold: '30', purchaseDate: '', expiryDate: '', notes: '', isActive: true };
+const defaultSupplementForm = { name: '', brand: '', category: 'vitamin', servingSize: '', currentStock: '', lowStockThreshold: '30', purchaseDate: '', expiryDate: '', notes: '', isActive: true, reminderEnabled: false, reminderTime: '08:00' };
 const defaultLogForm = { supplementId: '', date: todayHKString(), quantity: '1', timeOfDay: 'morning', notes: '' };
 const defaultRestockForm = { supplementId: '', quantity: '' };
 
@@ -234,7 +234,7 @@ export default function Supplements() {
                       <div className="flex gap-1 shrink-0">
                         <Button variant="ghost" size="icon" className="w-6 h-6" onClick={() => {
                           setEditSupplement(s);
-                          setSupplementForm({ name: s.name, brand: s.brand || '', category: s.category || 'vitamin', servingSize: s.servingSize || '', currentStock: s.currentStock ?? '', lowStockThreshold: s.lowStockThreshold ?? 30, purchaseDate: s.purchaseDate || '', expiryDate: s.expiryDate || '', notes: s.notes || '', isActive: s.isActive ?? true });
+                          setSupplementForm({ name: s.name, brand: s.brand || '', category: s.category || 'vitamin', servingSize: s.servingSize || '', currentStock: s.currentStock ?? '', lowStockThreshold: s.lowStockThreshold ?? 30, purchaseDate: s.purchaseDate || '', expiryDate: s.expiryDate || '', notes: s.notes || '', isActive: s.isActive ?? true, reminderEnabled: s.reminderEnabled ?? false, reminderTime: s.reminderTime || '08:00' });
                           setShowSupplementDialog(true);
                         }}><Edit2 className="w-3 h-3" /></Button>
                         <Button variant="ghost" size="icon" className="w-6 h-6 text-destructive" onClick={() => deleteSupplement.mutate({ id: s.id })}><Trash2 className="w-3 h-3" /></Button>
@@ -290,7 +290,15 @@ export default function Supplements() {
                 <SelectItem value="qty_desc">{t('supplements.sort_qty_desc')}</SelectItem>
               </SelectContent>
             </Select>
-            <span className="text-xs text-muted-foreground ml-auto">{displayLogs.length} {t('common.records')}</span>
+            <span className="text-xs text-muted-foreground">{displayLogs.length} {t('common.records')}</span>
+            <div className="ml-auto flex items-center gap-1">
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => window.open('/api/export/supplements/csv', '_blank')}>
+                <Download className="w-3 h-3" /> CSV
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => window.open('/api/export/supplements/pdf', '_blank')}>
+                <Download className="w-3 h-3" /> PDF
+              </Button>
+            </div>
           </div>
           <div className="bg-card border border-border rounded-2xl overflow-hidden">
             <div className="overflow-x-auto">
@@ -384,6 +392,32 @@ export default function Supplements() {
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">{t('common.notes')}</label>
               <Textarea placeholder={t('common.optional_notes')} value={supplementForm.notes} onChange={e => setSupplementForm((f: any) => ({ ...f, notes: e.target.value }))} rows={2} />
+            </div>
+            {/* Reminder settings */}
+            <div className="border border-border rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Daily Reminder</p>
+                  <p className="text-xs text-muted-foreground">Get notified when you haven't taken this supplement today</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSupplementForm((f: any) => ({ ...f, reminderEnabled: !f.reminderEnabled }))}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    supplementForm.reminderEnabled ? 'bg-primary' : 'bg-muted'
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    supplementForm.reminderEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                  }`} />
+                </button>
+              </div>
+              {supplementForm.reminderEnabled && (
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Reminder Time (HKT)</label>
+                  <Input type="time" value={supplementForm.reminderTime} onChange={e => setSupplementForm((f: any) => ({ ...f, reminderTime: e.target.value }))} className="h-8 text-xs w-32" />
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
