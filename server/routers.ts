@@ -1271,7 +1271,7 @@ const imageImportRouter = router({
     .input(z.object({
       base64: z.string(),
       mimeType: z.string().default("image/jpeg"),
-      dataType: z.enum(["body", "sleep", "heartrate", "nutrition", "auto"]).default("auto"),
+      dataType: z.enum(["body", "sleep", "heartrate", "nutrition", "running", "steps", "auto"]).default("auto"),
     }))
     .mutation(async ({ input }) => {
       // Upload image to storage
@@ -1285,17 +1285,22 @@ const imageImportRouter = router({
 
       const systemPrompt = `You are a health data extraction AI. Analyze the health-related screenshot or photo and extract all numeric health metrics visible. Respond only with valid JSON matching the schema exactly. Use null for any field not visible in the image.`;
 
-      const userPrompt = `Extract all health metrics from this image. The image may be a Garmin Connect screenshot, Apple Health screenshot, body scale display, sleep tracker, or any health app. Return a JSON object with these fields:
+      const userPrompt = `Extract all health and fitness metrics from this image. The image may be a Garmin Connect screenshot, Apple Health screenshot, body scale display, sleep tracker, running activity summary, steps/activity app, or any health/fitness app. Return a JSON object with these fields:
 {
-  "detectedType": "body" | "sleep" | "heartrate" | "nutrition" | "unknown",
+  "detectedType": "body" | "sleep" | "heartrate" | "nutrition" | "running" | "steps" | "unknown",
   "date": "YYYY-MM-DD or null",
   "body": { "weight": number|null, "bmi": number|null, "bodyFatPct": number|null, "muscleMass": number|null, "visceralFat": number|null },
   "sleep": { "sleepScore": number|null, "sleepDuration": number|null, "deepSleep": number|null, "remSleep": number|null, "bodyBattery": number|null, "pulseOx": number|null, "hrv": number|null },
   "heartrate": { "restingHr": number|null, "highHr": number|null, "avgHr": number|null, "hrv": number|null },
   "nutrition": { "calories": number|null, "protein": number|null, "carbs": number|null, "fat": number|null, "fiber": number|null },
+  "running": { "distanceKm": number|null, "durationHour": number|null, "durationMin": number|null, "durationSec": number|null, "avgPace": string|null, "bestPace": string|null, "avgHr": number|null, "maxHr": number|null, "avgCadence": number|null, "maxCadence": number|null, "calories": number|null, "avgStrideLengthM": number|null, "avgVerticalRatio": number|null, "verticalOscillationCm": number|null, "runningType": string|null },
+  "steps": { "steps": number|null, "floorsClimbed": number|null, "distanceKm": number|null, "activeMinutes": number|null, "calories": number|null },
   "confidence": "high" | "medium" | "low",
   "notes": "brief description of what was detected"
-}`;
+}
+
+For running data: avgPace and bestPace should be in MM:SS format (e.g. "6:30"). durationHour/durationMin/durationSec are separate integer fields. runningType can be Easy/Tempo/Long Run/Race/Trail/Interval/Recovery.
+For steps data: extract daily step count, floors climbed, distance, active minutes, and calories burned.`;
 
       const response = await invokeLLM({
         messages: [
@@ -1367,10 +1372,44 @@ const imageImportRouter = router({
                   required: ["calories", "protein", "carbs", "fat", "fiber"],
                   additionalProperties: false,
                 },
+                running: {
+                  type: "object",
+                  properties: {
+                    distanceKm: { type: ["number", "null"] },
+                    durationHour: { type: ["number", "null"] },
+                    durationMin: { type: ["number", "null"] },
+                    durationSec: { type: ["number", "null"] },
+                    avgPace: { type: ["string", "null"] },
+                    bestPace: { type: ["string", "null"] },
+                    avgHr: { type: ["number", "null"] },
+                    maxHr: { type: ["number", "null"] },
+                    avgCadence: { type: ["number", "null"] },
+                    maxCadence: { type: ["number", "null"] },
+                    calories: { type: ["number", "null"] },
+                    avgStrideLengthM: { type: ["number", "null"] },
+                    avgVerticalRatio: { type: ["number", "null"] },
+                    verticalOscillationCm: { type: ["number", "null"] },
+                    runningType: { type: ["string", "null"] },
+                  },
+                  required: ["distanceKm", "durationHour", "durationMin", "durationSec", "avgPace", "bestPace", "avgHr", "maxHr", "avgCadence", "maxCadence", "calories", "avgStrideLengthM", "avgVerticalRatio", "verticalOscillationCm", "runningType"],
+                  additionalProperties: false,
+                },
+                steps: {
+                  type: "object",
+                  properties: {
+                    steps: { type: ["number", "null"] },
+                    floorsClimbed: { type: ["number", "null"] },
+                    distanceKm: { type: ["number", "null"] },
+                    activeMinutes: { type: ["number", "null"] },
+                    calories: { type: ["number", "null"] },
+                  },
+                  required: ["steps", "floorsClimbed", "distanceKm", "activeMinutes", "calories"],
+                  additionalProperties: false,
+                },
                 confidence: { type: "string" },
                 notes: { type: "string" },
               },
-              required: ["detectedType", "date", "body", "sleep", "heartrate", "nutrition", "confidence", "notes"],
+              required: ["detectedType", "date", "body", "sleep", "heartrate", "nutrition", "running", "steps", "confidence", "notes"],
               additionalProperties: false,
             },
           },

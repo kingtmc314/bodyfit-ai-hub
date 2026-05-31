@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Footprints, Trash2, Edit2, Loader2, ArrowUpDown, TrendingUp, Building2 } from "lucide-react";
 import LogPhotoUploader, { LogPhotoUploaderRef } from "@/components/LogPhotoUploader";
+import ScreenshotImporter from "@/components/ScreenshotImporter";
 import { useTranslation } from "react-i18next";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -280,6 +281,12 @@ export default function Steps() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{editEntry ? t('steps.edit') : t('steps.add')}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <ScreenshotImporter
+                dataType="steps"
+                onExtracted={(fields) => setForm((p: any) => ({ ...p, ...fields }))}
+              />
+            </div>
             <div className="col-span-2">
               <label className="text-xs text-muted-foreground mb-1 block">{t('common.date')}</label>
               <Input type="date" value={form.date} onChange={e => setForm((f: any) => ({ ...f, date: e.target.value }))} />

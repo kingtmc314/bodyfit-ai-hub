@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Scale, Trash2, Edit2, Loader2, TrendingUp, TrendingDown, Minus, Upload, ArrowUpDown, Download } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import QuickImportModal from "@/components/QuickImportModal";
+import ScreenshotImporter from "@/components/ScreenshotImporter";
 import {
   AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, ComposedChart, Bar, BarChart
@@ -343,6 +344,12 @@ export default function BodyComposition() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{editEntry ? "Edit Body Metrics" : "Log Body Metrics"}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <ScreenshotImporter
+                dataType="body"
+                onExtracted={(fields) => setForm((p: any) => ({ ...p, ...fields }))}
+              />
+            </div>
             <div className="col-span-2">
               <label className="text-xs text-muted-foreground mb-1 block">Date</label>
               <Input type="date" value={form.date} onChange={e => setForm((f: any) => ({ ...f, date: e.target.value }))} />

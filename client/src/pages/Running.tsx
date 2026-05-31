@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot, Trophy, Star, MapPin, Calendar, Clock, Award, Flag, Zap, Package, Camera, ImageIcon, ArrowUpDown, Thermometer, Wind, Droplets, Download } from "lucide-react";
 import LogPhotoUploader, { LogPhotoUploaderRef } from "@/components/LogPhotoUploader";
+import ScreenshotImporter from "@/components/ScreenshotImporter";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart, Area
@@ -1446,6 +1447,12 @@ export default function Running() {
             <DialogTitle>{editEntry ? t("running.edit_record") : t("running.add_record")}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-2">
+            <div className="col-span-2">
+              <ScreenshotImporter
+                dataType="running"
+                onExtracted={(fields) => setForm((p: any) => ({ ...p, ...fields }))}
+              />
+            </div>
             <div className="col-span-2">
               <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.date")}</label>
               <Input type="date" value={form.date} onChange={(e) => f("date", e.target.value)} />

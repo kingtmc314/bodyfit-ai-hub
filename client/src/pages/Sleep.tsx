@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Moon, Trash2, Edit2, Loader2, Upload, ArrowUpDown } from "lucide-react";
 import QuickImportModal from "@/components/QuickImportModal";
+import ScreenshotImporter from "@/components/ScreenshotImporter";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, LineChart, Line,
@@ -466,6 +467,12 @@ export default function Sleep() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{editEntry ? "Edit Sleep Record" : "Log Sleep"}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <ScreenshotImporter
+                dataType="sleep"
+                onExtracted={(fields) => setForm((p: any) => ({ ...p, ...fields }))}
+              />
+            </div>
             <div className="col-span-2">
               <label className="text-xs text-muted-foreground mb-1 block">Date</label>
               <Input type="date" value={form.date} onChange={e => setForm((f: any) => ({ ...f, date: e.target.value }))} />

@@ -584,3 +584,16 @@
 - [x] Verify TypeScript 0 errors after all changes
 - [x] All 35 tests passing
 - [x] Bump version to v2.3.0
+## Phase 60: AI Screenshot-to-Data (截圖填入數據)
+- [x] Create ScreenshotImporter component: upload/camera button, AI extraction, fills form fields
+- [x] Add imageImport.extractRunning procedure: extracts running log fields from screenshot
+- [x] Add imageImport.extractSteps procedure: extracts steps/floors/distance/calories from screenshot
+- [x] Extend imageImport.extract to support running and steps data types
+- [x] Integrate ScreenshotImporter into Running.tsx dialog (replaces LogPhotoUploader for new records)
+- [x] Integrate ScreenshotImporter into Steps.tsx dialog
+- [x] Integrate ScreenshotImporter into BodyComposition.tsx dialog
+- [x] Integrate ScreenshotImporter into Sleep.tsx dialog
+- [x] Integrate ScreenshotImporter into HeartRate.tsx dialog
+- [x] Show extracted fields preview with confidence badge before applying to form
+- [x] Full zh/en i18n for new UI
+- [x] Bump version to v2.4.0
