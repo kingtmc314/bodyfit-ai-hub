@@ -82,7 +82,8 @@ const defaultForm = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function Running() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const isZh = i18n.language === 'zh';
   const [showDialog, setShowDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
@@ -110,6 +111,32 @@ export default function Running() {
   const [raceForm, setRaceForm] = useState<any>({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', finishHr: '', finishMin: '', finishSec: '', targetHr: '', targetMin: '', targetSec: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' });
   const [deleteRaceConfirm, setDeleteRaceConfirm] = useState<number | null>(null);
 
+  // Hoisted so both PB cards and race list can call it
+  const openEditRace = (race: any) => {
+    setEditRace(race);
+    setRaceForm({
+      raceName: race.race_name || '',
+      date: race.date || todayHKString(),
+      distanceKm: race.distance_km != null ? String(race.distance_km) : '',
+      location: race.location || '',
+      registration: race.registration || '',
+      bibNo: race.bib_no || '',
+      isPb: race.is_pb || false,
+      finishTime: race.finish_time || '',
+      finishHr: race.finish_hr != null ? String(race.finish_hr) : '',
+      finishMin: race.finish_min != null ? String(race.finish_min) : '',
+      finishSec: race.finish_sec != null ? String(race.finish_sec) : '',
+      targetHr: race.target_hr != null ? String(race.target_hr) : '',
+      targetMin: race.target_min != null ? String(race.target_min) : '',
+      targetSec: race.target_sec != null ? String(race.target_sec) : '',
+      overallPlace: race.overall_place != null ? String(race.overall_place) : '',
+      ageGroupPlace: race.age_group_place != null ? String(race.age_group_place) : '',
+      genderGroupPlace: race.gender_group_place != null ? String(race.gender_group_place) : '',
+      runningShoes: race.running_shoes || '',
+      notes: race.notes || '',
+    });
+    setShowRaceDialog(true);
+  };
 
   const utils = trpc.useUtils();
   const { data: logs = [], isLoading } = trpc.running.getLogs.useQuery({ limit: 200 });
@@ -905,11 +932,26 @@ export default function Running() {
                   const fh = pb.finish_hr ?? 0; const fm = pb.finish_min ?? 0; const fs = pb.finish_sec ?? 0;
                   const pbTime = hasHms
                     ? (fh > 0 ? `${fh}:${String(fm).padStart(2,'0')}:${String(fs).padStart(2,'0')}` : `${fm}:${String(fs).padStart(2,'0')}`)
-                    : (pb.finish_time && pb.finish_time !== 'True' && pb.finish_time !== 'False' ? pb.finish_time : '—');
+                    : null;
+                  // Find the matching race to allow quick edit
+                  const matchRace = (races as any[]).find((r: any) => r.id === pb.id);
                   return (
-                    <div key={i} className="bg-white/50 dark:bg-white/5 border border-yellow-500/20 rounded-xl p-3 text-center">
+                    <div
+                      key={i}
+                      className={`bg-white/50 dark:bg-white/5 border rounded-xl p-3 text-center transition-all ${!hasHms ? 'border-dashed border-yellow-400/50 cursor-pointer hover:border-yellow-500 hover:bg-yellow-50/30 dark:hover:bg-yellow-900/10' : 'border-yellow-500/20'}`}
+                      onClick={() => { if (!hasHms && matchRace) { openEditRace(matchRace); setShowRaceDialog(true); } }}
+                      title={!hasHms ? (isZh ? '點擊填入完賽時間' : 'Click to enter finish time') : undefined}
+                    >
                       <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{parseFloat(pb.distance_km).toFixed(1)} km</p>
-                      <p className="text-xl font-extrabold text-yellow-600 dark:text-yellow-400 mt-0.5">{pbTime}</p>
+                      {pbTime ? (
+                        <p className="text-xl font-extrabold text-yellow-600 dark:text-yellow-400 mt-0.5">{pbTime}</p>
+                      ) : (
+                        <div className="mt-1">
+                          <p className="text-xs text-yellow-500/70 font-medium flex items-center justify-center gap-1">
+                            <Clock className="w-3 h-3" />{isZh ? '點擊填入時間' : 'Click to add time'}
+                          </p>
+                        </div>
+                      )}
                       <p className="text-[10px] text-muted-foreground truncate mt-0.5">{pb.race_name}</p>
                     </div>
                   );
@@ -927,32 +969,6 @@ export default function Running() {
           ) : (() => {
             const upcomingRaces = sortedRacesList.filter((r: any) => new Date(r.date + 'T00:00:00+08:00') > now);
             const completedRaces = sortedRacesList.filter((r: any) => new Date(r.date + 'T00:00:00+08:00') <= now);
-
-            const openEditRace = (race: any) => {
-              setEditRace(race);
-              setRaceForm({
-                raceName: race.race_name || '',
-                date: race.date || todayHKString(),
-                distanceKm: race.distance_km != null ? String(race.distance_km) : '',
-                location: race.location || '',
-                registration: race.registration || '',
-                bibNo: race.bib_no || '',
-                isPb: race.is_pb || false,
-                finishTime: race.finish_time || '',
-                finishHr: race.finish_hr != null ? String(race.finish_hr) : '',
-                finishMin: race.finish_min != null ? String(race.finish_min) : '',
-                finishSec: race.finish_sec != null ? String(race.finish_sec) : '',
-                targetHr: race.target_hr != null ? String(race.target_hr) : '',
-                targetMin: race.target_min != null ? String(race.target_min) : '',
-                targetSec: race.target_sec != null ? String(race.target_sec) : '',
-                overallPlace: race.overall_place != null ? String(race.overall_place) : '',
-                ageGroupPlace: race.age_group_place != null ? String(race.age_group_place) : '',
-                genderGroupPlace: race.gender_group_place != null ? String(race.gender_group_place) : '',
-                runningShoes: race.running_shoes || '',
-                notes: race.notes || '',
-              });
-              setShowRaceDialog(true);
-            };
 
             return (
               <div className="space-y-6">
