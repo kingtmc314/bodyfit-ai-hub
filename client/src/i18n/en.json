@@ -52,7 +52,18 @@
     "quick_log": "Quick Log",
     "log_meal": "Log Meal",
     "log_workout": "Log Workout",
-    "log_weight": "Log Weight"
+    "log_weight": "Log Weight",
+    "net_calories": "Net Calories",
+    "calories_burned": "Burned",
+    "calories_intake": "Intake",
+    "calories_remaining": "Remaining",
+    "exercise_summary": "Today's Exercise",
+    "workout_burned": "Workout",
+    "running_burned": "Running",
+    "steps_burned": "Steps/Stairs",
+    "total_burned": "Total Burned",
+    "quick_add": "Quick Add",
+    "log_sleep": "Log Sleep"
   },
   "nutrition": {
     "title": "Nutrition",

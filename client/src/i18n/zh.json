@@ -61,7 +61,18 @@
     "running_stats": "跑步統計",
     "total_distance": "總距離",
     "avg_pace": "平均配速",
-    "view_details": "查看詳情"
+    "view_details": "查看詳情",
+    "net_calories": "淨卡路里",
+    "calories_burned": "已消耗",
+    "calories_intake": "攝取",
+    "calories_remaining": "剩餘",
+    "exercise_summary": "今日運動消耗",
+    "workout_burned": "健身",
+    "running_burned": "跑步",
+    "steps_burned": "步行/樓梯",
+    "total_burned": "總消耗",
+    "quick_add": "快速新增",
+    "log_sleep": "記錄睡眠"
   },
   "nutrition": {
     "title": "飲食追蹤",

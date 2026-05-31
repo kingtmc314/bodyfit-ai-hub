@@ -1,20 +1,18 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
   Utensils, Dumbbell, Scale, Heart, Moon, Flame,
   TrendingUp, TrendingDown, Minus, Activity, Target,
-  ChevronRight, Sparkles, Sun, Zap, Droplets, Wind
+  ChevronRight, Sparkles, Sun, Zap, Plus, X, Footprints
 } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer
 } from "recharts";
-import { format, subDays } from "date-fns";
+import { format } from "date-fns";
 import { toHKDateString, formatHKChartDate } from "@/lib/hkTime";
 import { useTranslation } from "react-i18next";
 import { Streamdown } from "streamdown";
@@ -24,17 +22,13 @@ const PROTEIN_GOAL = 150;
 const CARBS_GOAL = 250;
 const FAT_GOAL = 65;
 
-// ─── Goal Progress Ring ───────────────────────────────────────────────────────
-function GoalRing({
-  label, current, target, unit, color, inverse = false, size = 72
-}: {
+function GoalRing({ label, current, target, unit, color, inverse = false, size = 72 }: {
   label: string; current: number | null | undefined; target: number;
   unit: string; color: string; inverse?: boolean; size?: number;
 }) {
   const r = (size / 2) * 0.72;
   const circ = 2 * Math.PI * r;
   const rawPct = current != null ? Math.min((current / target) * 100, 100) : 0;
-  // For inverse goals (lower is better), flip the visual fill
   const fillPct = inverse ? Math.min((target / (current || target)) * 100, 100) : rawPct;
   const isHit = current != null && (inverse ? current <= target : current >= target);
   const offset = circ * (1 - fillPct / 100);
@@ -43,21 +37,12 @@ function GoalRing({
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90" viewBox={`0 0 ${size} ${size}`}>
           <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="currentColor" strokeWidth={5} className="text-muted/40" />
-          <circle
-            cx={size/2} cy={size/2} r={r} fill="none"
-            stroke={isHit ? "#22c55e" : color}
-            strokeWidth={5}
-            strokeDasharray={circ}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            style={{ transition: "stroke-dashoffset 900ms cubic-bezier(0.23,1,0.32,1)" }}
-          />
+          <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={isHit ? "#22c55e" : color} strokeWidth={5}
+            strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+            style={{ transition: "stroke-dashoffset 900ms cubic-bezier(0.23,1,0.32,1)" }} />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          {isHit
-            ? <span className="text-lg">🎯</span>
-            : <span className="text-xs font-extrabold text-foreground">{Math.round(fillPct)}%</span>
-          }
+          {isHit ? <span className="text-lg">🎯</span> : <span className="text-xs font-extrabold text-foreground">{Math.round(fillPct)}%</span>}
         </div>
       </div>
       <p className="text-[10px] text-muted-foreground font-medium text-center leading-tight max-w-[72px]">{label}</p>
@@ -77,9 +62,7 @@ function StatCard({ title, value, unit, subtitle, icon: Icon, badgeClass, trend,
     <Link href={href || "#"}>
       <div className="stat-card rounded-2xl p-4 cursor-pointer group">
         <div className="flex items-start justify-between mb-3">
-          <div className={`icon-badge ${badgeClass}`}>
-            <Icon className="w-4.5 h-4.5" />
-          </div>
+          <div className={`icon-badge ${badgeClass}`}><Icon className="w-4.5 h-4.5" /></div>
           <ChevronRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-primary transition-colors" />
         </div>
         <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wide mb-1">{title}</p>
@@ -89,8 +72,7 @@ function StatCard({ title, value, unit, subtitle, icon: Icon, badgeClass, trend,
         </div>
         {subtitle && (
           <div className={`flex items-center gap-1 mt-1.5 text-xs font-medium ${trendColor}`}>
-            <TrendIcon className="w-3 h-3" />
-            <span>{subtitle}</span>
+            <TrendIcon className="w-3 h-3" /><span>{subtitle}</span>
           </div>
         )}
       </div>
@@ -109,12 +91,9 @@ function MacroRing({ label, value, goal, color }: any) {
             strokeDasharray={`${2 * Math.PI * 22}`}
             strokeDashoffset={`${2 * Math.PI * 22 * (1 - pct / 100)}`}
             strokeLinecap="round"
-            style={{ transition: "stroke-dashoffset 800ms cubic-bezier(0.23,1,0.32,1)" }}
-          />
+            style={{ transition: "stroke-dashoffset 800ms cubic-bezier(0.23,1,0.32,1)" }} />
         </svg>
-        <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-foreground">
-          {Math.round(pct)}%
-        </span>
+        <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-foreground">{Math.round(pct)}%</span>
       </div>
       <p className="text-xs text-muted-foreground font-medium">{label}</p>
       <p className="text-xs font-bold text-foreground">{Math.round(value)}g</p>
@@ -136,9 +115,42 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
+function FloatingFAB() {
+  const [open, setOpen] = useState(false);
+  const [, navigate] = useLocation();
+  const { t } = useTranslation();
+  const actions = [
+    { labelKey: "dashboard.log_meal",    icon: Utensils, href: "/nutrition", color: "bg-amber-500 hover:bg-amber-600" },
+    { labelKey: "dashboard.log_workout", icon: Dumbbell, href: "/workout",   color: "bg-blue-500 hover:bg-blue-600" },
+    { labelKey: "dashboard.log_weight",  icon: Scale,    href: "/body",      color: "bg-emerald-500 hover:bg-emerald-600" },
+    { labelKey: "dashboard.log_sleep",   icon: Moon,     href: "/sleep",     color: "bg-purple-500 hover:bg-purple-600" },
+  ];
+  return (
+    <div className="fixed bottom-6 right-6 z-40 flex flex-col-reverse items-end gap-3">
+      {open && actions.map((a, i) => (
+        <div key={a.href} className="flex items-center gap-3"
+          style={{ animation: `fabItemIn 200ms cubic-bezier(0.23,1,0.32,1) ${i * 50}ms both` }}>
+          <span className="bg-white text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-md border border-border whitespace-nowrap">
+            {t(a.labelKey)}
+          </span>
+          <button onClick={() => { setOpen(false); navigate(a.href); }}
+            className={`w-11 h-11 rounded-full ${a.color} text-white shadow-lg flex items-center justify-center transition-all duration-150 active:scale-95`}>
+            <a.icon className="w-5 h-5" />
+          </button>
+        </div>
+      ))}
+      <button onClick={() => setOpen(v => !v)}
+        className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all duration-200 active:scale-95 ${open ? "bg-foreground text-background" : "hero-gradient text-white"}`}
+        aria-label={t('dashboard.quick_add')}>
+        {open ? <X className="w-6 h-6" /> : <Plus className="w-6 h-6" />}
+      </button>
+      <style>{`@keyframes fabItemIn { from { opacity:0; transform:translateY(12px) scale(0.92); } to { opacity:1; transform:translateY(0) scale(1); } }`}</style>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { t, i18n } = useTranslation();
-  const [insightPeriod] = useState<"week" | "month">("week");
   const [generatingInsight, setGeneratingInsight] = useState(false);
   const [insightText, setInsightText] = useState<string>("");
 
@@ -149,42 +161,25 @@ export default function Dashboard() {
   const goals = goalsData ?? [];
   const getGoal = (type: string) => goals.find(g => g.goalType === type);
   const generateInsightMutation = trpc.insights.generate.useMutation({
-    onSuccess: (data) => {
-      setInsightText(data.content || "");
-      setGeneratingInsight(false);
-    },
+    onSuccess: (data) => { setInsightText(data.content || ""); setGeneratingInsight(false); },
     onError: () => setGeneratingInsight(false),
   });
 
   const now = new Date();
   const hour = now.getHours();
-  const greeting = hour < 12
-    ? t('dashboard.greeting_morning')
-    : hour < 18
-      ? t('dashboard.greeting_afternoon')
-      : t('dashboard.greeting_evening');
-
-  const today = i18n.language === 'zh'
-    ? format(now, "yyyy年M月d日 EEEE")
-    : format(now, "EEEE, d MMMM yyyy");
+  const greeting = hour < 12 ? t('dashboard.greeting_morning') : hour < 18 ? t('dashboard.greeting_afternoon') : t('dashboard.greeting_evening');
+  const today = i18n.language === 'zh' ? format(now, "yyyy年M月d日 EEEE") : format(now, "EEEE, d MMMM yyyy");
 
   const weightTrend = useMemo(() => {
     if (!bodyData) return [];
     return [...bodyData].reverse().slice(-10).map(d => ({
-      date: formatHKChartDate(d.date),
-      weight: d.weight,
-      fat: d.bodyFatPct,
-      muscle: d.muscleMass,
+      date: formatHKChartDate(d.date), weight: d.weight, fat: d.bodyFatPct, muscle: d.muscleMass,
     }));
   }, [bodyData]);
 
   const sleepTrend = useMemo(() => {
     if (!sleepData) return [];
-    return [...sleepData].reverse().map(d => ({
-      date: formatHKChartDate(d.date),
-      score: d.sleepScore,
-      hr: d.pulseOx,
-    }));
+    return [...sleepData].reverse().map(d => ({ date: formatHKChartDate(d.date), score: d.sleepScore, hr: d.pulseOx }));
   }, [sleepData]);
 
   const weekCalories = useMemo(() => {
@@ -195,7 +190,6 @@ export default function Dashboard() {
       map[dateKey] = (map[dateKey] || 0) + (m.calories ?? 0);
     });
     return Array.from({ length: 7 }, (_, i) => {
-      // Use HK midnight offset to get correct HK date string
       const hkTs = new Date(Date.now() + 8 * 3600 * 1000);
       hkTs.setUTCDate(hkTs.getUTCDate() - (6 - i));
       const d = hkTs.toISOString().slice(0, 10);
@@ -209,18 +203,22 @@ export default function Dashboard() {
       <div className="p-6 space-y-4">
         <div className="h-32 rounded-2xl animate-pulse gradient-sunny" />
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-28 bg-muted/30 rounded-2xl animate-pulse" />
-          ))}
+          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-28 bg-muted/30 rounded-2xl animate-pulse" />)}
         </div>
         <div className="h-48 bg-muted/30 rounded-2xl animate-pulse" />
       </div>
     );
   }
 
-  const { today: tod, workoutStreak, latestBody, prevBody, latestSleep, latestHr } = summary || {};
+  const { today: tod, exercise, workoutStreak, latestBody, prevBody, latestSleep, latestHr } = summary || {};
   const weightDiff = latestBody && prevBody ? (latestBody.weight ?? 0) - (prevBody.weight ?? 0) : 0;
-  const calPct = Math.min(((tod?.calories || 0) / CALORIE_GOAL) * 100, 100);
+
+  const caloriesIntake = tod?.calories || 0;
+  const totalBurned = exercise?.totalBurned || 0;
+  const netCalories = caloriesIntake - totalBurned;
+  const netRemaining = CALORIE_GOAL - netCalories;
+  const netPct = Math.min((netCalories / CALORIE_GOAL) * 100, 100);
+  const hasExercise = totalBurned > 0;
 
   const macroData = [
     { name: t('nutrition.protein').replace(' (g)', ''), value: tod?.protein || 0, color: "oklch(0.62 0.18 145)", goal: PROTEIN_GOAL },
@@ -229,11 +227,10 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="p-4 sm:p-6 space-y-5 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 space-y-5 max-w-7xl mx-auto pb-24">
 
-      {/* ── HERO BANNER ── */}
+      {/* HERO */}
       <div className="hero-gradient rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
-        {/* decorative circles */}
         <div className="absolute -top-8 -right-8 w-40 h-40 rounded-full bg-white/10" />
         <div className="absolute -bottom-6 right-16 w-24 h-24 rounded-full bg-white/10" />
         <div className="relative z-10 flex items-center justify-between">
@@ -242,22 +239,18 @@ export default function Dashboard() {
               <Sun className="w-5 h-5 text-yellow-200" />
               <p className="text-white/80 text-sm font-semibold">{greeting},</p>
             </div>
-            <h1 className="text-2xl font-extrabold text-white leading-tight">
-              {(summary as any)?.user?.name || "Champion"} 💪
-            </h1>
+            <h1 className="text-2xl font-extrabold text-white leading-tight">{(summary as any)?.user?.name || "Champion"} 💪</h1>
             <p className="text-white/70 text-xs mt-1">{today}</p>
           </div>
           <Link href="/insights">
             <Button size="sm" className="bg-white/20 hover:bg-white/30 text-white border-0 gap-2 backdrop-blur-sm">
-              <Sparkles className="w-3.5 h-3.5" />
-              {t('nav.insights')}
+              <Sparkles className="w-3.5 h-3.5" />{t('nav.insights')}
             </Button>
           </Link>
         </div>
-        {/* Quick stats row */}
         <div className="relative z-10 grid grid-cols-3 gap-3 mt-5">
           {[
-            { label: t('dashboard.calories_today'), value: `${Math.round(tod?.calories || 0)}`, unit: "kcal", icon: Flame },
+            { label: t('dashboard.net_calories'), value: `${Math.round(netCalories)}`, unit: "kcal", icon: Flame },
             { label: t('dashboard.workout_streak'), value: `${workoutStreak || 0}`, unit: t('dashboard.days'), icon: Zap },
             { label: t('dashboard.heart_rate'), value: latestHr?.restingHr ? `${latestHr.restingHr}` : "—", unit: t('dashboard.bpm'), icon: Heart },
           ].map(s => (
@@ -270,75 +263,117 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── CALORIE PROGRESS CARD ── */}
+      {/* NET CALORIE CARD */}
       <div className="bg-white rounded-2xl p-5 border border-border shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-          <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1">{t('dashboard.calories_today')}</p>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
+          <div className="flex-1">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1">{t('dashboard.net_calories')}</p>
             <div className="flex items-end gap-2">
-              <span className="metric-value text-4xl text-foreground">{Math.round(tod?.calories || 0)}</span>
+              <span className="metric-value text-4xl text-foreground">{Math.round(netCalories)}</span>
               <span className="text-muted-foreground text-sm mb-1">/ {CALORIE_GOAL} {t('nutrition.kcal')}</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              <span className="text-primary font-semibold">{Math.round(Math.max(0, CALORIE_GOAL - (tod?.calories || 0)))}</span> {t('nutrition.remaining')}
-            </p>
+            <div className="flex items-center gap-4 mt-2 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-amber-400" />
+                <span className="text-xs text-muted-foreground">{t('dashboard.calories_intake')}</span>
+                <span className="text-xs font-bold text-foreground">{Math.round(caloriesIntake)}</span>
+              </div>
+              {hasExercise && (
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span className="text-xs text-muted-foreground">{t('dashboard.calories_burned')}</span>
+                  <span className="text-xs font-bold text-emerald-600">−{Math.round(totalBurned)}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-1.5">
+                <div className={`w-2 h-2 rounded-full ${netRemaining >= 0 ? "bg-primary" : "bg-rose-500"}`} />
+                <span className="text-xs text-muted-foreground">{t('dashboard.calories_remaining')}</span>
+                <span className={`text-xs font-bold ${netRemaining >= 0 ? "text-primary" : "text-rose-500"}`}>{Math.round(netRemaining)}</span>
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-5">
-            {macroData.map(m => (
-              <MacroRing key={m.name} label={m.name} value={m.value} goal={m.goal} color={m.color} />
-            ))}
+            {macroData.map(m => <MacroRing key={m.name} label={m.name} value={m.value} goal={m.goal} color={m.color} />)}
           </div>
         </div>
-        <Progress value={calPct} className="h-2.5 rounded-full" />
+        <Progress value={netPct} className="h-2.5 rounded-full" />
         <div className="flex justify-between text-xs text-muted-foreground mt-1.5 font-medium">
-          <span>{Math.round(calPct)}% {t('nutrition.goal')}</span>
-          <span>{Math.round(CALORIE_GOAL - (tod?.calories || 0))} {t('nutrition.kcal')} {t('nutrition.remaining')}</span>
+          <span>{Math.round(netPct)}% {t('nutrition.goal')}</span>
+          <span>{Math.round(netRemaining)} {t('nutrition.kcal')} {t('nutrition.remaining')}</span>
         </div>
       </div>
 
-      {/* ── STAT CARDS ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard
-          title={t('dashboard.workout_streak')}
-          value={workoutStreak || 0} unit={t('dashboard.days')}
-          subtitle={workoutStreak ? `${workoutStreak} ${t('dashboard.days')} 🔥` : "—"}
-          icon={Dumbbell} badgeClass="icon-badge-blue" trend={workoutStreak ? 1 : 0} href="/workout"
-        />
-        <StatCard
-          title={t('dashboard.current_weight')}
-          value={latestBody?.weight} unit="kg"
-          subtitle={weightDiff !== 0 ? `${weightDiff > 0 ? "+" : ""}${weightDiff.toFixed(1)} kg` : "—"}
-          icon={Scale} badgeClass="icon-badge-green" trend={-weightDiff} href="/body"
-        />
-        <StatCard
-          title={t('dashboard.sleep_score')}
-          value={latestSleep?.sleepScore} unit="/100"
-          subtitle={latestSleep?.sleepQuality || "—"}
-          icon={Moon} badgeClass="icon-badge-purple" trend={0} href="/sleep"
-        />
-        <StatCard
-          title={t('dashboard.heart_rate')}
-          value={latestHr?.restingHr} unit={t('dashboard.bpm')}
-          subtitle="Latest reading"
-          icon={Heart} badgeClass="icon-badge-red" trend={0} href="/heart-rate"
-        />
+      {/* TODAY'S EXERCISE SUMMARY */}
+      <div className="bg-white rounded-2xl p-5 border border-border shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="icon-badge icon-badge-green"><Flame className="w-4 h-4" /></div>
+              <h3 className="font-bold text-foreground">{t('dashboard.exercise_summary')}</h3>
+            </div>
+            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+              −{Math.round(totalBurned)} kcal
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <Link href="/workout">
+              <div className={`rounded-xl p-3 border text-center cursor-pointer transition-all hover:shadow-md ${(exercise?.workoutBurned ?? 0) > 0 ? "bg-blue-50 border-blue-200" : "bg-muted/20 border-border"}`}>
+                <div className="icon-badge icon-badge-blue mx-auto mb-2"><Dumbbell className="w-4 h-4" /></div>
+                <p className="text-xs text-muted-foreground font-medium">{t('dashboard.workout_burned')}</p>
+                <p className={`text-lg font-extrabold mt-0.5 ${(exercise?.workoutBurned ?? 0) > 0 ? "text-blue-600" : "text-muted-foreground/40"}`}>{Math.round(exercise?.workoutBurned ?? 0)}</p>
+                <p className="text-[10px] text-muted-foreground">kcal</p>
+                {(exercise?.todayWorkouts?.length ?? 0) > 0 && (
+                  <p className="text-[10px] text-blue-500 mt-1 font-medium">{exercise!.todayWorkouts!.length} session{exercise!.todayWorkouts!.length > 1 ? "s" : ""}</p>
+                )}
+              </div>
+            </Link>
+            <Link href="/running">
+              <div className={`rounded-xl p-3 border text-center cursor-pointer transition-all hover:shadow-md ${(exercise?.runningBurned ?? 0) > 0 ? "bg-red-50 border-red-200" : "bg-muted/20 border-border"}`}>
+                <div className="icon-badge icon-badge-red mx-auto mb-2"><Footprints className="w-4 h-4" /></div>
+                <p className="text-xs text-muted-foreground font-medium">{t('dashboard.running_burned')}</p>
+                <p className={`text-lg font-extrabold mt-0.5 ${(exercise?.runningBurned ?? 0) > 0 ? "text-red-600" : "text-muted-foreground/40"}`}>{Math.round(exercise?.runningBurned ?? 0)}</p>
+                <p className="text-[10px] text-muted-foreground">kcal</p>
+                {(exercise?.todayRunning?.length ?? 0) > 0 && (
+                  <p className="text-[10px] text-red-500 mt-1 font-medium">{exercise!.todayRunning!.length} run{exercise!.todayRunning!.length > 1 ? "s" : ""}</p>
+                )}
+              </div>
+            </Link>
+            <Link href="/steps">
+              <div className={`rounded-xl p-3 border text-center cursor-pointer transition-all hover:shadow-md ${(exercise?.stepsBurned ?? 0) > 0 ? "bg-green-50 border-green-200" : "bg-muted/20 border-border"}`}>
+                <div className="icon-badge icon-badge-green mx-auto mb-2"><Activity className="w-4 h-4" /></div>
+                <p className="text-xs text-muted-foreground font-medium">{t('dashboard.steps_burned')}</p>
+                <p className={`text-lg font-extrabold mt-0.5 ${(exercise?.stepsBurned ?? 0) > 0 ? "text-green-600" : "text-muted-foreground/40"}`}>{Math.round(exercise?.stepsBurned ?? 0)}</p>
+                <p className="text-[10px] text-muted-foreground">kcal</p>
+                {exercise?.todaySteps && (
+                  <p className="text-[10px] text-green-500 mt-1 font-medium">{(exercise.todaySteps.steps ?? 0).toLocaleString()} steps</p>
+                )}
+              </div>
+            </Link>
+          </div>
       </div>
 
-      {/* ── GOAL PROGRESS RINGS ── */}
+      {/* STAT CARDS */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard title={t('dashboard.workout_streak')} value={workoutStreak || 0} unit={t('dashboard.days')}
+          subtitle={workoutStreak ? `${workoutStreak} ${t('dashboard.days')} 🔥` : "—"}
+          icon={Dumbbell} badgeClass="icon-badge-blue" trend={workoutStreak ? 1 : 0} href="/workout" />
+        <StatCard title={t('dashboard.current_weight')} value={latestBody?.weight} unit="kg"
+          subtitle={weightDiff !== 0 ? `${weightDiff > 0 ? "+" : ""}${weightDiff.toFixed(1)} kg` : "—"}
+          icon={Scale} badgeClass="icon-badge-green" trend={-weightDiff} href="/body" />
+        <StatCard title={t('dashboard.sleep_score')} value={latestSleep?.sleepScore} unit="/100"
+          subtitle={latestSleep?.sleepQuality || "—"} icon={Moon} badgeClass="icon-badge-purple" trend={0} href="/sleep" />
+        <StatCard title={t('dashboard.heart_rate')} value={latestHr?.restingHr} unit={t('dashboard.bpm')}
+          subtitle="Latest reading" icon={Heart} badgeClass="icon-badge-red" trend={0} href="/heart-rate" />
+      </div>
+
+      {/* GOAL RINGS */}
       {goals.length > 0 && (() => {
-        const weightGoal = getGoal("weight");
-        const fatGoal = getGoal("body_fat_pct");
-        const muscleGoal = getGoal("muscle_mass");
-        const hrGoal = getGoal("resting_hr");
-        const sleepScoreGoal = getGoal("sleep_score");
-        const calGoal = getGoal("daily_calories");
         const rings = [
-          weightGoal && { label: "Weight", current: latestBody?.weight, target: Number(weightGoal.targetValue), unit: "kg", color: "#22c55e", inverse: false },
-          fatGoal    && { label: "Body Fat", current: latestBody?.bodyFatPct, target: Number(fatGoal.targetValue), unit: "%", color: "#f97316", inverse: true },
-          muscleGoal && { label: "Muscle", current: latestBody?.muscleMass, target: Number(muscleGoal.targetValue), unit: "kg", color: "#3b82f6", inverse: false },
-          hrGoal     && { label: "Resting HR", current: latestHr?.restingHr, target: Number(hrGoal.targetValue), unit: "bpm", color: "#f43f5e", inverse: true },
-          sleepScoreGoal && { label: "Sleep Score", current: latestSleep?.sleepScore, target: Number(sleepScoreGoal.targetValue), unit: "", color: "#8b5cf6", inverse: false },
-          calGoal    && { label: "Calories", current: tod?.calories, target: Number(calGoal.targetValue), unit: "kcal", color: "#f59e0b", inverse: false },
+          getGoal("weight")        && { label: "Weight",      current: latestBody?.weight,      target: Number(getGoal("weight")!.targetValue),        unit: "kg",   color: "#22c55e", inverse: false },
+          getGoal("body_fat_pct")  && { label: "Body Fat",    current: latestBody?.bodyFatPct,  target: Number(getGoal("body_fat_pct")!.targetValue),   unit: "%",    color: "#f97316", inverse: true  },
+          getGoal("muscle_mass")   && { label: "Muscle",      current: latestBody?.muscleMass,  target: Number(getGoal("muscle_mass")!.targetValue),    unit: "kg",   color: "#3b82f6", inverse: false },
+          getGoal("resting_hr")    && { label: "Resting HR",  current: latestHr?.restingHr,     target: Number(getGoal("resting_hr")!.targetValue),     unit: "bpm",  color: "#f43f5e", inverse: true  },
+          getGoal("sleep_score")   && { label: "Sleep Score", current: latestSleep?.sleepScore, target: Number(getGoal("sleep_score")!.targetValue),    unit: "",     color: "#8b5cf6", inverse: false },
+          getGoal("daily_calories")&& { label: "Calories",   current: netCalories,             target: Number(getGoal("daily_calories")!.targetValue), unit: "kcal", color: "#f59e0b", inverse: false },
         ].filter(Boolean) as { label: string; current: number | null | undefined; target: number; unit: string; color: string; inverse: boolean }[];
         if (!rings.length) return null;
         return (
@@ -351,17 +386,14 @@ export default function Dashboard() {
               <Link href="/goals"><Button variant="ghost" size="sm" className="text-xs gap-1 text-primary hover:text-primary">Edit Goals <ChevronRight className="w-3 h-3" /></Button></Link>
             </div>
             <div className="flex flex-wrap gap-4 justify-around">
-              {rings.map(r => (
-                <GoalRing key={r.label} label={r.label} current={r.current} target={r.target} unit={r.unit} color={r.color} inverse={r.inverse} />
-              ))}
+              {rings.map(r => <GoalRing key={r.label} label={r.label} current={r.current} target={r.target} unit={r.unit} color={r.color} inverse={r.inverse} />)}
             </div>
           </div>
         );
       })()}
 
-      {/* ── CHARTS ROW ── */}
+      {/* CHARTS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Weekly Calories */}
         <div className="bg-white rounded-2xl p-5 border border-border shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-foreground">{t('dashboard.weekly_calories')}</h3>
@@ -377,8 +409,6 @@ export default function Dashboard() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-
-        {/* Weight Trend */}
         <div className="bg-white rounded-2xl p-5 border border-border shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-foreground">{t('nav.body')}</h3>
@@ -402,14 +432,13 @@ export default function Dashboard() {
             </ResponsiveContainer>
           ) : (
             <div className="h-40 flex flex-col items-center justify-center text-muted-foreground text-sm gap-2">
-              <Scale className="w-8 h-8 text-muted-foreground/30" />
-              <p>{t('body.no_records')}</p>
+              <Scale className="w-8 h-8 text-muted-foreground/30" /><p>{t('body.no_records')}</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* ── SLEEP TREND ── */}
+      {/* SLEEP TREND */}
       {sleepTrend.length > 0 && (
         <div className="bg-white rounded-2xl p-5 border border-border shadow-sm">
           <div className="flex items-center justify-between mb-4">
@@ -435,7 +464,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── RECENT WORKOUTS ── */}
+      {/* RECENT WORKOUTS */}
       {summary?.recentSessions && summary.recentSessions.length > 0 && (
         <div className="bg-white rounded-2xl p-5 border border-border shadow-sm">
           <div className="flex items-center justify-between mb-4">
@@ -449,72 +478,37 @@ export default function Dashboard() {
           <div className="space-y-2">
             {summary.recentSessions.slice(0, 4).map(s => (
               <div key={s.id} className="flex items-center gap-3 py-2.5 border-b border-border/60 last:border-0">
-                <div className="icon-badge icon-badge-blue">
-                  <Dumbbell className="w-4 h-4" />
-                </div>
+                <div className="icon-badge icon-badge-blue"><Dumbbell className="w-4 h-4" /></div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate">{s.name || "Workout Session"}</p>
                   <p className="text-xs text-muted-foreground">{toHKDateString(new Date(s.startTime))}{s.duration ? ` · ${s.duration} min` : ""}</p>
                 </div>
-                {s.totalVolume && (
-                  <span className="tag-pill tag-orange">{Math.round(s.totalVolume)} kg</span>
-                )}
+                {s.totalVolume && <span className="tag-pill tag-orange">{Math.round(s.totalVolume)} kg</span>}
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* ── AI INSIGHT CARD ── */}
+      {/* AI INSIGHT */}
       <div className="bg-gradient-to-br from-primary/8 via-accent/5 to-background rounded-2xl p-5 border border-primary/20">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <div className="icon-badge icon-badge-orange">
-              <Sparkles className="w-4 h-4" />
-            </div>
+            <div className="icon-badge icon-badge-orange"><Sparkles className="w-4 h-4" /></div>
             <h3 className="font-bold text-foreground">{t('dashboard.ai_insight')}</h3>
           </div>
-          <Button
-            size="sm"
-            onClick={() => {
-              setGeneratingInsight(true);
-              generateInsightMutation.mutate({});
-            }}
-            disabled={generatingInsight}
-            className="gap-2"
-          >
+          <Button size="sm" onClick={() => { setGeneratingInsight(true); generateInsightMutation.mutate({}); }} disabled={generatingInsight} className="gap-2">
             <Sparkles className="w-3.5 h-3.5" />
             {generatingInsight ? t('dashboard.generating') : t('dashboard.generate_insight')}
           </Button>
         </div>
-        {insightText ? (
-          <div className="text-sm text-foreground/80 leading-relaxed">
-            <Streamdown>{insightText}</Streamdown>
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">{t('dashboard.no_insight')}</p>
-        )}
+        {insightText
+          ? <div className="text-sm text-foreground/80 leading-relaxed"><Streamdown>{insightText}</Streamdown></div>
+          : <p className="text-sm text-muted-foreground">{t('dashboard.no_insight')}</p>}
       </div>
 
-      {/* ── QUICK ACTIONS ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { href: "/nutrition", labelKey: "dashboard.log_meal",    icon: Utensils, badgeClass: "icon-badge-yellow" },
-          { href: "/workout",   labelKey: "dashboard.log_workout", icon: Dumbbell, badgeClass: "icon-badge-blue"   },
-          { href: "/body",      labelKey: "dashboard.log_weight",  icon: Scale,    badgeClass: "icon-badge-green"  },
-          { href: "/sleep",     labelKey: "nav.sleep",             icon: Moon,     badgeClass: "icon-badge-purple" },
-        ].map(a => (
-          <Link key={a.href} href={a.href}>
-            <div className="bg-white rounded-2xl p-4 flex flex-col items-center gap-2.5 cursor-pointer border border-border hover:border-primary/40 hover:shadow-md transition-all duration-200 group">
-              <div className={`icon-badge ${a.badgeClass} group-hover:scale-110 transition-transform`}>
-                <a.icon className="w-5 h-5" />
-              </div>
-              <span className="text-xs font-semibold text-foreground text-center">{t(a.labelKey)}</span>
-            </div>
-          </Link>
-        ))}
-      </div>
-
+      {/* FLOATING FAB */}
+      <FloatingFAB />
     </div>
   );
 }

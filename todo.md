@@ -117,3 +117,10 @@
 - [x] Comprehensive todo.md audit and cleanup
 - [x] Bump version to v2.9.0
 - [x] All 35 tests pass
+
+## v3.1.0 Changes (2026-05-31)
+- [x] Remove all login/auth guards - all pages publicly visible (OwnerContext always returns isOwner=true)
+- [x] Add tRPC procedure `dashboard.getDailyCaloriesBurned` aggregating workout, running, steps/stairs calories
+- [x] Update Dashboard hero card to show net calories (intake minus burned) with breakdown
+- [x] Add today's exercise summary card on Dashboard showing workout/running/steps calories burned
+- [x] Add floating FAB quick-add button on Dashboard (log food, log workout, log weight, log sleep)

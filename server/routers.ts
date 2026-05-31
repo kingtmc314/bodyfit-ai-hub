@@ -1063,13 +1063,25 @@ const dashboardRouter = router({
     const todayEnd = new Date(todayStr + "T23:59:59+08:00");
     const weekAgoStr = daysAgoHK(7);
     const weekAgoDate = new Date(weekAgoStr + "T00:00:00+08:00");
-    const [todayMeals, recentSessions, latestBody, latestSleep, latestHr, weekMeals] = await Promise.all([
+    const [todayMeals, recentSessions, latestBody, latestSleep, latestHr, weekMeals, todayWorkouts, todayRunning, todayStepsRows] = await Promise.all([
       db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.loggedAt} >= ${todayStart}`, sql`${mealLogs.loggedAt} <= ${todayEnd}`)),
       db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, OWNER_USER_ID), sql`${workoutSessions.startTime} >= ${weekAgoDate}`)).orderBy(desc(workoutSessions.startTime)).limit(7),
       db.select().from(bodyComposition).where(eq(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc(bodyComposition.date)).limit(2),
       db.select().from(sleepLogs).where(eq(sleepLogs.userId, OWNER_USER_ID)).orderBy(desc(sleepLogs.date)).limit(1),
       db.select().from(heartRateLogs).where(eq(heartRateLogs.userId, OWNER_USER_ID)).orderBy(desc(heartRateLogs.date)).limit(1),
       db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.loggedAt} >= ${weekAgoDate}`)),
+      // Today's workout sessions
+      db.select({ id: workoutSessions.id, name: workoutSessions.name, duration: workoutSessions.duration, caloriesBurned: workoutSessions.caloriesBurned })
+        .from(workoutSessions)
+        .where(and(eq(workoutSessions.userId, OWNER_USER_ID), sql`${workoutSessions.startTime} >= ${todayStart}`, sql`${workoutSessions.startTime} <= ${todayEnd}`)),
+      // Today's running logs
+      db.select({ id: runningLogs.id, distanceKm: runningLogs.distanceKm, calories: runningLogs.calories })
+        .from(runningLogs)
+        .where(sql`${runningLogs.date} = ${todayStr}`),
+      // Today's steps
+      db.select({ id: dailySteps.id, steps: dailySteps.steps, floorsClimbed: dailySteps.floorsClimbed, calories: dailySteps.calories })
+        .from(dailySteps)
+        .where(and(eq(dailySteps.userId, OWNER_USER_ID), sql`${dailySteps.date} = ${todayStr}`)),
     ]);
 
     const todayCalories = todayMeals.reduce((s, m) => s + (m.calories ?? 0), 0);
@@ -1086,8 +1098,25 @@ const dashboardRouter = router({
       else if (i > 0) break;
     }
 
+    // Calculate calories burned from all exercise sources
+    const workoutCaloriesBurned = todayWorkouts.reduce((s, w) => s + (w.caloriesBurned ?? 0), 0);
+    const runningCaloriesBurned = todayRunning.reduce((s, r) => s + (r.calories ?? 0), 0);
+    const stepsCaloriesBurned = todayStepsRows.reduce((s, st) => s + (st.calories ?? 0), 0);
+    const totalCaloriesBurned = workoutCaloriesBurned + runningCaloriesBurned + stepsCaloriesBurned;
+    const netCalories = todayCalories - totalCaloriesBurned;
+
     return {
       today: { calories: todayCalories, protein: todayProtein, carbs: todayCarbs, fat: todayFat, mealCount: todayMeals.length },
+      exercise: {
+        totalBurned: totalCaloriesBurned,
+        workoutBurned: workoutCaloriesBurned,
+        runningBurned: runningCaloriesBurned,
+        stepsBurned: stepsCaloriesBurned,
+        netCalories,
+        todayWorkouts,
+        todayRunning,
+        todaySteps: todayStepsRows[0] || null,
+      },
       workoutStreak: streak,
       latestBody: latestBody[0] || null,
       prevBody: latestBody[1] || null,
