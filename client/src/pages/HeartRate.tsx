@@ -1,5 +1,5 @@
-import { useTranslation } from 'react-i18next';
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { todayHKString, formatHKChartDate, formatHKDate } from "@/lib/hkTime";
@@ -44,6 +44,8 @@ export default function HeartRate() {
   const utils = trpc.useUtils();
   const { data: records = [], isLoading } = trpc.heartRate.getAll.useQuery({ limit: 200 });
   const { data: goalsData } = trpc.goals.getGoals.useQuery();
+  // Fetch HRV from heartRateHistory which merges sleep_logs.hrv
+  const { data: hrHistory = [] } = trpc.charts.heartRateHistory.useQuery({ days: 365 });
 
   const checkGoalAchievement = (payload: Record<string, number | undefined>) => {
     const goals = goalsData ?? [];
@@ -92,8 +94,20 @@ export default function HeartRate() {
     date: formatHKChartDate(r.date),
     resting: r.restingHr,
     high: r.highHr,
-    hrv: r.hrv,
+    hrv: r.hrv, // may be null from heart_rate_logs
   }));
+  // HRV chart data from heartRateHistory (which merges sleep_logs.hrv)
+  const hrvChartData = useMemo(() =>
+    (hrHistory as any[]).map(r => ({
+      date: formatHKChartDate(r.date),
+      hrv: r.hrv,
+    })).filter(r => r.hrv != null),
+  [hrHistory]);
+  // Latest HRV from sleep_logs via heartRateHistory
+  const latestHrv = useMemo(() => {
+    const withHrv = (hrHistory as any[]).filter(r => r.hrv != null);
+    return withHrv.length > 0 ? withHrv[withHrv.length - 1]?.hrv : null;
+  }, [hrHistory]);
 
   const latest = records[0];
 
@@ -149,7 +163,7 @@ export default function HeartRate() {
             { labelKey: "heartrate.resting_hr", value: latest.restingHr, unit: "bpm", badgeClass: "icon-badge-red" },
             { labelKey: "heartrate.high_hr", value: latest.highHr, unit: "bpm", badgeClass: "icon-badge-orange" },
             { labelKey: "heartrate.avg_hr", value: latest.avgHr, unit: "bpm", badgeClass: "icon-badge-red" },
-            { labelKey: "heartrate.hrv", value: latest.hrv != null ? Number(latest.hrv).toFixed(0) : null, unit: "ms", badgeClass: "icon-badge-blue" },
+            { labelKey: "heartrate.hrv", value: latestHrv != null ? Number(latestHrv).toFixed(0) : null, unit: "ms", badgeClass: "icon-badge-blue" },
           ].map(m => (
             <div key={m.labelKey} className="stat-card rounded-2xl p-4">
               <div className={`icon-badge ${m.badgeClass} mb-2`}>
@@ -197,9 +211,10 @@ export default function HeartRate() {
           {/* HRV Trend */}
           <div className="bg-card border border-border rounded-2xl p-5">
             <h3 className="font-semibold text-foreground mb-4">Heart Rate Variability (HRV)</h3>
-            {chartData.filter(d => d.hrv).length > 0 ? (
+            <p className="text-xs text-muted-foreground mb-3">{t('heartrate.hrv_source')}</p>
+            {hrvChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={chartData}>
+                <AreaChart data={hrvChartData}>
                   <defs>
                     <linearGradient id="hrvGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="oklch(0.65 0.18 200)" stopOpacity={0.3} />

@@ -9,7 +9,8 @@ import {
   bodyComposition, heartRateLogs, sleepLogs, progressPhotos, aiInsights,
   healthGoals, runningLogs, runningShoes, races, favouriteExercises,
   dailySteps, medicalConditions, medicalVisits, medicalAttachments,
-  supplements, supplementLogs, supplementPurchases, supplementStockAdjustments
+  supplements, supplementLogs, supplementPurchases, supplementStockAdjustments,
+  runningLogPhotos, stepLogPhotos
 } from "../drizzle/schema";
 import { eq, and, desc, gte, lte, like, or, sql } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -554,6 +555,16 @@ const heartRateRouter = router({
         await db.insert(heartRateLogs).values({ ...row, userId: OWNER_USER_ID, source: "sheets" }).catch(() => {});
       }
       return { success: true, count: input.length };
+    }),
+  getMaxHr: publicProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return { maxHr: null };
+      const result = await db
+        .select({ maxHr: sql<number>`MAX(${heartRateLogs.highHr})` })
+        .from(heartRateLogs)
+        .where(eq(heartRateLogs.userId, OWNER_USER_ID));
+      return { maxHr: result[0]?.maxHr ?? null };
     }),
 });
 
@@ -2351,6 +2362,39 @@ ${trainingSummary || '無訓練記錄'}
       });
       return { analysis: res.choices[0]?.message?.content ?? '分析失敗，請稍後再試。' };
     }),
+  // ─── Running Log Photos ─────────────────────────────────────────────────────
+  getLogPhotos: publicProcedure
+    .input(z.object({ runningLogId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(runningLogPhotos)
+        .where(and(eq(runningLogPhotos.runningLogId, input.runningLogId), eq(runningLogPhotos.userId, OWNER_USER_ID)))
+        .orderBy(runningLogPhotos.sortOrder, runningLogPhotos.createdAt);
+    }),
+  uploadLogPhoto: publicProcedure
+    .input(z.object({ runningLogId: z.number(), base64: z.string(), mimeType: z.string(), caption: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const buffer = Buffer.from(input.base64, 'base64');
+      const ext = input.mimeType.includes('png') ? 'png' : 'jpg';
+      const key = `running-photos/${OWNER_USER_ID}/${input.runningLogId}/${nanoid()}.${ext}`;
+      const { url } = await storagePut(key, buffer, input.mimeType);
+      const existing = await db.select({ cnt: sql<number>`COUNT(*)` }).from(runningLogPhotos)
+        .where(and(eq(runningLogPhotos.runningLogId, input.runningLogId), eq(runningLogPhotos.userId, OWNER_USER_ID)));
+      const sortOrder = Number(existing[0]?.cnt ?? 0);
+      await db.insert(runningLogPhotos).values({ userId: OWNER_USER_ID, runningLogId: input.runningLogId, photoUrl: url, fileKey: key, caption: input.caption, sortOrder });
+      return { url, key };
+    }),
+  deleteLogPhoto: publicProcedure
+    .input(z.object({ photoId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.delete(runningLogPhotos).where(and(eq(runningLogPhotos.id, input.photoId), eq(runningLogPhotos.userId, OWNER_USER_ID)));
+      return { success: true };
+    }),
 });
 
 
@@ -2416,6 +2460,39 @@ const stepsRouter = router({
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
       await db.delete(dailySteps).where(and(eq(dailySteps.id, input.id), eq(dailySteps.userId, OWNER_USER_ID)));
+      return { success: true };
+    }),
+  // ─── Step Log Photos ─────────────────────────────────────────────────────────
+  getLogPhotos: publicProcedure
+    .input(z.object({ stepLogId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(stepLogPhotos)
+        .where(and(eq(stepLogPhotos.stepLogId, input.stepLogId), eq(stepLogPhotos.userId, OWNER_USER_ID)))
+        .orderBy(stepLogPhotos.sortOrder, stepLogPhotos.createdAt);
+    }),
+  uploadLogPhoto: publicProcedure
+    .input(z.object({ stepLogId: z.number(), base64: z.string(), mimeType: z.string(), caption: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const buffer = Buffer.from(input.base64, 'base64');
+      const ext = input.mimeType.includes('png') ? 'png' : 'jpg';
+      const key = `step-photos/${OWNER_USER_ID}/${input.stepLogId}/${nanoid()}.${ext}`;
+      const { url } = await storagePut(key, buffer, input.mimeType);
+      const existing = await db.select({ cnt: sql<number>`COUNT(*)` }).from(stepLogPhotos)
+        .where(and(eq(stepLogPhotos.stepLogId, input.stepLogId), eq(stepLogPhotos.userId, OWNER_USER_ID)));
+      const sortOrder = Number(existing[0]?.cnt ?? 0);
+      await db.insert(stepLogPhotos).values({ userId: OWNER_USER_ID, stepLogId: input.stepLogId, photoUrl: url, fileKey: key, caption: input.caption, sortOrder });
+      return { url, key };
+    }),
+  deleteLogPhoto: publicProcedure
+    .input(z.object({ photoId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.delete(stepLogPhotos).where(and(eq(stepLogPhotos.id, input.photoId), eq(stepLogPhotos.userId, OWNER_USER_ID)));
       return { success: true };
     }),
 });

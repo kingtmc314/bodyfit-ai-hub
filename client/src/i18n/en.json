@@ -200,7 +200,8 @@
     "cancel": "Cancel",
     "delete_confirm": "Are you sure you want to delete this record?",
     "bpm": "bpm",
-    "ms": "ms"
+    "ms": "ms",
+    "avg_hr": "Avg HR"
   },
   "sleep": {
     "title": "Sleep",

@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Footprints, Trash2, Edit2, Loader2, ArrowUpDown, TrendingUp, Building2 } from "lucide-react";
+import LogPhotoUploader from "@/components/LogPhotoUploader";
 import { useTranslation } from "react-i18next";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -241,6 +242,9 @@ export default function Steps() {
                       <td className="px-4 py-3">{r.calories ? `${r.calories} kcal` : '—'}</td>
                       <td className="px-4 py-3 text-muted-foreground text-xs max-w-32 truncate">{r.notes ?? '—'}</td>
                       <td className="px-4 py-3">
+                        <LogPhotoUploader logId={r.id} type="steps" compact />
+                      </td>
+                      <td className="px-4 py-3">
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => {
                             setEditEntry(r);
@@ -287,6 +291,17 @@ export default function Steps() {
               <label className="text-xs text-muted-foreground mb-1 block">{t('common.notes')}</label>
               <Input placeholder={t('common.optional_notes')} value={form.notes} onChange={e => setForm((f: any) => ({ ...f, notes: e.target.value }))} />
             </div>
+            {editEntry && (
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">截圖上載</label>
+                <LogPhotoUploader logId={editEntry.id} type="steps" />
+              </div>
+            )}
+            {!editEntry && (
+              <div className="col-span-2">
+                <p className="text-xs text-muted-foreground italic">儲存記錄後可上載截圖</p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowDialog(false); setEditEntry(null); }}>{t('common.cancel')}</Button>

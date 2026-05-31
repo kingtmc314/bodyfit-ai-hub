@@ -511,3 +511,31 @@ export const supplementStockAdjustments = pgTable("supplement_stock_adjustments"
 });
 export type SupplementStockAdjustment = typeof supplementStockAdjustments.$inferSelect;
 export type InsertSupplementStockAdjustment = typeof supplementStockAdjustments.$inferInsert;
+
+// ─── Running Log Photos ───────────────────────────────────────────────────────
+export const runningLogPhotos = pgTable("running_log_photos", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  runningLogId: integer("running_log_id").notNull().references(() => runningLogs.id, { onDelete: "cascade" }),
+  photoUrl: text("photo_url").notNull(),
+  fileKey: text("file_key").notNull(),
+  caption: text("caption"),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type RunningLogPhoto = typeof runningLogPhotos.$inferSelect;
+export type InsertRunningLogPhoto = typeof runningLogPhotos.$inferInsert;
+
+// ─── Step Log Photos ──────────────────────────────────────────────────────────
+export const stepLogPhotos = pgTable("step_log_photos", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  stepLogId: integer("step_log_id").notNull().references(() => dailySteps.id, { onDelete: "cascade" }),
+  photoUrl: text("photo_url").notNull(),
+  fileKey: text("file_key").notNull(),
+  caption: text("caption"),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type StepLogPhoto = typeof stepLogPhotos.$inferSelect;
+export type InsertStepLogPhoto = typeof stepLogPhotos.$inferInsert;

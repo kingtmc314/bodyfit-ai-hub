@@ -14,7 +14,7 @@ import QuickImportModal from "@/components/QuickImportModal";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, LineChart, Line,
-  ComposedChart, Bar, ReferenceLine
+  ComposedChart, Bar, BarChart, ReferenceLine
 } from "recharts";
 
 const QUALITY_OPTIONS = ["Poor", "Fair", "Good", "Excellent"] as const;
@@ -261,31 +261,68 @@ export default function Sleep() {
             ) : <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">No data yet</div>}
           </div>
 
-          {/* 2. Bedtime & Waketime Chart */}
+          {/* 2. Bedtime & Waketime Range Bar Chart (陰陽鐲 style) */}
           <div className="bg-card border border-border rounded-2xl p-5">
             <h3 className="font-semibold text-foreground mb-1">就寢時間 & 起床時間對照圖</h3>
-            <p className="text-xs text-muted-foreground mb-4">每日就寢（藍）與起床（橙）時間，虛線為午夜（00:00）</p>
-            {chartData.filter(d => d.bedtime || d.waketime).length > 0 ? (
-              <ResponsiveContainer width="100%" height={240}>
-                <ComposedChart data={chartData.slice(-30)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.24 0.018 240)" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: "oklch(0.60 0.010 240)" }} axisLine={false} tickLine={false} />
-                  <YAxis
-                    domain={[18, 30]}
-                    ticks={[18, 20, 22, 24, 26, 28, 30]}
-                    tickFormatter={v => decimalHourToLabel(v)}
-                    tick={{ fontSize: 10, fill: "oklch(0.60 0.010 240)" }}
-                    axisLine={false} tickLine={false} width={42}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend />
-                  {/* Midnight reference line at 24 */}
-                  <ReferenceLine y={24} stroke="oklch(0.50 0.010 240)" strokeDasharray="6 3" label={{ value: '午夜', position: 'insideTopRight', fontSize: 10, fill: 'oklch(0.50 0.010 240)' }} />
-                  <Line type="monotone" dataKey="bedtime" name="就寢時間" stroke="oklch(0.62 0.18 270)" strokeWidth={2} dot={{ r: 3, fill: "oklch(0.62 0.18 270)" }} connectNulls />
-                  <Line type="monotone" dataKey="waketime" name="起床時間" stroke="oklch(0.78 0.20 50)" strokeWidth={2} dot={{ r: 3, fill: "oklch(0.78 0.20 50)" }} connectNulls />
-                </ComposedChart>
-              </ResponsiveContainer>
-            ) : <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">No bedtime/waketime data</div>}
+            <p className="text-xs text-muted-foreground mb-4">每日睡眠窗口（就寢→起床），深藍色帶為睡眠時段，虛線為午夜（00:00）</p>
+            {(() => {
+              // Build range bar data: base = bedtime (adjusted), len = waketime - bedtime
+              const Y_MIN = -6; const Y_MAX = 12;
+              const parseBed = (v: number | null) => {
+                if (v == null) return null;
+                // v is decimal hours (e.g. 25.9 for 01:54 next day) → shift to -6..12 range
+                return v >= 24 ? v - 24 : v >= 18 ? v - 24 : v;
+              };
+              const parseWake = (v: number | null) => v;
+              const barData = chartData.slice(-30)
+                .filter(d => d.bedtime != null && d.waketime != null)
+                .map(d => {
+                  const bed = parseBed(d.bedtime)!;
+                  const wake = parseWake(d.waketime)!;
+                  const len = wake - bed;
+                  return { label: d.date, base: bed, len, bedtimeRaw: d.bedtime, waketimeRaw: d.waketime };
+                });
+              const valid = barData.filter(d => d.len > 0);
+              if (!valid.length) return <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">No bedtime/waketime data</div>;
+              const avgBed = valid.reduce((s, d) => s + d.base, 0) / valid.length;
+              const avgWake = valid.reduce((s, d) => s + d.base + d.len, 0) / valid.length;
+              const yTickFmt = (v: number) => { const a = v < 0 ? v + 24 : v; const h = Math.floor(a); const m = Math.round((a - h) * 60); return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`; };
+              const SleepTooltip = ({ active, payload, label }: any) => {
+                if (!active || !payload?.length) return null;
+                const d = payload[0]?.payload;
+                if (!d) return null;
+                return (
+                  <div style={{ background: "oklch(0.18 0.018 240)", border: "1px solid oklch(0.28 0.018 240)", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "oklch(0.92 0.010 240)" }}>
+                    <p style={{ color: "oklch(0.60 0.010 240)", marginBottom: 4 }}>{label}</p>
+                    <p>🌙 就寢時間: <strong>{decimalHourToLabel(d.base < 0 ? d.base + 24 : d.base)}</strong></p>
+                    <p>☀️ 起床時間: <strong>{decimalHourToLabel(d.base + d.len)}</strong></p>
+                    <p>⏱ 睡眠: <strong>{d.len?.toFixed(1)}h</strong></p>
+                  </div>
+                );
+              };
+              return (
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={barData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} barCategoryGap="20%">
+                    <defs>
+                      <linearGradient id="sleepWinGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#1e40af" stopOpacity={0.9} />
+                        <stop offset="60%" stopColor="#3b82f6" stopOpacity={0.8} />
+                        <stop offset="100%" stopColor="#f97316" stopOpacity={0.7} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.24 0.018 240)" opacity={0.4} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="oklch(0.60 0.010 240)" />
+                    <YAxis tick={{ fontSize: 10 }} stroke="oklch(0.60 0.010 240)" domain={[Y_MIN, Y_MAX]} ticks={[-4, -2, 0, 2, 4, 6, 8, 10]} tickFormatter={yTickFmt} width={42} />
+                    <Tooltip content={<SleepTooltip />} />
+                    <Bar dataKey="base" stackId="s" fill="transparent" isAnimationActive={false} />
+                    <Bar dataKey="len" stackId="s" fill="url(#sleepWinGrad)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+                    <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: "午夜", fontSize: 9, fill: "#94a3b8", position: "insideTopRight" }} />
+                    <ReferenceLine y={avgBed} stroke="#3b82f6" strokeDasharray="4 2" strokeWidth={1} label={{ value: `平均就寢 ${yTickFmt(avgBed)}`, fontSize: 9, fill: "#3b82f6", position: "insideBottomLeft" }} />
+                    <ReferenceLine y={avgWake} stroke="#f97316" strokeDasharray="4 2" strokeWidth={1} label={{ value: `平均起床 ${yTickFmt(avgWake)}`, fontSize: 9, fill: "#f97316", position: "insideTopLeft" }} />
+                  </BarChart>
+                </ResponsiveContainer>
+              );
+            })()}
           </div>
 
           {/* 3. Body Battery & HRV + Blood Ox & Respiration */}

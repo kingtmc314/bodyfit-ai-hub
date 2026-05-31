@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot, Trophy, Star, MapPin, Calendar, Clock, Award, Flag, Zap, Package, Camera, ImageIcon, ArrowUpDown, Thermometer, Wind, Droplets, Download } from "lucide-react";
+import LogPhotoUploader from "@/components/LogPhotoUploader";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart, Area
@@ -147,6 +148,7 @@ export default function Running() {
   const { data: racesEnriched = [] } = trpc.running.getRacesEnriched.useQuery();
   const { data: pbs = [] } = trpc.running.getPBs.useQuery();
   const { data: hrLogs = [] } = trpc.heartRate.getAll.useQuery({ limit: 30 });
+  const { data: maxHrData } = trpc.heartRate.getMaxHr.useQuery();
 
   // Shoe run history modal state
   const [shoeHistoryModal, setShoeHistoryModal] = useState<{ shoe: any; runs: any[] } | null>(null);
@@ -408,7 +410,8 @@ export default function Running() {
   // ─── Derived data for header ─────────────────────────────────────────────────
   const latestHr = (hrLogs as any[]).length > 0 ? (hrLogs as any[])[0] : null;
   const restingHr = latestHr?.restingHr ?? null;
-  const maxHrForZones = latestHr?.highHr ?? 202;
+  // Use all-time maximum highHr from the entire heart_rate_logs table
+  const maxHrForZones = (maxHrData as any)?.maxHr ?? latestHr?.highHr ?? 202;
   const finishedRacesCount = (races as any[]).filter((r: any) => new Date(r.date + 'T00:00:00+08:00') <= now).length;
   const totalShoesCount = (allShoes as any[]).length;
   const nextRace = [...(races as any[])]
@@ -711,6 +714,9 @@ export default function Running() {
                         </td>
                         <td className="px-4 py-3 text-muted-foreground max-w-[120px] truncate">
                           {row.notes || "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <LogPhotoUploader logId={row.id} type="running" compact />
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-1">
@@ -1542,6 +1548,17 @@ export default function Running() {
               <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.notes")}</label>
               <Input type="text" placeholder="..."  value={form.notes} onChange={(e) => f("notes", e.target.value)} />
             </div>
+            {editEntry && (
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">截圖上載</label>
+                <LogPhotoUploader logId={editEntry.id} type="running" />
+              </div>
+            )}
+            {!editEntry && (
+              <div className="col-span-2">
+                <p className="text-xs text-muted-foreground italic">儲存記錄後可上載截圖</p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowDialog(false); setEditEntry(null); setForm(defaultForm); }}>{t("running.cancel")}</Button>
