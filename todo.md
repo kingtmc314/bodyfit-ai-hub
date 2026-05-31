@@ -365,71 +365,71 @@
 - [x] 35/35 tests passing, 0 TypeScript errors
 
 ## Phase 42: Exercise Favourites Feature
-- [ ] Add favourite_exercises table to schema.ts (userId, exerciseName, createdAt)
-- [ ] Execute migration SQL to create the table
-- [ ] Add tRPC procedures: toggleFavourite, getFavourites
-- [ ] Add star button to exercise cards in Workout.tsx (toggle on/off, optimistic update)
-- [ ] Add "我的常用動作" section at top of exercise library (shows when user has favourites)
-- [ ] Write vitest tests for favourite procedures
+- [x] Add favourite_exercises table to schema.ts (userId, exerciseName, createdAt)
+- [x] Execute migration SQL to create the table
+- [x] Add tRPC procedures: toggleFavourite, getFavourites
+- [x] Add star button to exercise cards in Workout.tsx (toggle on/off, optimistic update)
+- [x] Add "我的常用動作" section at top of exercise library (shows when user has favourites)
+- [x] Write vitest tests for favourite procedures
 
 ## Phase 42: Exercise Demo Images & Equipment Icons
-- [ ] Build exercise image mapping (free-exercise-db GitHub raw URLs) for all 59 exercises
-- [ ] Add image carousel (before/after position) to ExerciseDetailModal
-- [ ] Add equipment icon illustrations (barbell, dumbbell, cable, machine, bodyweight, etc.)
-- [ ] Lazy-load images with skeleton placeholder
+- [x] Build exercise image mapping (free-exercise-db GitHub raw URLs) for all 59 exercises
+- [x] Add image carousel (before/after position) to ExerciseDetailModal
+- [x] Add equipment icon illustrations (barbell, dumbbell, cable, machine, bodyweight, etc.)
+- [x] Lazy-load images with skeleton placeholder
 
 ## Phase 43: Running Race Events & PB Cards
-- [ ] Add race_events table to schema.ts (name, date, distance, location, targetTime, notes, result, actualTime)
-- [ ] Execute migration SQL for race_events table
-- [ ] Add running.getRaceEvents, addRaceEvent, updateRaceEvent, deleteRaceEvent tRPC procedures
-- [ ] Add running.getPBs procedure (best time per distance from running_logs)
-- [ ] Add running.getRaceAIAnalysis procedure (LLM analysis of training vs race goals)
-- [ ] Add "賽事" tab to Running.tsx with:
+- [x] Add race_events table to schema.ts (name, date, distance, location, targetTime, notes, result, actualTime)
+- [x] Execute migration SQL for race_events table
+- [x] Add running.getRaceEvents, addRaceEvent, updateRaceEvent, deleteRaceEvent tRPC procedures
+- [x] Add running.getPBs procedure (best time per distance from running_logs)
+- [x] Add running.getRaceAIAnalysis procedure (LLM analysis of training vs race goals)
+- [x] Add "賽事" tab to Running.tsx with:
   - Race schedule table with countdown timer (days to race)
   - Add/Edit/Delete race event dialog
   - PB Cards section (5K, 10K, HM, FM best times)
   - AI Race Analysis button (training readiness, predicted finish time, recommendations)
 
 ## Phase 44: Exercise Favourites
-- [ ] Add favourite_exercises table to schema.ts
-- [ ] Execute migration SQL
-- [ ] Add workout.toggleFavourite, getFavourites tRPC procedures
-- [ ] Star button on exercise cards (optimistic toggle)
-- [ ] "我的常用動作" section at top of exercise library
+- [x] Add favourite_exercises table to schema.ts
+- [x] Execute migration SQL
+- [x] Add workout.toggleFavourite, getFavourites tRPC procedures
+- [x] Star button on exercise cards (optimistic toggle)
+- [x] "我的常用動作" section at top of exercise library
 
 ## Phase 45: Sleep Chart - Bedtime/Waketime Range Bar (陰陽鐲 style)
-- [ ] Replace bedtime/waketime line chart with horizontal sleep window range bar chart
-- [ ] Each day shows a bar from bedtime to waketime (handles midnight crossover)
-- [ ] Color gradient: deep blue for sleep, orange for wake transition
-- [ ] Show average bedtime/waketime reference lines
+- [x] Replace bedtime/waketime line chart with horizontal sleep window range bar chart
+- [x] Each day shows a bar from bedtime to waketime (handles midnight crossover)
+- [x] Color gradient: deep blue for sleep, orange for wake transition
+- [x] Show average bedtime/waketime reference lines
 
 ## Phase 46: Running - Shoe Locker Tab
-- [ ] Add "跑鞋" tab to Running.tsx
-- [ ] Show all shoes with photo, name, brand, status badge (In Use / Not Yet Opened / Retired)
-- [ ] Show mileage per shoe (calculated from running_logs where running_shoes matches)
-- [ ] Add/Edit/Delete shoe dialog (shoes_name, brand, model, status, purchase_date, price, photo_url, notes)
-- [ ] Mileage progress bar (warn at 500km, retire at 800km)
-- [ ] Filter by status tabs (All / In Use / Not Yet Opened / Retired)
+- [x] Add "跑鞋" tab to Running.tsx
+- [x] Show all shoes with photo, name, brand, status badge (In Use / Not Yet Opened / Retired)
+- [x] Show mileage per shoe (calculated from running_logs where running_shoes matches)
+- [x] Add/Edit/Delete shoe dialog (shoes_name, brand, model, status, purchase_date, price, photo_url, notes)
+- [x] Mileage progress bar (warn at 500km, retire at 800km)
+- [x] Filter by status tabs (All / In Use / Not Yet Opened / Retired)
 
 ## Phase 47: Running - Race Events Tab (uses existing races table)
-- [ ] Add "賽事" tab to Running.tsx
-- [ ] Race schedule table: race_name, date, distance_km, location, countdown (days), registration, bib_no
-- [ ] Countdown timer component (days until race, color-coded: red <30d, yellow <90d, green >90d)
-- [ ] Add/Edit/Delete race dialog (uses existing races table columns)
-- [ ] PB Cards section: best finish_time per distance category (5K, 10K, HM, FM) from races table
-- [ ] AI Race Analysis: LLM analysis of upcoming races vs recent training, predicted finish time
+- [x] Add "賽事" tab to Running.tsx
+- [x] Race schedule table: race_name, date, distance_km, location, countdown (days), registration, bib_no
+- [x] Countdown timer component (days until race, color-coded: red <30d, yellow <90d, green >90d)
+- [x] Add/Edit/Delete race dialog (uses existing races table columns)
+- [x] PB Cards section: best finish_time per distance category (5K, 10K, HM, FM) from races table
+- [x] AI Race Analysis: LLM analysis of upcoming races vs recent training, predicted finish time
 
 ## Phase 48: Exercise Demo Images
-- [ ] Build exercise image mapping using free-exercise-db GitHub raw URLs
-- [ ] Add image display (before/after position photos) to ExerciseDetailModal
-- [ ] Lazy-load with skeleton placeholder
-- [ ] Equipment type icon badge (barbell, dumbbell, cable, machine, bodyweight)
+- [x] Build exercise image mapping using free-exercise-db GitHub raw URLs
+- [x] Add image display (before/after position photos) to ExerciseDetailModal
+- [x] Lazy-load with skeleton placeholder
+- [x] Equipment type icon badge (barbell, dumbbell, cable, machine, bodyweight)
 
 ## Phase 49: Exercise Favourites
-- [ ] Add favourite_exercises table to schema + migration
-- [ ] Add workout.toggleFavourite, getFavourites tRPC procedures
-- [ ] Star button on exercise cards (optimistic toggle, auth-gated)
-- [ ] "我的常用動作" collapsible section at top of exercise library
+- [x] Add favourite_exercises table to schema + migration
+- [x] Add workout.toggleFavourite, getFavourites tRPC procedures
+- [x] Star button on exercise cards (optimistic toggle, auth-gated)
+- [x] "我的常用動作" collapsible section at top of exercise library
 
 ## Phase 45: Shoe Locker, Race Events, Exercise Favourites, Demo Images & Import Enhancement
 - [x] Add running_shoes table (shoes CRUD: addShoe, updateShoe, deleteShoe, getShoes, getActiveShoes)
@@ -443,11 +443,11 @@
 - [x] Version bump to v1.2.0
 
 ## Phase 46: Shoe Locker Redesign & Race Tab Overhaul
-- [ ] Shoe status logic: retirement_date → Retired; firstusedate → Active; purchase_date only → Not Yet Opened (bilingual)
-- [ ] Running log shoe selector: show 使用中/未開封 badge next to shoe name
-- [ ] Shoe Locker card redesign: large photo, status badge overlay, mileage bar (custom max_km), sessions/price/$/km stats, run history modal, dates row
-- [ ] Running page header: 4 stat cards (total shoes, finished races, total activities, latest resting HR) + Next Race countdown + HR Zones
-- [ ] Race tab: PB cards moved here (removed from shoe tab), completed race rich cards with all fields, upcoming countdown list
+- [x] Shoe status logic: retirement_date → Retired; firstusedate → Active; purchase_date only → Not Yet Opened (bilingual)
+- [x] Running log shoe selector: show 使用中/未開封 badge next to shoe name
+- [x] Shoe Locker card redesign: large photo, status badge overlay, mileage bar (custom max_km), sessions/price/$/km stats, run history modal, dates row
+- [x] Running page header: 4 stat cards (total shoes, finished races, total activities, latest resting HR) + Next Race countdown + HR Zones
+- [x] Race tab: PB cards moved here (removed from shoe tab), completed race rich cards with all fields, upcoming countdown list
 - [x] AI coach enhanced: race history, time predictions for upcoming races, pace/shoe/weather strategy
 - [x] Fix shoe mileage: use both shoes_id FK and running_shoes text matching for total_km
 - [x] addLog/updateLog: auto-populate shoes_id by looking up shoes_name in running_shoes table
@@ -471,33 +471,33 @@
 
 ## Phase 48: Finish Time hr/min/sec + Personalized Training Plan
 
-- [ ] Add finish_hr, finish_min, finish_sec, target_hr, target_min, target_sec columns to races table (migration applied)
-- [ ] Update addRace/updateRace procedures to include new hr/min/sec fields
-- [ ] Update getPBs procedure to use finish_hr/min/sec for display
-- [ ] Update getRacesEnriched to return finish_hr/min/sec and target_hr/min/sec
-- [ ] Update race dialog form: replace single finishTime/targetTime text fields with 3 separate hr/min/sec inputs
-- [ ] Update completed race cards to display finish time as formatted hr:min:sec from separate fields
-- [ ] Update PB cards to display finish time from hr/min/sec fields
-- [ ] Update openEditRace to populate finishHr/finishMin/finishSec/targetHr/targetMin/targetSec
-- [ ] Add generateTrainingPlan tRPC procedure: aggregates all health data (running, body, sleep, HR, workout) + races + goals, generates personalized weekly training plan via LLM
-- [ ] Add Training Plan section to AI Coach tab with goal race selector, plan duration (weeks), generate button
-- [ ] Display training plan as structured weekly schedule (Mon-Sun with workout type, distance, intensity)
-- [ ] Update i18n en.json and zh.json with new training plan keys
+- [x] Add finish_hr, finish_min, finish_sec, target_hr, target_min, target_sec columns to races table (migration applied)
+- [x] Update addRace/updateRace procedures to include new hr/min/sec fields
+- [x] Update getPBs procedure to use finish_hr/min/sec for display
+- [x] Update getRacesEnriched to return finish_hr/min/sec and target_hr/min/sec
+- [x] Update race dialog form: replace single finishTime/targetTime text fields with 3 separate hr/min/sec inputs
+- [x] Update completed race cards to display finish time as formatted hr:min:sec from separate fields
+- [x] Update PB cards to display finish time from hr/min/sec fields
+- [x] Update openEditRace to populate finishHr/finishMin/finishSec/targetHr/targetMin/targetSec
+- [x] Add generateTrainingPlan tRPC procedure: aggregates all health data (running, body, sleep, HR, workout) + races + goals, generates personalized weekly training plan via LLM
+- [x] Add Training Plan section to AI Coach tab with goal race selector, plan duration (weeks), generate button
+- [x] Display training plan as structured weekly schedule (Mon-Sun with workout type, distance, intensity)
+- [x] Update i18n en.json and zh.json with new training plan keys
 
 ## Phase 49: Large Update v1.6.0
 
-- [ ] Fix finish time display in PB cards (hr/min/sec not showing)
-- [ ] Fix finish time display in completed race cards header
-- [ ] Add sort/filter to Running Log tab
-- [ ] Add sort/filter to Workout page
-- [ ] Add sort/filter to Nutrition page
-- [ ] Add sort/filter to Body Composition page
-- [ ] Add sort/filter to Heart Rate page
-- [ ] Add sort/filter to Sleep page
-- [ ] Create Steps & Stairs page (daily steps + floors climbed)
-- [ ] Create Medical Records page with file upload
-- [ ] Create Supplements page with inventory tracking
-- [ ] Reorganize sidebar navigation (group tabs)
-- [ ] Add exercise machine/movement illustrations to Workout page
-- [ ] Full zh/en i18n for all new pages
-- [ ] Bump version to v1.6.0
+- [x] Fix finish time display in PB cards (hr/min/sec not showing)
+- [x] Fix finish time display in completed race cards header
+- [x] Add sort/filter to Running Log tab
+- [x] Add sort/filter to Workout page
+- [x] Add sort/filter to Nutrition page
+- [x] Add sort/filter to Body Composition page
+- [x] Add sort/filter to Heart Rate page
+- [x] Add sort/filter to Sleep page
+- [x] Create Steps & Stairs page (daily steps + floors climbed)
+- [x] Create Medical Records page with file upload
+- [x] Create Supplements page with inventory tracking
+- [x] Reorganize sidebar navigation (group tabs)
+- [x] Add exercise machine/movement illustrations to Workout page
+- [x] Full zh/en i18n for all new pages
+- [x] Bump version to v1.6.0
