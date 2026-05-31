@@ -608,3 +608,13 @@
 ## Bug Fix: Log Set 後圖表/列表不即時更新
 - [x] 修復：addSet/updateSet/deleteSet onSuccess 現在同時 invalidate getSessions（讓圖表和列表即時刷新）
 - [x] 修復：addSet server 端自動重算 totalVolume 並更新 workout_sessions.totalVolume
+
+## Phase 61: Workout Page Complete Fix (v2.5.0)
+- [x] Fix: Use controlled tabs with activeTab state; clicking session in history auto-switches to session tab
+- [x] Fix: activeSession derived from sessions list (today's latest session auto-restored on reload)
+- [x] Fix: Exercise library tab shows trained muscles from current session in muscle map
+- [x] Feature: Custom exercise creation in Select Exercise dialog (manual + AI photo identification)
+- [x] Feature: Custom exercises merged into exercise list (with custom badge, deletable)
+- [x] Feature: Select Exercise dialog shows "No match? Add custom" button when search has no results
+- [x] Fix: Log Set real-time update (already fixed in v2.4.2, confirm working)
+- [x] Bump version to v2.5.0

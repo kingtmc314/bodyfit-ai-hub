@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { todayHKString, toHKDateString, formatHKChartDate } from "@/lib/hkTime";
@@ -115,7 +115,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export default function Workout() {
   const { t } = useTranslation();
-  const [selectedDate, setSelectedDate] = useState(todayHKString);
+  const [selectedDate, setSelectedDate] = useState(() => todayHKString());
   const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEquipment, setSelectedEquipment] = useState<string>("all");
@@ -131,6 +131,13 @@ export default function Workout() {
   const [editSet, setEditSet] = useState<any>(null);
   const [sessionSort, setSessionSort] = useState<'date_desc'|'date_asc'|'volume_desc'|'duration_desc'>('date_desc');
   const [sessionSearch, setSessionSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'session'|'exercises'|'history'>('session');
+  // Custom exercise creation state
+  const [showCreateExerciseDialog, setShowCreateExerciseDialog] = useState(false);
+  const [createExForm, setCreateExForm] = useState({ name: '', nameZh: '', muscleGroup: 'chest', equipment: 'Barbell', instructions: '' });
+  const [aiIdentifyLoading, setAiIdentifyLoading] = useState(false);
+  const [aiIdentifyResult, setAiIdentifyResult] = useState<any>(null);
+  const createExPhotoRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
   const { data: sessions = [], isLoading } = trpc.workout.getSessions.useQuery({
@@ -183,24 +190,71 @@ export default function Workout() {
     onError: (e) => toast.error('錯誤: ' + e.message),
   });
 
+  // Fetch custom exercises
+  const { data: customExercisesData = [] } = trpc.workout.getCustomExercises.useQuery();
+  const createCustomExercise = trpc.workout.createCustomExercise.useMutation({
+    onSuccess: () => {
+      utils.workout.getCustomExercises.invalidate();
+      setShowCreateExerciseDialog(false);
+      setCreateExForm({ name: '', nameZh: '', muscleGroup: 'chest', equipment: 'Barbell', instructions: '' });
+      setAiIdentifyResult(null);
+      toast.success('自訂動作已新增！');
+    },
+  });
+  const deleteCustomExercise = trpc.workout.deleteCustomExercise.useMutation({
+    onSuccess: () => { utils.workout.getCustomExercises.invalidate(); toast.success('已刪除'); },
+  });
+  const identifyExerciseFromPhoto = trpc.workout.identifyExerciseFromPhoto.useMutation({
+    onSuccess: (data) => {
+      setAiIdentifyResult(data);
+      setCreateExForm(f => ({
+        ...f,
+        name: data.name || f.name,
+        nameZh: data.nameZh || f.nameZh,
+        muscleGroup: data.muscleGroup || f.muscleGroup,
+        equipment: data.equipment || f.equipment,
+        instructions: data.instructions || f.instructions,
+      }));
+      setAiIdentifyLoading(false);
+    },
+    onError: (e) => { toast.error('AI 識別失敗: ' + e.message); setAiIdentifyLoading(false); },
+  });
+
+  const allExercises = useMemo(() => {
+    const custom = (customExercisesData as any[]).map(c => ({ ...c, isCustom: true }));
+    return [...BUILT_IN_EXERCISES, ...custom];
+  }, [customExercisesData]);
+
   const filteredExercises = useMemo(() => {
-    return BUILT_IN_EXERCISES.filter(e => {
+    return allExercises.filter(e => {
       const matchMuscle = !selectedMuscle || e.muscleGroup === selectedMuscle;
-      const matchEquip = selectedEquipment === "all" || e.equipment === selectedEquipment;
-      const matchSearch = !searchQuery || e.name.toLowerCase().includes(searchQuery.toLowerCase()) || e.nameZh.includes(searchQuery);
+      const matchEquip = selectedEquipment === 'all' || e.equipment === selectedEquipment;
+      const matchSearch = !searchQuery || e.name.toLowerCase().includes(searchQuery.toLowerCase()) || (e.nameZh||'').includes(searchQuery);
       return matchMuscle && matchEquip && matchSearch;
     });
-  }, [selectedMuscle, selectedEquipment, searchQuery]);
+  }, [allExercises, selectedMuscle, selectedEquipment, searchQuery]);
+
+  // Auto-restore today's latest session from sessions list
+  useEffect(() => {
+    if (sessions.length > 0 && !activeSession) {
+      const todayStr = todayHKString();
+      const todaySessions = sessions.filter((s: any) => toHKDateString(new Date(s.startTime)) === todayStr);
+      if (todaySessions.length > 0) {
+        const latest = todaySessions.sort((a: any, b: any) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())[0];
+        setActiveSession(latest);
+      }
+    }
+  }, [sessions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeMuscles = useMemo(() => {
     if (!sessionDetail?.sets) return [];
     const muscles = new Set<string>();
     sessionDetail.sets.forEach(s => {
-      const ex = BUILT_IN_EXERCISES.find(e => e.name === s.exerciseName);
+      const ex = allExercises.find(e => e.name === s.exerciseName);
       if (ex) muscles.add(ex.muscleGroup);
     });
     return Array.from(muscles);
-  }, [sessionDetail]);
+  }, [sessionDetail, allExercises]);
 
   const volumeByExercise = useMemo(() => {
     if (!sessionDetail?.sets) return [];
@@ -257,6 +311,23 @@ export default function Workout() {
     return groups;
   }, [sessionDetail]);
 
+  const handleAiPhotoIdentify = (file: File) => {
+    setAiIdentifyLoading(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      const base64 = dataUrl.split(',')[1];
+      const mimeType = file.type || 'image/jpeg';
+      identifyExerciseFromPhoto.mutate({ base64, mimeType });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCreateCustomExercise = () => {
+    if (!createExForm.name.trim()) return toast.error('請輸入動作名稱');
+    createCustomExercise.mutate(createExForm);
+  };
+
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
       {/* Sunny Page Header */}
@@ -282,9 +353,9 @@ export default function Workout() {
         </div>
       </div>
 
-      <Tabs defaultValue="session">
+      <Tabs value={activeTab} onValueChange={v => setActiveTab(v as any)}>
         <TabsList className="bg-muted/50">
-          <TabsTrigger value="session">{t('workout.active_session')}</TabsTrigger>
+          <TabsTrigger value="session">{t('workout.active_session')}{activeSession && <span className="ml-1.5 w-2 h-2 rounded-full bg-green-400 inline-block" />}</TabsTrigger>
           <TabsTrigger value="exercises">{t('workout.exercise_library')}</TabsTrigger>
           <TabsTrigger value="history">{t('workout.history')}</TabsTrigger>
         </TabsList>
@@ -423,6 +494,9 @@ export default function Workout() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input placeholder="Search exercises…" className="pl-9" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                 </div>
+                <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={() => setShowCreateExerciseDialog(true)}>
+                  <PlusCircle className="w-4 h-4" /> 新增自訂
+                </Button>
                 <Select value={selectedEquipment} onValueChange={setSelectedEquipment}>
                   <SelectTrigger className="w-44">
                     <SelectValue placeholder="Equipment" />
@@ -473,7 +547,7 @@ export default function Workout() {
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {filteredExercises.map((ex, i) => (
+                {filteredExercises.map((ex: any, i) => (
                   <div key={i} className="bg-card border border-border rounded-xl p-4 hover:border-primary/50 transition-colors stagger-item cursor-pointer"
                     onClick={() => { setDetailExercise(ex); setShowExerciseDetail(true); }}>
                     <div className="flex items-start justify-between gap-2">
@@ -494,10 +568,18 @@ export default function Workout() {
                         )}
                       </div>
                       <div className="flex flex-col gap-1 shrink-0">
-                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0"
-                          onClick={(e) => { e.stopPropagation(); toggleFavourite.mutate({ exerciseName: ex.name }); }}>
-                          <Star className={`w-4 h-4 transition-colors ${favouriteSet.has(ex.name) ? 'text-yellow-500 fill-yellow-500' : 'text-muted-foreground'}`} />
-                        </Button>
+                        {!(ex as any).isCustom && (
+                          <Button size="sm" variant="ghost" className="h-8 w-8 p-0"
+                            onClick={(e) => { e.stopPropagation(); toggleFavourite.mutate({ exerciseName: ex.name }); }}>
+                            <Star className={`w-4 h-4 transition-colors ${favouriteSet.has(ex.name) ? 'text-yellow-500 fill-yellow-500' : 'text-muted-foreground'}`} />
+                          </Button>
+                        )}
+                        {(ex as any).isCustom && (
+                          <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive"
+                            onClick={(e) => { e.stopPropagation(); deleteCustomExercise.mutate({ id: (ex as any).id }); }}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
                         {activeSession && (
                           <Button size="sm" variant="ghost" className="h-8 w-8 p-0"
                             onClick={(e) => { e.stopPropagation(); setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
@@ -509,8 +591,11 @@ export default function Workout() {
                   </div>
                 ))}
                 {filteredExercises.length === 0 && (
-                  <div className="col-span-2 text-center py-8 text-muted-foreground text-sm">
-                    No exercises found for the selected filters
+                  <div className="col-span-2 text-center py-8 space-y-3">
+                    <p className="text-muted-foreground text-sm">找不到相關動作</p>
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setCreateExForm(f => ({ ...f, name: searchQuery })); setShowCreateExerciseDialog(true); }}>
+                      <PlusCircle className="w-4 h-4" /> 新增「{searchQuery}」為自訂動作
+                    </Button>
                   </div>
                 )}
               </div>
@@ -573,7 +658,7 @@ export default function Workout() {
                     <div className="flex items-center gap-2">
                       {s.totalVolume && <span className="text-xs font-semibold text-primary">{Math.round(s.totalVolume)} kg</span>}
                       <Button variant="ghost" size="icon" className="w-7 h-7"
-                        onClick={() => setActiveSession(s)}>
+                        onClick={() => { setActiveSession(s); setActiveTab('session'); }}>
                         <ChevronRight className="w-3.5 h-3.5" />
                       </Button>
                       <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive"
@@ -616,19 +701,19 @@ export default function Workout() {
         </DialogContent>
       </Dialog>
 
-      {/* Select Exercise Dialog */}
+        {/* Select Exercise Dialog */}
       <Dialog open={showExerciseDialog} onOpenChange={setShowExerciseDialog}>
-        <DialogContent className="max-w-lg max-h-[80vh]">
-          <DialogHeader><DialogTitle>Select Exercise</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <Input placeholder="Search exercises…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-            <div className="space-y-1 max-h-96 overflow-y-auto">
-              {filteredExercises.map((ex, i) => (
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+          <DialogHeader><DialogTitle>選擇動作</DialogTitle></DialogHeader>
+          <div className="space-y-3 flex-1 flex flex-col min-h-0">
+            <Input placeholder="搜尋動作…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+            <div className="space-y-1 flex-1 overflow-y-auto">
+              {filteredExercises.map((ex: any, i: number) => (
                 <button key={i} className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-muted/50 transition-colors"
                   onClick={() => { setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, notes: "" }); setEditSet(null); setShowExerciseDialog(false); setShowAddSetDialog(true); }}>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-foreground">{ex.name}</p>
+                      <p className="text-sm font-medium text-foreground">{ex.name}{(ex as any).isCustom && <Badge variant="secondary" className="ml-1.5 text-[10px] py-0">自訂</Badge>}</p>
                       <p className="text-xs text-muted-foreground">{ex.nameZh}</p>
                     </div>
                     <div className="flex gap-1">
@@ -638,8 +723,94 @@ export default function Workout() {
                   </div>
                 </button>
               ))}
+              {filteredExercises.length === 0 && (
+                <div className="text-center py-6 space-y-3">
+                  <p className="text-muted-foreground text-sm">找不到「{searchQuery}」</p>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setCreateExForm(f => ({ ...f, name: searchQuery })); setShowExerciseDialog(false); setShowCreateExerciseDialog(true); }}>
+                    <PlusCircle className="w-4 h-4" /> 新增為自訂動作
+                  </Button>
+                </div>
+              )}
+            </div>
+            <div className="border-t border-border pt-3">
+              <Button variant="outline" className="w-full gap-2" onClick={() => { setShowExerciseDialog(false); setShowCreateExerciseDialog(true); }}>
+                <PlusCircle className="w-4 h-4" /> 新增自訂動作
+              </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Custom Exercise Dialog */}
+      <Dialog open={showCreateExerciseDialog} onOpenChange={setShowCreateExerciseDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>新增自訂動作</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            {/* AI Photo Identify */}
+            <div className="bg-muted/40 border border-border rounded-xl p-3">
+              <p className="text-xs text-muted-foreground mb-2">📷 拍照讓 AI 識別動作（選填）</p>
+              <input
+                ref={createExPhotoRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleAiPhotoIdentify(f); }}
+              />
+              <Button variant="outline" size="sm" className="gap-2 w-full" disabled={aiIdentifyLoading}
+                onClick={() => createExPhotoRef.current?.click()}>
+                {aiIdentifyLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+                {aiIdentifyLoading ? 'AI 識別中…' : '拍照 / 上傳圖片'}
+              </Button>
+              {aiIdentifyResult && (
+                <div className="mt-2 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+                  <p className="text-xs text-green-600">AI 已識別：{aiIdentifyResult.name}（{aiIdentifyResult.nameZh}）— 可信度：{aiIdentifyResult.confidence}</p>
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">動作名稱（英）*</label>
+                <Input placeholder="e.g. Cable Fly" value={createExForm.name} onChange={e => setCreateExForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">動作名稱（中）</label>
+                <Input placeholder="e.g. 繩索飛鳥" value={createExForm.nameZh} onChange={e => setCreateExForm(f => ({ ...f, nameZh: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">肌肉群</label>
+                <Select value={createExForm.muscleGroup} onValueChange={v => setCreateExForm(f => ({ ...f, muscleGroup: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {MUSCLE_GROUPS.map(m => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">器材</label>
+                <Select value={createExForm.equipment} onValueChange={v => setCreateExForm(f => ({ ...f, equipment: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {EQUIPMENT_LIST.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">動作說明（選填）</label>
+              <Input placeholder="簡短描述動作要點…" value={createExForm.instructions} onChange={e => setCreateExForm(f => ({ ...f, instructions: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowCreateExerciseDialog(false); setAiIdentifyResult(null); }}>取消</Button>
+            <Button onClick={handleCreateCustomExercise} disabled={createCustomExercise.isPending}>
+              {createCustomExercise.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              新增動作
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
