@@ -103,7 +103,7 @@ export default function Running() {
   // Race Events state
   const [showRaceDialog, setShowRaceDialog] = useState(false);
   const [editRace, setEditRace] = useState<any>(null);
-  const [raceForm, setRaceForm] = useState<any>({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' });
+  const [raceForm, setRaceForm] = useState<any>({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', finishHr: '', finishMin: '', finishSec: '', targetHr: '', targetMin: '', targetSec: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' });
   const [deleteRaceConfirm, setDeleteRaceConfirm] = useState<number | null>(null);
 
 
@@ -186,6 +186,18 @@ export default function Running() {
     onError: (e) => toast.error(t("common.error") + ": " + e.message),
   });
 
+  // Training plan state
+  const [trainingPlan, setTrainingPlan] = useState<string | null>(null);
+  const [planWeeks, setPlanWeeks] = useState(12);
+  const [planGoalRaceId, setPlanGoalRaceId] = useState<string>('__none__');
+  const [planGoalFinishHr, setPlanGoalFinishHr] = useState('');
+  const [planGoalFinishMin, setPlanGoalFinishMin] = useState('');
+  const [planGoalFinishSec, setPlanGoalFinishSec] = useState('');
+  const trainingPlanMutation = trpc.running.generateTrainingPlan.useMutation({
+    onSuccess: (data) => { setTrainingPlan(typeof data.plan === 'string' ? data.plan : null); },
+    onError: (e) => toast.error(t('common.error') + ': ' + e.message),
+  });
+
   // Shoe mutations
   const addShoeMutation = trpc.running.addShoe.useMutation({
     onSuccess: () => { utils.running.getShoes.invalidate(); utils.running.getActiveShoes.invalidate(); toast.success(t('running.add_shoe') + ' ✓'); setShowShoeDialog(false); setShoeForm({ shoesName: '', brand: '', model: '', status: 'Active', purchaseDate: '', firstUseDate: '', retirementDate: '', initialKm: '', maxKm: '800', notes: '', price: '', photoUrl: '' }); },
@@ -202,7 +214,7 @@ export default function Running() {
 
   // Race mutations
   const addRaceMutation = trpc.running.addRace.useMutation({
-    onSuccess: () => { utils.running.getRaces.invalidate(); utils.running.getPBs.invalidate(); toast.success('賽事已新增'); setShowRaceDialog(false); setRaceForm({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' }); },
+    onSuccess: () => { utils.running.getRaces.invalidate(); utils.running.getPBs.invalidate(); utils.running.getRacesEnriched.invalidate(); toast.success('賽事已新增'); setShowRaceDialog(false); setRaceForm({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', finishHr: '', finishMin: '', finishSec: '', targetHr: '', targetMin: '', targetSec: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' }); },
     onError: (e) => toast.error('錯誤: ' + e.message),
   });
   const updateRaceMutation = trpc.running.updateRace.useMutation({
@@ -822,7 +834,7 @@ export default function Running() {
                   <SelectItem value="name">{t('running.sort_by_name')}</SelectItem>
                 </SelectContent>
               </Select>
-              <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditRace(null); setRaceForm({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' }); setShowRaceDialog(true); }}>
+              <Button size="sm" className="hero-gradient text-white" onClick={() => { setEditRace(null); setRaceForm({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', finishHr: '', finishMin: '', finishSec: '', targetHr: '', targetMin: '', targetSec: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' }); setShowRaceDialog(true); }}>
                 <Plus className="w-3.5 h-3.5 mr-1" /> {t('running.add_race')}
               </Button>
             </div>
@@ -835,13 +847,20 @@ export default function Running() {
                 <Award className="w-4 h-4 text-yellow-500" /> {t('running.pb_records')}
               </h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {(pbs as any[]).map((pb: any, i: number) => (
-                  <div key={i} className="bg-white/50 dark:bg-white/5 border border-yellow-500/20 rounded-xl p-3 text-center">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{parseFloat(pb.distance_km).toFixed(1)} km</p>
-                    <p className="text-xl font-extrabold text-yellow-600 dark:text-yellow-400 mt-0.5">{pb.finish_time}</p>
-                    <p className="text-[10px] text-muted-foreground truncate mt-0.5">{pb.race_name}</p>
-                  </div>
-                ))}
+                {(pbs as any[]).map((pb: any, i: number) => {
+                  const hasHms = pb.finish_hr != null || pb.finish_min != null || pb.finish_sec != null;
+                  const fh = pb.finish_hr ?? 0; const fm = pb.finish_min ?? 0; const fs = pb.finish_sec ?? 0;
+                  const pbTime = hasHms
+                    ? (fh > 0 ? `${fh}:${String(fm).padStart(2,'0')}:${String(fs).padStart(2,'0')}` : `${fm}:${String(fs).padStart(2,'0')}`)
+                    : (pb.finish_time && pb.finish_time !== 'True' && pb.finish_time !== 'False' ? pb.finish_time : '—');
+                  return (
+                    <div key={i} className="bg-white/50 dark:bg-white/5 border border-yellow-500/20 rounded-xl p-3 text-center">
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{parseFloat(pb.distance_km).toFixed(1)} km</p>
+                      <p className="text-xl font-extrabold text-yellow-600 dark:text-yellow-400 mt-0.5">{pbTime}</p>
+                      <p className="text-[10px] text-muted-foreground truncate mt-0.5">{pb.race_name}</p>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -867,6 +886,12 @@ export default function Running() {
                 bibNo: race.bib_no || '',
                 isPb: race.is_pb || false,
                 finishTime: race.finish_time || '',
+                finishHr: race.finish_hr != null ? String(race.finish_hr) : '',
+                finishMin: race.finish_min != null ? String(race.finish_min) : '',
+                finishSec: race.finish_sec != null ? String(race.finish_sec) : '',
+                targetHr: race.target_hr != null ? String(race.target_hr) : '',
+                targetMin: race.target_min != null ? String(race.target_min) : '',
+                targetSec: race.target_sec != null ? String(race.target_sec) : '',
                 overallPlace: race.overall_place != null ? String(race.overall_place) : '',
                 ageGroupPlace: race.age_group_place != null ? String(race.age_group_place) : '',
                 genderGroupPlace: race.gender_group_place != null ? String(race.gender_group_place) : '',
@@ -946,12 +971,34 @@ export default function Running() {
                                     {race.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{race.location}</span>}
                                   </div>
                                 </div>
-                                {race.finish_time && (
-                                  <div className="text-right shrink-0">
-                                    <p className="text-2xl font-extrabold text-foreground">{race.finish_time}</p>
-                                    <p className="text-[10px] text-muted-foreground">{t('running.finish_time')}</p>
-                                  </div>
-                                )}
+                                <div className="flex flex-col items-end gap-1 shrink-0">
+                                  {(() => {
+                                    const hasHms = race.finish_hr != null || race.finish_min != null || race.finish_sec != null;
+                                    const fh = race.finish_hr ?? 0; const fm = race.finish_min ?? 0; const fs = race.finish_sec ?? 0;
+                                    const displayTime = hasHms
+                                      ? (fh > 0 ? `${fh}:${String(fm).padStart(2,'0')}:${String(fs).padStart(2,'0')}` : `${fm}:${String(fs).padStart(2,'0')}`)
+                                      : (race.finish_time && race.finish_time !== 'True' && race.finish_time !== 'False' ? race.finish_time : null);
+                                    if (!displayTime) return null;
+                                    return (
+                                      <div className="text-right">
+                                        <p className="text-2xl font-extrabold text-foreground">{displayTime}</p>
+                                        <p className="text-[10px] text-muted-foreground">{t('running.finish_time')}</p>
+                                      </div>
+                                    );
+                                  })()}
+                                  {(() => {
+                                    const hasTgt = race.target_hr != null || race.target_min != null || race.target_sec != null;
+                                    if (!hasTgt) return null;
+                                    const th = race.target_hr ?? 0; const tm = race.target_min ?? 0; const ts = race.target_sec ?? 0;
+                                    const tgtTime = th > 0 ? `${th}:${String(tm).padStart(2,'0')}:${String(ts).padStart(2,'0')}` : `${tm}:${String(ts).padStart(2,'0')}`;
+                                    return (
+                                      <div className="text-right">
+                                        <p className="text-sm font-semibold text-blue-500">{tgtTime}</p>
+                                        <p className="text-[10px] text-muted-foreground">目標</p>
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
                               </div>
                             </div>
 
@@ -1203,6 +1250,99 @@ export default function Running() {
               <div className="text-center py-12 text-muted-foreground">
                 <Bot className="w-12 h-12 mx-auto mb-3 opacity-20" />
                 <p className="font-medium">{t("running.ai_analysis_desc")}</p>
+              </div>
+            )}
+          </div>
+
+          {/* ─── Personalized Training Plan ─── */}
+          <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+            <div className="mb-4">
+              <h3 className="font-semibold text-foreground flex items-center gap-2">
+                <Bot className="w-4 h-4 text-blue-500" />
+                {t('running.training_plan_title')}
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">{t('running.training_plan_desc')}</p>
+            </div>
+
+            {/* Config row */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('running.goal_race')}</label>
+                <Select value={planGoalRaceId} onValueChange={(v) => { setPlanGoalRaceId(v); setTrainingPlan(null); }}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="選擇目標賽事..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— 不指定 —</SelectItem>
+                    {[...(races as any[])]
+                      .filter((r: any) => new Date(r.date + 'T00:00:00+08:00') > now)
+                      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                      .map((r: any) => (
+                        <SelectItem key={r.id} value={String(r.id)}>
+                          {r.race_name} ({r.date}, {parseFloat(r.distance_km||0).toFixed(1)}km)
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('running.plan_weeks')}</label>
+                <Select value={String(planWeeks)} onValueChange={(v) => { setPlanWeeks(Number(v)); setTrainingPlan(null); }}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {[4, 8, 12, 16, 20, 24].map((w) => (
+                      <SelectItem key={w} value={String(w)}>{w} {t('running.weeks')}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('running.goal_finish_time')} (hr : min : sec)</label>
+                <div className="flex items-center gap-1.5">
+                  <Input type="number" min="0" max="23" placeholder="0" className="h-8 text-xs text-center" value={planGoalFinishHr} onChange={(e) => { setPlanGoalFinishHr(e.target.value); setTrainingPlan(null); }} />
+                  <span className="text-muted-foreground font-bold">:</span>
+                  <Input type="number" min="0" max="59" placeholder="00" className="h-8 text-xs text-center" value={planGoalFinishMin} onChange={(e) => { setPlanGoalFinishMin(e.target.value); setTrainingPlan(null); }} />
+                  <span className="text-muted-foreground font-bold">:</span>
+                  <Input type="number" min="0" max="59" placeholder="00" className="h-8 text-xs text-center" value={planGoalFinishSec} onChange={(e) => { setPlanGoalFinishSec(e.target.value); setTrainingPlan(null); }} />
+                  <Button
+                    onClick={() => {
+                      setTrainingPlan(null);
+                      trainingPlanMutation.mutate({
+                        goalRaceId: planGoalRaceId !== '__none__' ? Number(planGoalRaceId) : undefined,
+                        goalFinishHr: planGoalFinishHr !== '' ? parseInt(planGoalFinishHr) : undefined,
+                        goalFinishMin: planGoalFinishMin !== '' ? parseInt(planGoalFinishMin) : undefined,
+                        goalFinishSec: planGoalFinishSec !== '' ? parseInt(planGoalFinishSec) : undefined,
+                        planWeeks,
+                      });
+                    }}
+                    disabled={trainingPlanMutation.isPending}
+                    className="ml-2 bg-blue-500 hover:bg-blue-600 text-white h-8 text-xs px-3 shrink-0"
+                  >
+                    {trainingPlanMutation.isPending ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />{t('running.generating')}</>
+                    ) : (
+                      <><Bot className="w-3.5 h-3.5 mr-1" />{t('running.generate_plan')}</>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {trainingPlanMutation.isPending && (
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                <p className="text-sm text-muted-foreground">{t('running.generating_plan')}</p>
+              </div>
+            )}
+
+            {!trainingPlanMutation.isPending && trainingPlan && (
+              <div className="prose prose-sm dark:prose-invert max-w-none border-t border-border pt-4">
+                <Streamdown>{trainingPlan}</Streamdown>
+              </div>
+            )}
+
+            {!trainingPlanMutation.isPending && !trainingPlan && (
+              <div className="text-center py-8 text-muted-foreground">
+                <Bot className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                <p className="text-sm">{t('running.training_plan_empty')}</p>
               </div>
             )}
           </div>
@@ -1469,9 +1609,25 @@ export default function Running() {
               <label className="text-xs font-medium text-muted-foreground mb-1 block">距離 (km)</label>
               <Input type="number" step="0.1" placeholder="例: 42.195" value={raceForm.distanceKm} onChange={(e) => setRaceForm((p: any) => ({ ...p, distanceKm: e.target.value }))} />
             </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">完賽時間</label>
-              <Input placeholder="例: 3:45:00" value={raceForm.finishTime} onChange={(e) => setRaceForm((p: any) => ({ ...p, finishTime: e.target.value }))} />
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">完賽時間 (hr : min : sec)</label>
+              <div className="flex items-center gap-1.5">
+                <Input type="number" min="0" max="23" placeholder="0" className="text-center" value={raceForm.finishHr} onChange={(e) => setRaceForm((p: any) => ({ ...p, finishHr: e.target.value }))} />
+                <span className="text-muted-foreground font-bold text-sm">:</span>
+                <Input type="number" min="0" max="59" placeholder="00" className="text-center" value={raceForm.finishMin} onChange={(e) => setRaceForm((p: any) => ({ ...p, finishMin: e.target.value }))} />
+                <span className="text-muted-foreground font-bold text-sm">:</span>
+                <Input type="number" min="0" max="59" placeholder="00" className="text-center" value={raceForm.finishSec} onChange={(e) => setRaceForm((p: any) => ({ ...p, finishSec: e.target.value }))} />
+              </div>
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">目標時間 (hr : min : sec)</label>
+              <div className="flex items-center gap-1.5">
+                <Input type="number" min="0" max="23" placeholder="0" className="text-center" value={raceForm.targetHr} onChange={(e) => setRaceForm((p: any) => ({ ...p, targetHr: e.target.value }))} />
+                <span className="text-muted-foreground font-bold text-sm">:</span>
+                <Input type="number" min="0" max="59" placeholder="00" className="text-center" value={raceForm.targetMin} onChange={(e) => setRaceForm((p: any) => ({ ...p, targetMin: e.target.value }))} />
+                <span className="text-muted-foreground font-bold text-sm">:</span>
+                <Input type="number" min="0" max="59" placeholder="00" className="text-center" value={raceForm.targetSec} onChange={(e) => setRaceForm((p: any) => ({ ...p, targetSec: e.target.value }))} />
+              </div>
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">地點</label>
@@ -1528,6 +1684,12 @@ export default function Running() {
                   bibNo: raceForm.bibNo || undefined,
                   isPb: raceForm.isPb,
                   finishTime: raceForm.finishTime || undefined,
+                  finishHr: raceForm.finishHr !== '' ? parseInt(raceForm.finishHr) : undefined,
+                  finishMin: raceForm.finishMin !== '' ? parseInt(raceForm.finishMin) : undefined,
+                  finishSec: raceForm.finishSec !== '' ? parseInt(raceForm.finishSec) : undefined,
+                  targetHr: raceForm.targetHr !== '' ? parseInt(raceForm.targetHr) : undefined,
+                  targetMin: raceForm.targetMin !== '' ? parseInt(raceForm.targetMin) : undefined,
+                  targetSec: raceForm.targetSec !== '' ? parseInt(raceForm.targetSec) : undefined,
                   overallPlace: raceForm.overallPlace ? parseInt(raceForm.overallPlace) : undefined,
                   ageGroupPlace: raceForm.ageGroupPlace ? parseInt(raceForm.ageGroupPlace) : undefined,
                   genderGroupPlace: raceForm.genderGroupPlace ? parseInt(raceForm.genderGroupPlace) : undefined,

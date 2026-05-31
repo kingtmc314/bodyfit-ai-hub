@@ -468,3 +468,18 @@
 - [x] Add i18n keys: sort_by_status/mileage/name/purchase/date/distance, best_pace, biomechanics, stride_length, vertical_ratio, vertical_oscillation, ground_contact, weather_conditions, feels_like, ai_coach_desc, no_runs_for_shoe, run_history, close
 - [x] Version bump to v1.4.0
 - [x] 35/35 tests passing, 0 TypeScript errors
+
+## Phase 48: Finish Time hr/min/sec + Personalized Training Plan
+
+- [ ] Add finish_hr, finish_min, finish_sec, target_hr, target_min, target_sec columns to races table (migration applied)
+- [ ] Update addRace/updateRace procedures to include new hr/min/sec fields
+- [ ] Update getPBs procedure to use finish_hr/min/sec for display
+- [ ] Update getRacesEnriched to return finish_hr/min/sec and target_hr/min/sec
+- [ ] Update race dialog form: replace single finishTime/targetTime text fields with 3 separate hr/min/sec inputs
+- [ ] Update completed race cards to display finish time as formatted hr:min:sec from separate fields
+- [ ] Update PB cards to display finish time from hr/min/sec fields
+- [ ] Update openEditRace to populate finishHr/finishMin/finishSec/targetHr/targetMin/targetSec
+- [ ] Add generateTrainingPlan tRPC procedure: aggregates all health data (running, body, sleep, HR, workout) + races + goals, generates personalized weekly training plan via LLM
+- [ ] Add Training Plan section to AI Coach tab with goal race selector, plan duration (weeks), generate button
+- [ ] Display training plan as structured weekly schedule (Mon-Sun with workout type, distance, intensity)
+- [ ] Update i18n en.json and zh.json with new training plan keys

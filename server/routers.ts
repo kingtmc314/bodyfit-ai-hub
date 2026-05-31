@@ -1727,9 +1727,10 @@ const runningRouter = router({
 
       // Fetch past race results for context
       const pastRaceRows = await db.execute(sql`
-        SELECT race_name, date, distance_km, finish_time, is_pb, overall_place, gender_group_place, age_group_place, location, notes
+        SELECT race_name, date, distance_km, finish_time, finish_hr, finish_min, finish_sec, is_pb, overall_place, gender_group_place, age_group_place, location, notes
         FROM races
-        WHERE date < TO_CHAR(NOW(), 'YYYY-MM-DD') AND finish_time IS NOT NULL
+        WHERE date < TO_CHAR(NOW(), 'YYYY-MM-DD')
+          AND (finish_hr IS NOT NULL OR finish_min IS NOT NULL OR finish_time IS NOT NULL)
         ORDER BY date DESC
         LIMIT 20
       `);
@@ -1747,8 +1748,15 @@ const runningRouter = router({
       `);
       const activeShoes = (activeShoeRows as any).rows ?? activeShoeRows;
 
+      const fmtFinishTime = (r: any) => {
+        if (r.finish_hr != null || r.finish_min != null || r.finish_sec != null) {
+          const h = r.finish_hr ?? 0; const m = r.finish_min ?? 0; const s = r.finish_sec ?? 0;
+          return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
+        }
+        return r.finish_time || '未知';
+      };
       const pastRaceSummary = pastRaces.map((r: any) =>
-        `${r.date?.toString().slice(0,10)} ${r.race_name} ${parseFloat(r.distance_km||0).toFixed(1)}km 完成:${r.finish_time}${r.is_pb?' (PB)':''}${r.overall_place?' 總排#'+r.overall_place:''}${r.location?' @'+r.location:''}`
+        `${r.date?.toString().slice(0,10)} ${r.race_name} ${parseFloat(r.distance_km||0).toFixed(1)}km 完成:${fmtFinishTime(r)}${r.is_pb?' (PB)':''}${r.overall_place?' 總排#'+r.overall_place:''}${r.location?' @'+r.location:''}`
       ).join('\n');
 
       const upcomingRaceSummary = upcomingRaces.map((r: any) =>
@@ -1810,6 +1818,191 @@ ${activeShoeSummary || '暫無跑鞋記錄'}
         ],
       });
       return { analysis: res.choices[0]?.message?.content ?? '分析失敗，請稍後再試。' };
+    }),
+
+  // ─── Personalized Training Plan ─────────────────────────────────────────────
+  generateTrainingPlan: publicProcedure
+    .input(z.object({
+      goalRaceId: z.number().optional(),
+      goalRaceName: z.string().optional(),
+      goalRaceDate: z.string().optional(),
+      goalRaceDistance: z.number().optional(),
+      goalFinishHr: z.number().optional(),
+      goalFinishMin: z.number().optional(),
+      goalFinishSec: z.number().optional(),
+      planWeeks: z.number().optional().default(12),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+
+      // 1. Recent running logs (last 8 weeks)
+      const runRows = await db.execute(sql`
+        SELECT date, running_type, distance_km, hour, minutes, second,
+               average_pace, best_pace, average_heart_rate, maximum_heart_rate,
+               average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
+               vertical_oscillation_cm, calories, running_shoes, notes
+        FROM running_logs ORDER BY date DESC LIMIT 60
+      `);
+      const runs = (runRows as any).rows ?? runRows;
+
+      // 2. All races (past + upcoming)
+      const raceRows = await db.execute(sql`
+        SELECT race_name, date, distance_km, finish_hr, finish_min, finish_sec, finish_time, is_pb, overall_place, location
+        FROM races ORDER BY date DESC LIMIT 30
+      `);
+      const allRaces = (raceRows as any).rows ?? raceRows;
+
+      // 3. Latest body composition
+      const bodyRows = await db.execute(sql`
+        SELECT weight, body_fat_pct, muscle_mass, bmi, bmr, visceral_fat
+        FROM body_composition ORDER BY date DESC LIMIT 1
+      `);
+      const body = ((bodyRows as any).rows ?? bodyRows)[0] ?? null;
+
+      // 4. Latest heart rate data
+      const hrRows = await db.execute(sql`
+        SELECT resting_hr, high_hr, hrv, avg_hr, zone1_minutes, zone2_minutes, zone3_minutes, zone4_minutes, zone5_minutes
+        FROM heart_rate_logs ORDER BY date DESC LIMIT 1
+      `);
+      const hr = ((hrRows as any).rows ?? hrRows)[0] ?? null;
+
+      // 5. Recent sleep data (7-day average)
+      const sleepRows = await db.execute(sql`
+        SELECT AVG(sleep_score) as avg_score, AVG(sleep_duration) as avg_duration,
+               AVG(hrv) as avg_hrv, AVG(resting_hr) as avg_resting_hr,
+               AVG(body_battery) as avg_battery, AVG(deep_sleep) as avg_deep
+        FROM sleep_logs WHERE date >= TO_CHAR(NOW() - interval '14 days', 'YYYY-MM-DD')
+      `);
+      const sleep = ((sleepRows as any).rows ?? sleepRows)[0] ?? null;
+
+      // 6. Active shoes
+      const shoeRows = await db.execute(sql`
+        SELECT s.shoes_name, s.brand,
+          COALESCE(s.initial_km::numeric, 0) + COALESCE(SUM(r.distance_km::numeric), 0) AS total_km
+        FROM running_shoes s
+        LEFT JOIN running_logs r ON (r.shoes_id = s.id OR (r.shoes_id IS NULL AND r.running_shoes = s.shoes_name))
+        WHERE s.status = 'Active'
+        GROUP BY s.id, s.shoes_name, s.brand ORDER BY s.shoes_name ASC
+      `);
+      const shoes = (shoeRows as any).rows ?? shoeRows;
+
+      const fmtTime = (r: any) => {
+        if (r.finish_hr != null || r.finish_min != null) {
+          const h = r.finish_hr ?? 0; const m = r.finish_min ?? 0; const s = r.finish_sec ?? 0;
+          return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
+        }
+        return r.finish_time || null;
+      };
+      const fmtPace = (sec: number | null) => {
+        if (!sec) return 'N/A';
+        const m = Math.floor(sec / 60); const s = Math.round(sec % 60);
+        return `${m}:${String(s).padStart(2, '0')}/km`;
+      };
+
+      const pastRaces = allRaces.filter((r: any) => new Date(r.date) <= new Date());
+      const upcomingRaces = allRaces.filter((r: any) => new Date(r.date) > new Date());
+
+      // Build goal race description
+      let goalDesc = '';
+      if (input.goalRaceId) {
+        const gr = allRaces.find((r: any) => Number(r.id) === input.goalRaceId);
+        if (gr) goalDesc = `${gr.race_name} (${gr.date}, ${parseFloat(gr.distance_km||0).toFixed(1)}km)`;
+      } else if (input.goalRaceName) {
+        goalDesc = `${input.goalRaceName}${input.goalRaceDate ? ' ('+input.goalRaceDate+')' : ''}${input.goalRaceDistance ? ' '+input.goalRaceDistance+'km' : ''}`;
+      }
+      const goalTimeDesc = (input.goalFinishHr != null || input.goalFinishMin != null)
+        ? `目標完賽時間: ${input.goalFinishHr ?? 0}:${String(input.goalFinishMin ?? 0).padStart(2,'0')}:${String(input.goalFinishSec ?? 0).padStart(2,'0')}`
+        : '';
+
+      const runSummary = runs.slice(0, 40).map((r: any) => {
+        const dur = (r.hour || r.minutes) ? `${r.hour||0}h${r.minutes||0}m${r.second||0}s` : '';
+        return [
+          `${r.date?.toString().slice(0,10)}`,
+          r.running_type ? r.running_type : '',
+          r.distance_km ? `${parseFloat(r.distance_km).toFixed(1)}km` : '',
+          dur,
+          r.average_pace ? `配速${fmtPace(parseFloat(r.average_pace)*60)}` : '',
+          r.average_heart_rate ? `心率${r.average_heart_rate}bpm` : '',
+          r.average_cadence ? `步頻${parseFloat(r.average_cadence).toFixed(0)}spm` : '',
+        ].filter(Boolean).join(' ');
+      }).join('\n');
+
+      const pastRaceSummary = pastRaces.slice(0, 10).map((r: any) => {
+        const t = fmtTime(r);
+        return `${r.date?.toString().slice(0,10)} ${r.race_name} ${parseFloat(r.distance_km||0).toFixed(1)}km${t?' 完成:'+t:''}${r.is_pb?' PB':''}`;
+      }).join('\n');
+
+      const upcomingRaceSummary = upcomingRaces.slice(0, 5).map((r: any) =>
+        `${r.date?.toString().slice(0,10)} ${r.race_name} ${parseFloat(r.distance_km||0).toFixed(1)}km${r.location?' @'+r.location:''}`
+      ).join('\n');
+
+      const bodySummary = body ? `體重:${body.weight}kg, 體脂:${body.body_fat_pct}%, 肌肉量:${body.muscle_mass}kg, BMI:${body.bmi}, BMR:${body.bmr}kcal` : '無數據';
+      const hrSummary = hr ? `靜息心率:${hr.resting_hr}bpm, 最大心率:${hr.high_hr}bpm, HRV:${hr.hrv}ms, 平均心率:${hr.avg_hr}bpm` : '無數據';
+      const sleepSummary = sleep ? `平均睡眠評分:${parseFloat(sleep.avg_score||0).toFixed(0)}, 平均睡眠時長:${parseFloat(sleep.avg_duration||0).toFixed(1)}h, 平均HRV:${parseFloat(sleep.avg_hrv||0).toFixed(0)}ms, 身體電量:${parseFloat(sleep.avg_battery||0).toFixed(0)}` : '無數據';
+      const shoesSummary = shoes.map((s: any) => `${s.shoes_name}${s.brand?' ('+s.brand+')':''} 已跑${parseFloat(s.total_km||0).toFixed(0)}km`).join(', ');
+
+      const res = await invokeLLM({
+        messages: [
+          { role: 'system', content: '你是一位專業馬拉松教練和運動科學家，擅長為跑者制定個人化訓練計劃。請用繁體中文回答，結構清晰，使用 Markdown 格式。' },
+          { role: 'user', content: `請根據以下我的全面健康和訓練數據，為我制定一份個人化${input.planWeeks}週訓練計劃。
+
+## 目標賽事
+${goalDesc || '暫未指定目標賽事'}
+${goalTimeDesc}
+
+## 近期訓練記錄 (最近${runs.length}次)
+${runSummary || '無記錄'}
+
+## 過往賽事成績
+${pastRaceSummary || '無記錄'}
+
+## 即將到來的賽事
+${upcomingRaceSummary || '無記錄'}
+
+## 身體組成
+${bodySummary}
+
+## 心率數據
+${hrSummary}
+
+## 近2週睡眠恢復
+${sleepSummary}
+
+## 現有跑鞋 (Active)
+${shoesSummary || '無記錄'}
+
+請提供以下完整訓練計劃:
+
+### 1. 訓練目標與現況評估
+根據我的數據評估目前水平，設定合理的訓練目標
+
+### 2. ${input.planWeeks}週訓練計劃概覽
+以週為單位，說明每週訓練重點、總里程、強度分布（輕鬆跑/節奏跑/間歇/長跑比例）
+
+### 3. 第1-4週詳細週計劃（基礎建立期）
+每週列出7天的具體訓練安排（休息/輕鬆跑/交叉訓練/節奏跑/間歇/長跑），包括距離、配速目標、心率區間
+
+### 4. 第5-8週詳細週計劃（強化期）
+每週列出7天的具體訓練安排，逐步提升強度和里程
+
+### 5. 第9-${input.planWeeks}週詳細週計劃（賽前準備/減量期）
+最後幾週的減量策略和賽前調整
+
+### 6. 關鍵訓練課程說明
+解釋計劃中的核心訓練課程（如乳酸門檻跑、VO2max間歇等）的具體執行方法
+
+### 7. 恢復與健康管理
+根據我的睡眠和HRV數據，提供恢復建議；何時應該調整訓練強度
+
+### 8. 跑鞋使用建議
+根據訓練類型和里程，建議不同訓練日使用哪雙跑鞋
+
+### 9. 營養與補水策略
+長跑和比賽日的補給建議` },
+        ],
+      });
+      return { plan: res.choices[0]?.message?.content ?? '生成失敗，請稍後再試。' };
     }),
 
   // ─── Shoe Locker CRUD ────────────────────────────────────────────────────────
@@ -1935,7 +2128,13 @@ ${activeShoeSummary || '暫無跑鞋記錄'}
     .query(async () => {
       const db = await getDb();
       if (!db) return [];
-      const rows = await db.execute(sql`SELECT * FROM races ORDER BY date DESC`);
+      const rows = await db.execute(sql`
+        SELECT id, race_name, date, distance_km, location, registration, bib_no, is_pb,
+          finish_time, finish_hr, finish_min, finish_sec, target_hr, target_min, target_sec,
+          overall_place, age_group_place, gender_group_place, running_shoes, shoes_id, notes,
+          created_at, updated_at
+        FROM races ORDER BY date DESC
+      `);
       return (rows as any).rows ?? rows;
     }),
 
@@ -1949,6 +2148,12 @@ ${activeShoeSummary || '暫無跑鞋記錄'}
       bibNo: z.string().optional(),
       isPb: z.boolean().optional().default(false),
       finishTime: z.string().optional(),
+      finishHr: z.number().optional(),
+      finishMin: z.number().optional(),
+      finishSec: z.number().optional(),
+      targetHr: z.number().optional(),
+      targetMin: z.number().optional(),
+      targetSec: z.number().optional(),
       overallPlace: z.number().optional(),
       ageGroupPlace: z.number().optional(),
       genderGroupPlace: z.number().optional(),
@@ -1961,9 +2166,12 @@ ${activeShoeSummary || '暫無跑鞋記錄'}
       if (!db) throw new Error('DB unavailable');
       await db.execute(sql`
         INSERT INTO races (race_name, date, distance_km, location, registration, bib_no, is_pb, finish_time,
+          finish_hr, finish_min, finish_sec, target_hr, target_min, target_sec,
           overall_place, age_group_place, gender_group_place, running_shoes, shoes_id, notes)
         VALUES (${input.raceName}, ${input.date}, ${input.distanceKm ?? null}, ${input.location ?? null},
           ${input.registration ?? null}, ${input.bibNo ?? null}, ${input.isPb ?? false}, ${input.finishTime ?? null},
+          ${input.finishHr ?? null}, ${input.finishMin ?? null}, ${input.finishSec ?? null},
+          ${input.targetHr ?? null}, ${input.targetMin ?? null}, ${input.targetSec ?? null},
           ${input.overallPlace ?? null}, ${input.ageGroupPlace ?? null}, ${input.genderGroupPlace ?? null},
           ${input.runningShoes ?? null}, ${input.shoesId ?? null}, ${input.notes ?? null})
       `);
@@ -1981,6 +2189,12 @@ ${activeShoeSummary || '暫無跑鞋記錄'}
       bibNo: z.string().optional(),
       isPb: z.boolean().optional(),
       finishTime: z.string().optional(),
+      finishHr: z.number().optional(),
+      finishMin: z.number().optional(),
+      finishSec: z.number().optional(),
+      targetHr: z.number().optional(),
+      targetMin: z.number().optional(),
+      targetSec: z.number().optional(),
       overallPlace: z.number().optional(),
       ageGroupPlace: z.number().optional(),
       genderGroupPlace: z.number().optional(),
@@ -2002,6 +2216,12 @@ ${activeShoeSummary || '暫無跑鞋記錄'}
       if (f.bibNo !== undefined) { sets.push(`bib_no = $${sets.length+1}`); vals.push(f.bibNo); }
       if (f.isPb !== undefined) { sets.push(`is_pb = $${sets.length+1}`); vals.push(f.isPb); }
       if (f.finishTime !== undefined) { sets.push(`finish_time = $${sets.length+1}`); vals.push(f.finishTime); }
+      if (f.finishHr !== undefined) { sets.push(`finish_hr = $${sets.length+1}`); vals.push(f.finishHr); }
+      if (f.finishMin !== undefined) { sets.push(`finish_min = $${sets.length+1}`); vals.push(f.finishMin); }
+      if (f.finishSec !== undefined) { sets.push(`finish_sec = $${sets.length+1}`); vals.push(f.finishSec); }
+      if (f.targetHr !== undefined) { sets.push(`target_hr = $${sets.length+1}`); vals.push(f.targetHr); }
+      if (f.targetMin !== undefined) { sets.push(`target_min = $${sets.length+1}`); vals.push(f.targetMin); }
+      if (f.targetSec !== undefined) { sets.push(`target_sec = $${sets.length+1}`); vals.push(f.targetSec); }
       if (f.overallPlace !== undefined) { sets.push(`overall_place = $${sets.length+1}`); vals.push(f.overallPlace); }
       if (f.ageGroupPlace !== undefined) { sets.push(`age_group_place = $${sets.length+1}`); vals.push(f.ageGroupPlace); }
       if (f.genderGroupPlace !== undefined) { sets.push(`gender_group_place = $${sets.length+1}`); vals.push(f.genderGroupPlace); }
@@ -2032,10 +2252,12 @@ ${activeShoeSummary || '暫無跑鞋記錄'}
       const db = await getDb();
       if (!db) return [];
       const rows = await db.execute(sql`
-        SELECT DISTINCT ON (distance_km) distance_km, race_name, date, finish_time, location
+        SELECT DISTINCT ON (distance_km) distance_km, race_name, date, finish_time,
+          finish_hr, finish_min, finish_sec, location
         FROM races
-        WHERE is_pb = true AND finish_time IS NOT NULL
-        ORDER BY distance_km ASC, finish_time ASC
+        WHERE is_pb = true AND (finish_hr IS NOT NULL OR finish_min IS NOT NULL OR finish_time IS NOT NULL)
+        ORDER BY distance_km ASC,
+          COALESCE(finish_hr, 0) * 3600 + COALESCE(finish_min, 0) * 60 + COALESCE(finish_sec, 0) ASC
       `);
       return (rows as any).rows ?? rows;
     }),
