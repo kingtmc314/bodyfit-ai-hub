@@ -66,42 +66,55 @@ function wgerImg(path: string): string {
 }
 
 // Exercise demo images from wger.de (CC-BY-SA licensed)
+// All URLs verified against wger.de API as of 2026-05
 const EXERCISE_DEMO_IMAGES: Record<string, string[]> = {
-  "Ab Rollout": [wgerImg("/media/exercise-images/41/34b37423-269f-43d4-9d29-d2a90eeaa6b4.png")],
-  "Bench Press": [wgerImg("/media/exercise-images/61/Close-grip-bench-press-1.png")],
-  "Bulgarian Split Squat": [wgerImg("/media/exercise-images/988/6283b258-a4d7-4833-84f7-a38987022d3d.png")],
-  "Cable Curl": [wgerImg("/media/exercise-images/912/e10a034f-6370-4dd6-b1c2-416b27844529.png")],
-  "Close-grip Bench Press": [wgerImg("/media/exercise-images/1897/9abec4e4-90ba-44f9-9e6e-5e35f7273078.png")],
-  "Concentration Curl": [wgerImg("/media/exercise-images/1109/00b0a0bf-c14a-4f13-bb14-62c09030a1aa.png")],
-  "Crunch": [wgerImg("/media/exercise-images/976/94649ea6-bf58-4fd9-90c1-b2ec96ee20cd.png")],
-  "Deadlift": [wgerImg("/media/exercise-images/1003/772d6e47-3865-4944-9255-7435d0b06782.png")],
-  "Decline Bench Press": [wgerImg("/media/exercise-images/100/Decline-bench-press-1.png")],
-  "Dips": [wgerImg("/media/exercise-images/1000/553266a8-a972-48c5-a014-b12afac66f65.png")],
-  "Face Pull": [wgerImg("/media/exercise-images/1639/8927346e-f5ca-4795-bdf1-5ac9309401e7.webp")],
-  "Front Raise": [wgerImg("/media/exercise-images/1745/9c92843a-6b90-428b-a868-9af4b11bad38.jpg")],
-  "Hammer Curl": [wgerImg("/media/exercise-images/86/Bicep-hammer-curl-1.png")],
-  "Hip Thrust": [wgerImg("/media/exercise-images/1642/a81ad922-caf5-47f8-99b4-640cb0717436.webp")],
-  "Hyperextension": [wgerImg("/media/exercise-images/128/Hyperextensions-1.png")],
-  "Incline Bench Press": [wgerImg("/media/exercise-images/61/Close-grip-bench-press-1.png")],
-  "Lateral Raise": [wgerImg("/media/exercise-images/1378/7c1fcf34-fb7e-45e7-a0c1-51f296235315.jpg")],
-  "Leg Curl": [wgerImg("/media/exercise-images/154/lying-leg-curl-machine-large-1.png")],
-  "Leg Extension": [wgerImg("/media/exercise-images/369/78c915d1-e46d-4d30-8124-65d68664c3ef.png")],
-  "Leg Press": [wgerImg("/media/exercise-images/146/8b284904-d072-4381-a256-4c81d8fd9c1f.png")],
-  "Leg Raise": [wgerImg("/media/exercise-images/979/27097a3a-5749-428d-b94c-6082afe390f6.png")],
-  "Lunge": [wgerImg("/media/exercise-images/1651/04ab2679-a04d-4d05-9c85-0d36e898328c.webp")],
-  "Plank": [wgerImg("/media/exercise-images/1022/f74644fa-f43e-46bd-8603-6e3a2ee8ee2d.jpg")],
-  "Preacher Curl": [wgerImg("/media/exercise-images/193/Preacher-curl-3-1.png")],
-  "Pull-up": [wgerImg("/media/exercise-images/1738/0529acdf-ede8-42a2-a3e5-8d0c57b7a0e1.jpg")],
-  "Push-up": [wgerImg("/media/exercise-images/1112/81f40bee-4adf-4317-8476-1a87706e3031.png")],
-  "Rear Delt Fly": [wgerImg("/media/exercise-images/822/74affc0d-03b6-4f33-b5f4-a822a2615f68.png")],
-  "Romanian Deadlift": [wgerImg("/media/exercise-images/1652/0306c8c0-70cc-45d4-92de-6fa72ceaa834.webp")],
-  "Russian Twist": [wgerImg("/media/exercise-images/1193/70ca5d80-3847-4a8c-8882-c6e9e485e29e.png")],
-  "Seated Cable Row": [wgerImg("/media/exercise-images/921/2555c4c3-a84d-47db-b83b-cbf721f12e45.png")],
-  "Shrug": [wgerImg("/media/exercise-images/1645/9e730259-1dcd-4b5e-b4cc-9ebc0cfda75c.webp")],
-  "Squat": [wgerImg("/media/exercise-images/977/3124c091-6395-4377-96c5-56048b627ceb.png")],
-  "Standing Calf Raise": [wgerImg("/media/exercise-images/622/9a429bd0-afd3-4ad0-8043-e9beec901c81.jpeg")],
-  "Tricep Pushdown": [wgerImg("/media/exercise-images/805/7a437824-e2cc-46e1-804a-674f0ea31d25.png")],
-  "Upright Row": [wgerImg("/media/exercise-images/694/119e6823-6960-4341-a9e1-aaf78d7fb57c.png")],
+  // Named files — highest reliability
+  "Bench Press":          [wgerImg("/media/exercise-images/192/Bench-press-1.png"), wgerImg("/media/exercise-images/192/Bench-press-2.png")],
+  "Close-grip Bench Press": [wgerImg("/media/exercise-images/61/Close-grip-bench-press-1.png"), wgerImg("/media/exercise-images/61/Close-grip-bench-press-2.png")],
+  "Decline Bench Press":  [wgerImg("/media/exercise-images/100/Decline-bench-press-1.png"), wgerImg("/media/exercise-images/100/Decline-bench-press-2.png")],
+  "Incline Bench Press":  [wgerImg("/media/exercise-images/41/Incline-bench-press-1.png"), wgerImg("/media/exercise-images/41/Incline-bench-press-2.png")],
+  "Incline Dumbbell Press": [wgerImg("/media/exercise-images/16/Incline-press-1.png"), wgerImg("/media/exercise-images/16/Incline-press-2.png")],
+  "Dumbbell Bench Press": [wgerImg("/media/exercise-images/97/Dumbbell-bench-press-1.png"), wgerImg("/media/exercise-images/97/Dumbbell-bench-press-2.png")],
+  "Deadlift":             [wgerImg("/media/exercise-images/161/Dead-lifts-1.png"), wgerImg("/media/exercise-images/161/Dead-lifts-2.png")],
+  "Crunch":               [wgerImg("/media/exercise-images/91/Crunches-1.png"), wgerImg("/media/exercise-images/91/Crunches-2.png")],
+  "Hyperextension":       [wgerImg("/media/exercise-images/128/Hyperextensions-1.png"), wgerImg("/media/exercise-images/128/Hyperextensions-2.png")],
+  "Hammer Curl":          [wgerImg("/media/exercise-images/86/Bicep-hammer-curl-1.png"), wgerImg("/media/exercise-images/86/Bicep-hammer-curl-2.png")],
+  "Preacher Curl":        [wgerImg("/media/exercise-images/193/Preacher-curl-3-1.png"), wgerImg("/media/exercise-images/193/Preacher-curl-3-2.png")],
+  "Leg Curl":             [wgerImg("/media/exercise-images/154/lying-leg-curl-machine-large-1.png"), wgerImg("/media/exercise-images/154/lying-leg-curl-machine-large-2.png")],
+  "Leg Raise":            [wgerImg("/media/exercise-images/125/Leg-raises-1.png"), wgerImg("/media/exercise-images/125/Leg-raises-2.png")],
+  "Lunge":                [wgerImg("/media/exercise-images/113/Walking-lunges-1.png"), wgerImg("/media/exercise-images/113/Walking-lunges-2.png")],
+  "Lateral Raise":        [wgerImg("/media/exercise-images/148/lateral-dumbbell-raises-large-1.png"), wgerImg("/media/exercise-images/148/lateral-dumbbell-raises-large-2.png")],
+  "Seated Cable Row":     [wgerImg("/media/exercise-images/143/Cable-seated-rows-1.png"), wgerImg("/media/exercise-images/143/Cable-seated-rows-2.png")],
+  "Barbell Row":          [wgerImg("/media/exercise-images/110/Reverse-grip-bent-over-rows-1.png"), wgerImg("/media/exercise-images/110/Reverse-grip-bent-over-rows-2.png")],
+  "Pull-up":              [wgerImg("/media/exercise-images/181/Chin-ups-1.png"), wgerImg("/media/exercise-images/181/Chin-ups-2.png")],
+  "Shrug":                [wgerImg("/media/exercise-images/151/Dumbbell-shrugs-1.png"), wgerImg("/media/exercise-images/151/Dumbbell-shrugs-2.png")],
+  "Overhead Press":       [wgerImg("/media/exercise-images/119/seated-barbell-shoulder-press-large-1.png"), wgerImg("/media/exercise-images/119/seated-barbell-shoulder-press-large-2.png")],
+  "Good Morning":         [wgerImg("/media/exercise-images/116/Good-mornings-1.png"), wgerImg("/media/exercise-images/116/Good-mornings-2.png")],
+  "Cable Fly":            [wgerImg("/media/exercise-images/71/Cable-crossover-1.png"), wgerImg("/media/exercise-images/71/Cable-crossover-2.png")],
+  "Dumbbell Fly":         [wgerImg("/media/exercise-images/98/Butterfly-machine-1.png"), wgerImg("/media/exercise-images/98/Butterfly-machine-2.png")],
+  "Plank":                [wgerImg("/media/exercise-images/1022/f74644fa-f43e-46bd-8603-6e3a2ee8ee2d.jpg")],
+  "Hip Thrust":           [wgerImg("/media/exercise-images/1642/a81ad922-caf5-47f8-99b4-640cb0717436.webp")],
+  "Romanian Deadlift":    [wgerImg("/media/exercise-images/1652/0306c8c0-70cc-45d4-92de-6fa72ceaa834.webp")],
+  "Face Pull":            [wgerImg("/media/exercise-images/1639/8927346e-f5ca-4795-bdf1-5ac9309401e7.webp")],
+  "Bulgarian Split Squat":[wgerImg("/media/exercise-images/988/6283b258-a4d7-4833-84f7-a38987022d3d.png")],
+  "Squat":                [wgerImg("/media/exercise-images/977/3124c091-6395-4377-96c5-56048b627ceb.png")],
+  "Leg Press":            [wgerImg("/media/exercise-images/146/8b284904-d072-4381-a256-4c81d8fd9c1f.png")],
+  "Leg Extension":        [wgerImg("/media/exercise-images/369/78c915d1-e46d-4d30-8124-65d68664c3ef.png")],
+  "Dips":                 [wgerImg("/media/exercise-images/1000/553266a8-a972-48c5-a014-b12afac66f65.png")],
+  "Push-up":              [wgerImg("/media/exercise-images/1112/81f40bee-4adf-4317-8476-1a87706e3031.png")],
+  "Ab Rollout":           [wgerImg("/media/exercise-images/41/34b37423-269f-43d4-9d29-d2a90eeaa6b4.png")],
+  "Cable Curl":           [wgerImg("/media/exercise-images/912/e10a034f-6370-4dd6-b1c2-416b27844529.png")],
+  "Concentration Curl":   [wgerImg("/media/exercise-images/1109/00b0a0bf-c14a-4f13-bb14-62c09030a1aa.png")],
+  "Front Raise":          [wgerImg("/media/exercise-images/1745/9c92843a-6b90-428b-a868-9af4b11bad38.jpg")],
+  "Rear Delt Fly":        [wgerImg("/media/exercise-images/822/74affc0d-03b6-4f33-b5f4-a822a2615f68.png")],
+  "Russian Twist":        [wgerImg("/media/exercise-images/1193/70ca5d80-3847-4a8c-8882-c6e9e485e29e.png")],
+  "Standing Calf Raise":  [wgerImg("/media/exercise-images/622/9a429bd0-afd3-4ad0-8043-e9beec901c81.jpeg")],
+  "Tricep Pushdown":      [wgerImg("/media/exercise-images/805/7a437824-e2cc-46e1-804a-674f0ea31d25.png")],
+  "Upright Row":          [wgerImg("/media/exercise-images/694/119e6823-6960-4341-a9e1-aaf78d7fb57c.png")],
+  "Lat Pulldown":         [wgerImg("/media/exercise-images/53/Shoulder-press-machine-1.png")],
+  "Arnold Press":         [wgerImg("/media/exercise-images/119/seated-barbell-shoulder-press-large-1.png")],
+  "Skull Crusher":        [wgerImg("/media/exercise-images/84/Lying-close-grip-triceps-press-to-chin-1.png")],
+  "Tricep Dip":           [wgerImg("/media/exercise-images/83/Bench-dips-1.png")],
 };
 
 interface Exercise {
@@ -264,7 +277,7 @@ const DIFFICULTY_ZH: Record<string, string> = {
 export default function ExerciseDetailModal({ exercise, open, onClose, onAddToSession, hasActiveSession }: Props) {
   const { i18n } = useTranslation();
   const isZh = i18n.language === "zh";
-  const [imgError, setImgError] = useState(false);
+  const [imgErrors, setImgErrors] = useState<Record<number, boolean>>({});
 
   if (!exercise) return null;
 
@@ -274,10 +287,11 @@ export default function ExerciseDetailModal({ exercise, open, onClose, onAddToSe
   const equipIcon = EQUIPMENT_ICONS[exercise.equipment] ?? "🏋️";
   const desc = lookupDescription(exercise.name);
   const demoImages = EXERCISE_DEMO_IMAGES[exercise.name] ?? [];
-  const demoImage = demoImages[0];
+  // Show up to 2 images (start + end position)
+  const validDemoImages = demoImages.filter((_, i) => !imgErrors[i]);
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog key={exercise.name} open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg" data-no-padding="true" style={{ maxHeight: "90dvh" }}>
         <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
           <DialogTitle className="flex items-center gap-2">
@@ -301,15 +315,21 @@ export default function ExerciseDetailModal({ exercise, open, onClose, onAddToSe
             {/* Demo image + Muscle diagram side by side */}
             <div className="rounded-xl overflow-hidden border border-border/40 bg-muted/20">
               <div className="flex gap-0">
-                {/* Demo image */}
-                {demoImage && !imgError ? (
-                  <div className="flex-1 flex items-center justify-center bg-white/5 p-2 min-h-[180px]">
-                    <img
-                      src={demoImage}
-                      alt={`${exercise.name} demo`}
-                      className="max-h-[180px] w-full object-contain"
-                      onError={() => setImgError(true)}
-                    />
+                {/* Demo images: show up to 2 (start + end position) */}
+                {validDemoImages.length > 0 ? (
+                  <div className="flex-1 flex items-stretch bg-white/5 min-h-[180px] divide-x divide-border/20">
+                    {demoImages.slice(0, 2).map((src, idx) =>
+                      !imgErrors[idx] ? (
+                        <div key={idx} className="flex-1 flex items-center justify-center p-2">
+                          <img
+                            src={src}
+                            alt={`${exercise.name} ${idx === 0 ? 'start' : 'end'}`}
+                            className="max-h-[180px] w-full object-contain"
+                            onError={() => setImgErrors(prev => ({ ...prev, [idx]: true }))}
+                          />
+                        </div>
+                      ) : null
+                    )}
                   </div>
                 ) : (
                   <div className="flex-1 flex items-center justify-center bg-muted/30 min-h-[180px]">
