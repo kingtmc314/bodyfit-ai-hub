@@ -3305,16 +3305,30 @@ const supplementsRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
+      const qty = input.quantity ?? 1;
       const [row] = await db.insert(supplementLogs).values({
         supplementId: input.supplementId,
         userId: OWNER_USER_ID,
         date: input.date,
-        quantity: input.quantity ?? 1,
+        quantity: qty,
         timeOfDay: input.timeOfDay,
         notes: input.notes,
       }).returning();
       // Deduct from stock
-      await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock - ${input.quantity ?? 1}), "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
+      const [suppBefore] = await db.select({ stock: supplements.currentStock }).from(supplements).where(and(eq(supplements.id, input.supplementId), eq(supplements.userId, OWNER_USER_ID)));
+      const stockAfterDeduct = Math.max(0, (suppBefore?.stock ?? 0) - qty);
+      await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock - ${qty}), "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
+      // Log stock adjustment
+      await db.insert(supplementStockAdjustments).values({
+        supplementId: input.supplementId,
+        userId: OWNER_USER_ID,
+        adjustDate: input.date,
+        adjustType: 'intake',
+        delta: -qty,
+        stockAfter: stockAfterDeduct,
+        reason: input.timeOfDay ? `進食 (${input.timeOfDay})` : '進食記錄',
+        notes: input.notes,
+      });
       return row;
     }),
   deleteLog: ownerProcedure
@@ -3322,9 +3336,22 @@ const supplementsRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
+      const restoreQty = input.quantity ?? 1;
       await db.delete(supplementLogs).where(and(eq(supplementLogs.id, input.id), eq(supplementLogs.userId, OWNER_USER_ID)));
       // Restore stock
-      await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${input.quantity ?? 1}, "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
+      const [suppBeforeRestore] = await db.select({ stock: supplements.currentStock }).from(supplements).where(and(eq(supplements.id, input.supplementId), eq(supplements.userId, OWNER_USER_ID)));
+      const stockAfterRestore = (suppBeforeRestore?.stock ?? 0) + restoreQty;
+      await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${restoreQty}, "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
+      // Log stock adjustment (reversal)
+      await db.insert(supplementStockAdjustments).values({
+        supplementId: input.supplementId,
+        userId: OWNER_USER_ID,
+        adjustDate: todayHK(),
+        adjustType: 'intake_reversal',
+        delta: restoreQty,
+        stockAfter: stockAfterRestore,
+        reason: '刪除進食記錄（還原庫存）',
+      });
       return { success: true };
     }),
   restockSupplement: ownerProcedure

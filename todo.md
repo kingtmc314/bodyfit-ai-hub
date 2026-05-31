@@ -160,3 +160,8 @@
 - [x] Fix CSV import sleep: restingHr was stored as notes text instead of restingHr DB column
 - [x] Fix imageImport.save sleep: restingHr field was missing from schema and DB insert
 - [x] Update version to v3.4.3 in AppLayout sidebar
+
+## v3.4.4 Supplement Stock History Fix (2026-06-01)
+- [x] Fix 庫存記錄 showing 0 records: addLog now writes intake adjustment to supplement_stock_adjustments
+- [x] Fix deleteLog: also writes intake_reversal adjustment to supplement_stock_adjustments
+- [x] Update version to v3.4.4 in AppLayout sidebar
