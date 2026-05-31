@@ -3198,6 +3198,9 @@ const supplementsRouter = router({
       const [row] = await db.insert(supplements).values({
         userId: OWNER_USER_ID,
         ...input,
+        // Convert empty strings to null for date fields
+        purchaseDate: input.purchaseDate || null,
+        expiryDate: input.expiryDate || null,
       }).returning();
       return row;
     }),
@@ -3236,8 +3239,8 @@ const supplementsRouter = router({
       if (servingSize !== undefined) updateData.servingSize = servingSize;
       if (currentStock !== undefined) updateData.currentStock = currentStock;
       if (lowStockThreshold !== undefined) updateData.lowStockThreshold = lowStockThreshold;
-      if (purchaseDate !== undefined) updateData.purchaseDate = purchaseDate;
-      if (expiryDate !== undefined) updateData.expiryDate = expiryDate;
+      if (purchaseDate !== undefined) updateData.purchaseDate = purchaseDate || null;
+      if (expiryDate !== undefined) updateData.expiryDate = expiryDate || null;
       if (notes !== undefined) updateData.notes = notes;
       if (isActive !== undefined) updateData.isActive = isActive;
       if (reminderEnabled !== undefined) updateData.reminderEnabled = reminderEnabled;

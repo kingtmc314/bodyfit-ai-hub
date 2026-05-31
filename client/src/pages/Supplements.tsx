@@ -791,7 +791,7 @@ export default function Supplements() {
             <Button variant="outline" onClick={() => { setShowSupplementDialog(false); setEditSupplement(null); }}>{t('common.cancel')}</Button>
             <Button onClick={() => {
               if (!supplementForm.name.trim()) { toast.error(t('supplements.name_required')); return; }
-              const payload = { ...supplementForm, currentStock: supplementForm.currentStock ? Number(supplementForm.currentStock) : undefined, lowStockThreshold: supplementForm.lowStockThreshold ? Number(supplementForm.lowStockThreshold) : 30 };
+              const payload = { ...supplementForm, currentStock: supplementForm.currentStock ? Number(supplementForm.currentStock) : undefined, lowStockThreshold: supplementForm.lowStockThreshold ? Number(supplementForm.lowStockThreshold) : 30, purchaseDate: supplementForm.purchaseDate || undefined, expiryDate: supplementForm.expiryDate || undefined };
               if (editSupplement) updateSupplement.mutate({ id: editSupplement.id, ...payload });
               else addSupplement.mutate(payload);
             }} disabled={addSupplement.isPending || updateSupplement.isPending}>

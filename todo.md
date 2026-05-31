@@ -126,9 +126,15 @@
 - [x] Add floating FAB quick-add button on Dashboard (log food, log workout, log weight, log sleep)
 
 ## v3.3.0 Planned Features
-- [ ] Steps calorie backfill: server procedure to recalculate calories for steps records with 0 calories using date-specific body weight
-- [ ] Steps page: add "重新計算卡路里" button to trigger backfill
-- [ ] Running page: add pace zone distribution bar chart (5 zones)
-- [ ] Running page: add heart rate zone analysis chart (5 HR zones)
-- [ ] Dynamic TDEE calorie target: adjust daily calorie goal based on exercise burned (BMR + activity + exercise)
-- [ ] Dashboard net calorie card: show TDEE-adjusted target instead of fixed 2000 kcal
+- [x] Steps calorie backfill: server procedure to recalculate calories for steps records with 0 calories using date-specific body weight
+- [x] Steps page: add "重新計算卡路里" button to trigger backfill
+- [x] Running page: add pace zone distribution bar chart (5 zones)
+- [x] Running page: add heart rate zone analysis chart (5 HR zones)
+- [x] Dynamic TDEE calorie target: adjust daily calorie goal based on exercise burned (BMR + activity + exercise)
+- [x] Dashboard net calorie card: show TDEE-adjusted target instead of fixed 2000 kcal
+
+## v3.3.1 Bug Fix (2026-05-31)
+- [x] Fix supplements update SQL error: explicitly destructure known fields instead of spreading `...rest` which could include `userId` in SET clause
+
+## v3.3.2 Bug Fix (2026-06-01)
+- [x] Fix supplements add/update: empty string "" passed to PostgreSQL date columns (purchaseDate, expiryDate) causes "Failed query" — convert empty strings to null in backend and to undefined in frontend payload
