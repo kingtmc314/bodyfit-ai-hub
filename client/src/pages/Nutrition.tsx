@@ -102,9 +102,12 @@ export default function Nutrition() {
 
   const resetForm = () => setForm({ name: "", quantity: 100, calories: 0, protein: 0, carbs: 0, fat: 0 });
 
-  // Fetch workout calories burned for the selected date
+  // Fetch all exercise calories burned for the selected date (workout + running + steps)
   const { data: workoutCalData } = trpc.workout.getDailyCaloriesBurned.useQuery({ date: selectedDate });
   const workoutCaloriesBurned = workoutCalData?.caloriesBurned ?? 0;
+  const runningCaloriesBurned = workoutCalData?.runningBurned ?? 0;
+  const stepsCaloriesBurned = workoutCalData?.stepsBurned ?? 0;
+  const totalCaloriesBurned = workoutCalData?.totalBurned ?? workoutCaloriesBurned;
   const workoutSessions = workoutCalData?.sessions ?? [];
 
   const totals = meals.reduce((acc, m) => ({
@@ -228,38 +231,41 @@ export default function Nutrition() {
         ))}
       </div>
 
-      {/* Workout Calories Burned + Net Balance */}
-      {workoutCaloriesBurned > 0 && (
-        <div className="bg-card border border-orange-200 dark:border-orange-900/50 rounded-2xl p-4">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-orange-100 dark:bg-orange-950/40 flex items-center justify-center">
-                <Flame className="w-5 h-5 text-orange-500" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-foreground">Workout Calories Burned</p>
-                <p className="text-xs text-muted-foreground">
-                  {workoutSessions.map((s: any) => `${s.name || 'Workout'}${s.duration ? ` (${s.duration} min)` : ''}`).join(' · ')}
-                </p>
-              </div>
+      {/* Exercise Calories Burned + Net Balance */}
+      {totalCaloriesBurned > 0 && (
+        <div className="bg-card border border-orange-200 dark:border-orange-900/50 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-orange-100 dark:bg-orange-950/40 flex items-center justify-center">
+              <Flame className="w-5 h-5 text-orange-500" />
             </div>
-            <div className="flex items-center gap-6">
-              <div className="text-right">
-                <p className="text-xs text-muted-foreground">Burned</p>
-                <p className="text-lg font-bold text-orange-500">-{Math.round(workoutCaloriesBurned)} kcal</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-muted-foreground">Net Balance</p>
-                <p className={`text-lg font-bold ${Math.round(totals.calories - workoutCaloriesBurned) < 0 ? 'text-blue-500' : 'text-green-500'}`}>
-                  {Math.round(totals.calories - workoutCaloriesBurned) >= 0 ? '+' : ''}{Math.round(totals.calories - workoutCaloriesBurned)} kcal
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-muted-foreground">Remaining</p>
-                <p className="text-lg font-bold text-foreground">
-                  {Math.max(0, GOALS.calories - Math.round(totals.calories - workoutCaloriesBurned))} kcal
-                </p>
-              </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-foreground">今日運動消耗</p>
+              <p className="text-xs text-muted-foreground">
+                {[
+                  workoutCaloriesBurned > 0 && `健身 ${workoutCaloriesBurned} kcal`,
+                  runningCaloriesBurned > 0 && `跑步 ${runningCaloriesBurned} kcal`,
+                  stepsCaloriesBurned > 0 && `步行 ${stepsCaloriesBurned} kcal`,
+                ].filter(Boolean).join(' · ')}
+              </p>
+            </div>
+            <p className="text-base font-bold text-orange-500">-{Math.round(totalCaloriesBurned)} kcal</p>
+          </div>
+          <div className="grid grid-cols-3 gap-3 pt-1 border-t border-border/50">
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">攝取</p>
+              <p className="text-base font-bold text-foreground">{Math.round(totals.calories)}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">淨卡路里</p>
+              <p className={`text-base font-bold ${Math.round(totals.calories - totalCaloriesBurned) > GOALS.calories ? 'text-red-500' : 'text-green-500'}`}>
+                {Math.round(totals.calories - totalCaloriesBurned)}
+              </p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">剩餘目標</p>
+              <p className="text-base font-bold text-foreground">
+                {Math.max(0, GOALS.calories - Math.round(totals.calories - totalCaloriesBurned))}
+              </p>
             </div>
           </div>
         </div>

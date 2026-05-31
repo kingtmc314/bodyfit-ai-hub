@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useIsOwner } from "@/contexts/OwnerContext";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { todayHKString, toHKDateString, formatHKChartDate } from "@/lib/hkTime";
@@ -184,14 +185,22 @@ export default function Workout() {
     },
   });
 
+  const [, navigate] = useLocation();
   const [finishLoading, setFinishLoading] = useState(false);
   const finishSession = trpc.workout.finishSession.useMutation({
     onSuccess: (data) => {
       utils.workout.getSessions.invalidate();
       setFinishLoading(false);
-      const calMsg = data.caloriesBurned ? ` · 消耗 ${data.caloriesBurned} kcal 🔥` : '';
-      toast.success(`訓練完成！共 ${data.duration} 分鐘${calMsg} 🎉`);
+      // Store workout summary for dashboard modal
+      sessionStorage.setItem('workoutSummary', JSON.stringify({
+        name: activeSession?.name || '訓練',
+        duration: data.duration,
+        caloriesBurned: data.caloriesBurned,
+        totalVolume: data.totalVolume,
+        exerciseCount: data.exerciseCount,
+      }));
       setActiveSession(null);
+      navigate('/');
     },
     onError: (e) => { setFinishLoading(false); toast.error('錯誤: ' + e.message); },
   });

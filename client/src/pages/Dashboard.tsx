@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -153,6 +154,14 @@ export default function Dashboard() {
   const { t, i18n } = useTranslation();
   const [generatingInsight, setGeneratingInsight] = useState(false);
   const [insightText, setInsightText] = useState<string>("");
+  const [workoutSummary, setWorkoutSummary] = useState<{ name: string; duration: number; caloriesBurned: number; totalVolume: number; exerciseCount: number } | null>(null);
+  useEffect(() => {
+    const raw = sessionStorage.getItem('workoutSummary');
+    if (raw) {
+      try { setWorkoutSummary(JSON.parse(raw)); } catch {}
+      sessionStorage.removeItem('workoutSummary');
+    }
+  }, []);
 
   const { data: summary, isLoading } = trpc.dashboard.getSummary.useQuery();
   const { data: bodyData } = trpc.body.getAll.useQuery({ limit: 14 });
@@ -509,6 +518,47 @@ export default function Dashboard() {
 
       {/* FLOATING FAB */}
       <FloatingFAB />
+
+      {/* WORKOUT SUMMARY MODAL */}
+      <Dialog open={!!workoutSummary} onOpenChange={() => setWorkoutSummary(null)}>
+        <DialogContent className="max-w-sm mx-auto rounded-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-center text-xl font-extrabold">
+              🎉 訓練完成！
+            </DialogTitle>
+          </DialogHeader>
+          {workoutSummary && (
+            <div className="space-y-4 pt-2">
+              <p className="text-center text-muted-foreground text-sm font-medium">{workoutSummary.name}</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-amber-50 dark:bg-amber-950/30 rounded-2xl p-4 text-center">
+                  <Flame className="w-6 h-6 text-amber-500 mx-auto mb-1" />
+                  <p className="text-2xl font-extrabold text-foreground">{Math.round(workoutSummary.caloriesBurned || 0)}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">kcal 消耗</p>
+                </div>
+                <div className="bg-blue-50 dark:bg-blue-950/30 rounded-2xl p-4 text-center">
+                  <Activity className="w-6 h-6 text-blue-500 mx-auto mb-1" />
+                  <p className="text-2xl font-extrabold text-foreground">{workoutSummary.duration || 0}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">分鐘</p>
+                </div>
+                <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl p-4 text-center">
+                  <Dumbbell className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
+                  <p className="text-2xl font-extrabold text-foreground">{workoutSummary.exerciseCount || 0}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">個動作</p>
+                </div>
+                <div className="bg-purple-50 dark:bg-purple-950/30 rounded-2xl p-4 text-center">
+                  <Scale className="w-6 h-6 text-purple-500 mx-auto mb-1" />
+                  <p className="text-2xl font-extrabold text-foreground">{Math.round((workoutSummary.totalVolume || 0) / 1000 * 10) / 10}k</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">kg 總訓練量</p>
+                </div>
+              </div>
+              <Button className="w-full hero-gradient text-white font-bold rounded-2xl" onClick={() => setWorkoutSummary(null)}>
+                太棒了！繼續加油 💪
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

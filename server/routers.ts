@@ -287,7 +287,7 @@ const workoutRouter = router({
     .input(z.object({ date: z.string() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return { caloriesBurned: 0, sessions: [] };
+      if (!db) return { caloriesBurned: 0, sessions: [], runningBurned: 0, stepsBurned: 0, totalBurned: 0 };
       const dayStart = new Date(input.date + 'T00:00:00+08:00');
       const dayEnd = new Date(input.date + 'T23:59:59+08:00');
       const sessions = await db.select({
@@ -305,7 +305,24 @@ const workoutRouter = router({
         ))
         .orderBy(desc(workoutSessions.startTime));
       const caloriesBurned = sessions.reduce((sum, s) => sum + (s.caloriesBurned ?? 0), 0);
-      return { caloriesBurned, sessions };
+      // Running calories for the day
+      const runningRows = await db.select({ calories: runningLogs.calories })
+        .from(runningLogs)
+        .where(and(
+          eq(runningLogs.userId, OWNER_USER_ID),
+          sql`${runningLogs.date} = ${input.date}`,
+        ));
+      const runningBurned = runningRows.reduce((s, r) => s + (r.calories ?? 0), 0);
+      // Steps calories for the day
+      const stepsRows = await db.select({ calories: dailySteps.calories })
+        .from(dailySteps)
+        .where(and(
+          eq(dailySteps.userId, OWNER_USER_ID),
+          sql`${dailySteps.date} = ${input.date}`,
+        ));
+      const stepsBurned = stepsRows.reduce((s, r) => s + (r.calories ?? 0), 0);
+      const totalBurned = caloriesBurned + runningBurned + stepsBurned;
+      return { caloriesBurned, sessions, runningBurned, stepsBurned, totalBurned };
     }),
 
   // Create workout session
