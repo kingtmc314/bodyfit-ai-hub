@@ -3160,14 +3160,18 @@ const medicalRouter = router({
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
       const buffer = Buffer.from(input.fileBase64, 'base64');
-      const key = `medical/${OWNER_USER_ID}/${nanoid()}-${input.fileName}`;
-      const { url } = await storagePut(key, buffer, input.fileType);
+      // Sanitize filename: replace non-ASCII characters so storage presign doesn't reject it
+      // Keep the original fileName in the DB for display; only the storage key needs to be ASCII
+      const ext = input.fileName.split('.').pop() ?? 'bin';
+      const safeExt = ext.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'bin';
+      const safeKey = `medical/${OWNER_USER_ID}/${nanoid()}.${safeExt}`;
+      const { url } = await storagePut(safeKey, buffer, input.fileType);
       const [row] = await db.insert(medicalAttachments).values({
         visitId: input.visitId,
         userId: OWNER_USER_ID,
         fileName: input.fileName,
         fileType: input.fileType,
-        fileKey: key,
+        fileKey: safeKey,
         fileUrl: url,
         attachmentType: input.attachmentType,
         notes: input.notes,

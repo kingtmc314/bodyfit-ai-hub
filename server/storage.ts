@@ -18,7 +18,19 @@ function getForgeConfig() {
 }
 
 function normalizeKey(relKey: string): string {
-  return relKey.replace(/^\/+/, "");
+  // Remove leading slashes, then sanitize each path segment so the Forge
+  // presign endpoint (which requires ASCII-only paths) never rejects the key.
+  // Non-ASCII characters (e.g. Chinese filenames) are percent-encoded.
+  return relKey
+    .replace(/^\/+/, "")
+    .split("/")
+    .map((seg) =>
+      seg
+        .split("")
+        .map((ch) => (ch.charCodeAt(0) > 127 ? encodeURIComponent(ch) : ch))
+        .join("")
+    )
+    .join("/");
 }
 
 function appendHashSuffix(relKey: string): string {

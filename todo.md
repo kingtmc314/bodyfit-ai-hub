@@ -180,3 +180,8 @@
 - [x] Frontend: 庫存記錄 tab — color-coded type labels (進食/補貨/手動/修改/還原)
 - [x] Frontend: 庫存記錄 tab — add 回填歷史庫存記錄 button
 - [x] Update version to v3.5.0
+
+## v3.5.1 Chinese Filename Upload Fix (2026-06-01)
+- [x] Fix storage.ts normalizeKey: percent-encode non-ASCII chars in all path segments so Forge presign never rejects Chinese filenames
+- [x] Fix uploadAttachment in routers.ts: use safe ASCII-only storage key (nanoid + ext), keep original Chinese filename in DB for display
+- [x] Update version to v3.5.1
