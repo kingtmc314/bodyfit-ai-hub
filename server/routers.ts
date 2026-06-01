@@ -10,7 +10,7 @@ import {
   healthGoals, runningLogs, runningShoes, races, favouriteExercises,
   dailySteps, medicalConditions, medicalVisits, medicalAttachments,
   supplements, supplementLogs, supplementPurchases, supplementStockAdjustments,
-  runningLogPhotos, stepLogPhotos, customExercises
+  runningLogPhotos, stepLogPhotos, customExercises, userProfile
 } from "../drizzle/schema";
 import { eq, and, desc, gte, lte, like, or, sql } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -1107,7 +1107,7 @@ const dashboardRouter = router({
     const todayEnd = new Date(todayStr + "T23:59:59+08:00");
     const weekAgoStr = daysAgoHK(7);
     const weekAgoDate = new Date(weekAgoStr + "T00:00:00+08:00");
-    const [todayMeals, recentSessions, latestBody, latestSleep, latestHr, weekMeals, todayWorkouts, todayRunning, todayStepsRows] = await Promise.all([
+    const [todayMeals, recentSessions, latestBody, latestSleep, latestHr, weekMeals, todayWorkouts, todayRunning, todayStepsRows, profileRows] = await Promise.all([
       db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), eq(mealLogs.logDate, todayStr))),
       db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, OWNER_USER_ID), sql`${workoutSessions.startTime} >= ${weekAgoDate}`)).orderBy(desc(workoutSessions.startTime)).limit(7),
       db.select().from(bodyComposition).where(eq(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc(bodyComposition.date)).limit(2),
@@ -1126,6 +1126,8 @@ const dashboardRouter = router({
       db.select({ id: dailySteps.id, steps: dailySteps.steps, floorsClimbed: dailySteps.floorsClimbed, calories: dailySteps.calories })
         .from(dailySteps)
         .where(and(eq(dailySteps.userId, OWNER_USER_ID), sql`${dailySteps.date} = ${todayStr}`)),
+      // User profile for Mifflin-St Jeor BMR
+      db.select().from(userProfile).where(eq(userProfile.userId, OWNER_USER_ID)).limit(1),
     ]);
 
     const todayCalories = todayMeals.reduce((s, m) => s + (m.calories ?? 0), 0);
@@ -1149,18 +1151,27 @@ const dashboardRouter = router({
     const totalCaloriesBurned = workoutCaloriesBurned + runningCaloriesBurned + stepsCaloriesBurned;
     const netCalories = todayCalories - totalCaloriesBurned;
 
-    // Calculate TDEE-based daily calorie target
-    // Uses BMR from latest body composition + activity factor (estimated from recent workout frequency)
-    // Activity factor: sedentary 1.2, light 1.375, moderate 1.55, active 1.725
-    const bmr = latestBody[0]?.bmr ? Number(latestBody[0].bmr) : null;
-    const recentWorkoutDays = sessionDates.size; // unique days with workouts in last 7 days
-    const activityFactor = recentWorkoutDays >= 6 ? 1.725 : recentWorkoutDays >= 4 ? 1.55 : recentWorkoutDays >= 2 ? 1.375 : 1.2;
-    // TDEE = BMR × activity factor (base maintenance), then add today's exercise on top
-    // This gives a dynamic target that adjusts with today's actual exercise
-    const baseTdee = bmr ? Math.round(bmr * activityFactor) : 2000;
-    // Daily target = base TDEE (already includes typical activity) + extra exercise today beyond typical
-    // Simpler approach: base TDEE + today's exercise burned (encourages eating back exercise calories)
-    const dailyCalorieTarget = bmr ? Math.round(bmr * activityFactor) + totalCaloriesBurned : 2000 + totalCaloriesBurned;
+    // Calculate TDEE using Mifflin-St Jeor formula:
+    // BMR (male)   = 9.99 × weight(kg) + 6.25 × height(cm) - 4.92 × age + 5
+    // BMR (female) = 9.99 × weight(kg) + 6.25 × height(cm) - 4.92 × age - 161
+    // TDEE = BMR + today's exercise calories (workout + running + steps)
+    const profile = profileRows[0] ?? null;
+    const weight = latestBody[0]?.weight ? Number(latestBody[0].weight) : null;
+    const height = profile?.height ? Number(profile.height) : null;
+    const birthYear = profile?.birthYear ?? null;
+    const gender = profile?.gender ?? null;
+    const age = birthYear ? new Date().getFullYear() - birthYear : null;
+    const genderOffset = gender === 'female' ? -161 : 5; // male: +5, female: -161
+    const calculatedBmr = (weight && height && age)
+      ? Math.round(9.99 * weight + 6.25 * height - 4.92 * age + genderOffset)
+      : null;
+    // Fall back to stored BMR from body composition if profile not set
+    const storedBmr = latestBody[0]?.bmr ? Number(latestBody[0].bmr) : null;
+    const bmr = calculatedBmr ?? storedBmr;
+    // TDEE = BMR (sedentary baseline) + today's actual exercise calories
+    const baseTdee = bmr ?? 2000;
+    const dailyCalorieTarget = baseTdee + totalCaloriesBurned;
+    const activityFactor = 1; // not used with new formula, kept for compatibility
 
     return {
       today: { calories: todayCalories, protein: todayProtein, carbs: todayCarbs, fat: todayFat, mealCount: todayMeals.length },
@@ -1176,10 +1187,13 @@ const dashboardRouter = router({
       },
       tdee: {
         bmr: bmr ?? null,
-        activityFactor,
+        calculatedBmr,
+        storedBmr,
         baseTdee,
         dailyCalorieTarget,
         hasBmr: !!bmr,
+        hasProfile: !!(profile?.height && profile?.birthYear && profile?.gender),
+        profile: profile ? { height: profile.height, birthYear: profile.birthYear, gender: profile.gender } : null,
       },
       workoutStreak: streak,
       latestBody: latestBody[0] || null,
@@ -3708,6 +3722,36 @@ const supplementsRouter = router({
 });
 
 // ─── App Router ───────────────────────────────────────────────────────────────
+// ─── Profile Router ─────────────────────────────────────────────────────────────
+const profileRouter = router({
+  get: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return null;
+    const rows = await db.select().from(userProfile).where(eq(userProfile.userId, OWNER_USER_ID)).limit(1);
+    return rows[0] ?? null;
+  }),
+  upsert: publicProcedure
+    .input(z.object({
+      height: z.number().min(50).max(300).optional(),
+      birthYear: z.number().min(1900).max(new Date().getFullYear()).optional(),
+      gender: z.enum(['male', 'female']).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const existing = await db.select({ id: userProfile.id }).from(userProfile).where(eq(userProfile.userId, OWNER_USER_ID)).limit(1);
+      if (existing.length > 0) {
+        await db.update(userProfile)
+          .set({ ...input, updatedAt: new Date() })
+          .where(eq(userProfile.userId, OWNER_USER_ID));
+      } else {
+        await db.insert(userProfile).values({ userId: OWNER_USER_ID, ...input });
+      }
+      const rows = await db.select().from(userProfile).where(eq(userProfile.userId, OWNER_USER_ID)).limit(1);
+      return rows[0];
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -3734,6 +3778,7 @@ export const appRouter = router({
   steps: stepsRouter,
   medical: medicalRouter,
   supplements: supplementsRouter,
+  profile: profileRouter,
 });
 export type AppRouter = typeof appRouter;
 

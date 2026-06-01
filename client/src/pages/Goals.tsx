@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useIsOwner } from "@/contexts/OwnerContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Target, Save, Trash2, TrendingDown, TrendingUp, Moon, Heart, Flame, Scale, Activity, Dumbbell, Droplets } from "lucide-react";
+import { Target, Save, Trash2, TrendingDown, TrendingUp, Moon, Heart, Flame, Scale, Activity, Dumbbell, Droplets, User, Calculator } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTranslation } from "react-i18next";
 
 // Must match server z.enum values exactly
@@ -67,6 +68,47 @@ export default function Goals() {
 
   const [values, setValues] = useState<Record<string, string>>({});
 
+  // Profile state
+  const { data: profileData, refetch: refetchProfile } = trpc.profile.get.useQuery();
+  const upsertProfileMutation = trpc.profile.upsert.useMutation({
+    onSuccess: () => { toast.success(isZh ? "個人資料已儲存" : "Profile saved!"); refetchProfile(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const [profileForm, setProfileForm] = useState({ height: "", birthYear: "", gender: "" });
+
+  // Sync profile form when data loads
+  useEffect(() => {
+    if (profileData) {
+      setProfileForm({
+        height: profileData.height ? String(profileData.height) : "",
+        birthYear: profileData.birthYear ? String(profileData.birthYear) : "",
+        gender: profileData.gender ?? "",
+      });
+    }
+  }, [profileData]);
+
+  const handleSaveProfile = () => {
+    const h = profileForm.height ? parseFloat(profileForm.height) : undefined;
+    const by = profileForm.birthYear ? parseInt(profileForm.birthYear) : undefined;
+    const g = profileForm.gender as 'male' | 'female' | undefined || undefined;
+    if (h && (h < 50 || h > 300)) { toast.error(isZh ? "身高請在 50–300 cm 之間" : "Height must be 50–300 cm"); return; }
+    if (by && (by < 1900 || by > new Date().getFullYear())) { toast.error(isZh ? "出生年份不正確" : "Invalid birth year"); return; }
+    upsertProfileMutation.mutate({ height: h, birthYear: by, gender: g });
+  };
+
+  // Calculate BMR preview
+  const previewBmr = (() => {
+    const h = parseFloat(profileForm.height);
+    const by = parseInt(profileForm.birthYear);
+    const g = profileForm.gender;
+    const weight = undefined; // weight comes from body composition, not shown here
+    if (!h || !by || !g) return null;
+    const age = new Date().getFullYear() - by;
+    const gOffset = g === 'female' ? -161 : 5;
+    // Show formula without weight (weight from body comp)
+    return { age, gOffset, h, g };
+  })();
+
   const getGoalValue = (type: GoalType) => {
     const g = goals?.find(g => g.goalType === type && g.isActive);
     return g ? String(g.targetValue) : "";
@@ -96,6 +138,84 @@ export default function Goals() {
           <p className="text-sm text-muted-foreground">{isZh ? "設定個人目標，在趨勢圖表上顯示參考線" : "Set personal targets — shown as reference lines on trend charts"}</p>
         </div>
       </div>
+
+      {/* Personal Profile Section */}
+      <Card className="border-2 border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-900/10">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <User className="w-5 h-5 text-orange-600" />
+            <CardTitle className="text-base font-bold">{isZh ? "個人資料" : "Personal Profile"}</CardTitle>
+          </div>
+          <p className="text-xs text-muted-foreground">{isZh ? "用於 Mifflin-St Jeor 公式計算 BMR 及 TDEE" : "Used for Mifflin-St Jeor BMR & TDEE calculation"}</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* Height */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{isZh ? "身高 (cm)" : "Height (cm)"}</Label>
+              <Input
+                type="number" min={50} max={300} step={0.1}
+                placeholder="e.g. 175"
+                value={profileForm.height}
+                onChange={e => setProfileForm(p => ({ ...p, height: e.target.value }))}
+                className="h-9 text-sm"
+              />
+            </div>
+            {/* Birth Year */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{isZh ? "出生年份" : "Birth Year"}</Label>
+              <Input
+                type="number" min={1900} max={new Date().getFullYear()} step={1}
+                placeholder="e.g. 1990"
+                value={profileForm.birthYear}
+                onChange={e => setProfileForm(p => ({ ...p, birthYear: e.target.value }))}
+                className="h-9 text-sm"
+              />
+            </div>
+            {/* Gender */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{isZh ? "性別" : "Gender"}</Label>
+              <Select value={profileForm.gender} onValueChange={v => setProfileForm(p => ({ ...p, gender: v }))}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder={isZh ? "請選擇" : "Select"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="male">{isZh ? "男" : "Male"}</SelectItem>
+                  <SelectItem value="female">{isZh ? "女" : "Female"}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* BMR formula preview */}
+          {previewBmr && (
+            <div className="p-3 rounded-lg bg-background border border-border text-xs space-y-1">
+              <div className="flex items-center gap-1.5 text-muted-foreground font-medium">
+                <Calculator className="w-3.5 h-3.5" />
+                {isZh ? "BMR 公式預覽" : "BMR Formula Preview"}
+              </div>
+              <p className="text-muted-foreground font-mono">
+                BMR = 9.99 × 體重(kg) + 6.25 × {previewBmr.h} - 4.92 × {previewBmr.age} {previewBmr.gOffset > 0 ? `+ ${previewBmr.gOffset}` : `- ${Math.abs(previewBmr.gOffset)}`}
+              </p>
+              <p className="text-orange-600 dark:text-orange-400">
+                {isZh ? "體重從最新身體組成記錄自動引用，TDEE = BMR + 今日運動卡路里" : "Weight auto-fetched from latest body composition. TDEE = BMR + today's exercise calories"}
+              </p>
+            </div>
+          )}
+
+          {isOwner && (
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={handleSaveProfile}
+              disabled={upsertProfileMutation.isPending}
+            >
+              <Save className="w-3.5 h-3.5" />
+              {isZh ? "儲存個人資料" : "Save Profile"}
+            </Button>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Goal cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

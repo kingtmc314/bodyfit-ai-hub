@@ -212,3 +212,12 @@
 - [x] Add prev/next day navigation buttons in Nutrition page header
 - [x] Fix Dashboard weekly calorie chart: use logDate instead of loggedAt for grouping
 - [x] Update version to v3.5.5
+
+## v3.6.0 User Profile & Mifflin-St Jeor TDEE (2026-06-02)
+- [x] Schema: add user_profile table (userId, height, birthYear, gender, createdAt, updatedAt)
+- [x] Migration: create user_profile table in DB
+- [x] Router: add profile.get and profile.upsert procedures
+- [x] Router: update dashboardRouter TDEE to use Mifflin-St Jeor formula (9.99×weight + 6.25×height - 4.92×age + genderOffset)
+- [x] Frontend: add Personal Profile section in Goals page (height, birth year, gender)
+- [x] Frontend: show BMR formula preview when all profile fields are filled
+- [x] Update version to v3.6.0

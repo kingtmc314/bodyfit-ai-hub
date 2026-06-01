@@ -37,6 +37,20 @@ export const users = pgTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+// ─── User Profile ─────────────────────────────────────────────────────────────
+export const userProfile = pgTable("user_profile", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  height: real("height"),          // cm
+  birthYear: integer("birth_year"),
+  gender: varchar("gender", { length: 10 }), // 'male' | 'female'
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type UserProfile = typeof userProfile.$inferSelect;
+export type InsertUserProfile = typeof userProfile.$inferInsert;
+
 // ─── Food Items (built-in database) ──────────────────────────────────────────
 export const foodItems = pgTable("food_items", {
   id: serial("id").primaryKey(),
