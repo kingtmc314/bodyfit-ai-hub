@@ -897,6 +897,8 @@ const sleepRouter = router({
       remSleep: z.number().optional(),
       lightSleep: z.number().optional(),
       awakeDuration: z.number().optional(),
+      bedtime: z.string().optional(),
+      waketime: z.string().optional(),
       notes: z.string().optional(),
       source: z.string().optional(),
     }))
@@ -930,6 +932,8 @@ const sleepRouter = router({
       remSleep: z.number().optional(),
       lightSleep: z.number().optional(),
       awakeDuration: z.number().optional(),
+      bedtime: z.string().optional(),
+      waketime: z.string().optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {

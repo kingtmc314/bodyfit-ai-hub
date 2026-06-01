@@ -73,7 +73,7 @@ const defaultForm = {
   date: todayHKString(),
   score: "", restingHr: "", bodyBattery: "", pulseOx: "",
   respiration: "", hrv: "", quality: "Good" as const,
-  duration: "", notes: ""
+  duration: "", bedtime: "", waketime: "", notes: ""
 };
 
 export default function Sleep() {
@@ -170,6 +170,8 @@ export default function Sleep() {
       hrv: form.hrv ? Number(form.hrv) : undefined,
       quality: form.quality as any,
       duration: form.duration ? Number(form.duration) : undefined,
+      bedtime: form.bedtime || undefined,
+      waketime: form.waketime || undefined,
       notes: form.notes || undefined,
     };
     if (editEntry) {
@@ -446,6 +448,8 @@ export default function Sleep() {
                               hrv: r.hrv ?? "",
                               quality: r.sleepQuality ?? "Good",
                               duration: r.sleepDuration != null ? (toHrs(r.sleepDuration) ?? "") : "",
+                              bedtime: r.bedtime ? String(r.bedtime).slice(0, 5) : "",
+                              waketime: r.waketime ? String(r.waketime).slice(0, 5) : "",
                               notes: r.notes ?? "",
                             });
                             setShowDialog(true);
@@ -506,6 +510,14 @@ export default function Sleep() {
                 <Input type="number" step="0.1" value={form[f.key]} onChange={e => setForm((prev: any) => ({ ...prev, [f.key]: e.target.value }))} />
               </div>
             ))}
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">就寢時間 (HH:MM)</label>
+              <Input type="time" value={form.bedtime} onChange={e => setForm((f: any) => ({ ...f, bedtime: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">起床時間 (HH:MM)</label>
+              <Input type="time" value={form.waketime} onChange={e => setForm((f: any) => ({ ...f, waketime: e.target.value }))} />
+            </div>
             <div className="col-span-2">
               <label className="text-xs text-muted-foreground mb-1 block">Notes</label>
               <Input placeholder="Optional notes…" value={form.notes} onChange={e => setForm((f: any) => ({ ...f, notes: e.target.value }))} />

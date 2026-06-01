@@ -185,3 +185,10 @@
 - [x] Fix storage.ts normalizeKey: percent-encode non-ASCII chars in all path segments so Forge presign never rejects Chinese filenames
 - [x] Fix uploadAttachment in routers.ts: use safe ASCII-only storage key (nanoid + ext), keep original Chinese filename in DB for display
 - [x] Update version to v3.5.1
+
+## v3.5.2 Sleep Dialog Missing Fields Fix (2026-06-01)
+- [x] Add bedtime and waketime fields to sleep add/update backend procedures (routers.ts)
+- [x] Add 就寢時間 and 起床時間 time inputs to Sleep dialog UI
+- [x] Populate bedtime/waketime when opening edit dialog from table row
+- [x] Pass bedtime/waketime in handleSubmit payload
+- [x] Update version to v3.5.2
