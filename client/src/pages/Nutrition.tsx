@@ -14,7 +14,8 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Camera, Search, Trash2, Edit2, X, Loader2, Utensils,
-  Flame, Beef, Wheat, Droplets, ChevronDown, Upload, Sparkles
+  Flame, Beef, Wheat, Droplets, ChevronDown, Upload, Sparkles,
+  ChevronLeft, ChevronRight
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -209,8 +210,23 @@ export default function Nutrition() {
           <p className="text-muted-foreground text-sm">Track your daily food intake</p>
         </div>
         <div className="flex items-center gap-2">
-          <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
-            className="w-40 text-sm" />
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => {
+              const d = new Date(selectedDate + 'T12:00:00+08:00');
+              d.setDate(d.getDate() - 1);
+              setSelectedDate(d.toISOString().slice(0, 10));
+            }}><ChevronLeft className="w-4 h-4" /></Button>
+            <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
+              className="w-36 text-sm text-center" />
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => {
+              const d = new Date(selectedDate + 'T12:00:00+08:00');
+              d.setDate(d.getDate() + 1);
+              setSelectedDate(d.toISOString().slice(0, 10));
+            }} disabled={selectedDate >= todayHKString}><ChevronRight className="w-4 h-4" /></Button>
+          </div>
+          {selectedDate !== todayHKString && (
+            <Button variant="ghost" size="sm" className="text-xs h-8 px-2 text-primary" onClick={() => setSelectedDate(todayHKString)}>Today</Button>
+          )}
           {isOwner && (
             <Button onClick={() => setShowPhotoDialog(true)} variant="outline" size="sm" className="gap-2">
               <Camera className="w-4 h-4" /> AI Photo

@@ -206,3 +206,9 @@
 - [x] Frontend: add date picker to Log Meal dialog (defaults to selectedDate)
 - [x] Frontend: add date picker to Edit Meal dialog (pre-filled from record date)
 - [x] Update version to v3.5.4
+
+## v3.5.5 Nutrition Date Improvements (2026-06-01)
+- [x] Fix Trends Nutrition chart: use logDate instead of loggedAt for grouping (already fixed in v3.5.4 backend)
+- [x] Add prev/next day navigation buttons in Nutrition page header
+- [x] Fix Dashboard weekly calorie chart: use logDate instead of loggedAt for grouping
+- [x] Update version to v3.5.5

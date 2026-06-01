@@ -195,7 +195,7 @@ export default function Dashboard() {
     if (!summary?.weekMeals) return [];
     const map: Record<string, number> = {};
     summary.weekMeals.forEach(m => {
-      const dateKey = toHKDateString(new Date(m.loggedAt));
+      const dateKey = m.logDate ?? toHKDateString(new Date(m.loggedAt));
       map[dateKey] = (map[dateKey] || 0) + (m.calories ?? 0);
     });
     return Array.from({ length: 7 }, (_, i) => {
