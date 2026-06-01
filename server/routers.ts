@@ -93,7 +93,10 @@ const nutritionRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(mealLogs).values({ ...input, userId: OWNER_USER_ID });
+      // Convert HK date string to HK noon UTC so chart grouping by HK date is correct
+      const { date, ...rest } = input;
+      const loggedAt = new Date(date + "T12:00:00+08:00");
+      await db.insert(mealLogs).values({ ...rest, userId: OWNER_USER_ID, loggedAt });
       return { success: true };
     }),
 

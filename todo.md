@@ -192,3 +192,9 @@
 - [x] Populate bedtime/waketime when opening edit dialog from table row
 - [x] Pass bedtime/waketime in handleSubmit payload
 - [x] Update version to v3.5.2
+
+## v3.5.3 Nutrition Chart Date Fix (2026-06-01)
+- [x] Fix addMealLog: date input was ignored, loggedAt used defaultNow() (UTC time), causing chart grouping to assign HK records to wrong day
+- [x] Fix: extract date from input, set loggedAt = HK noon UTC (date + T12:00:00+08:00)
+- [x] Backfill: ran SQL to fix all 15 existing meal_logs records (set loggedAt to HK noon of createdAt date)
+- [x] Update version to v3.5.3
