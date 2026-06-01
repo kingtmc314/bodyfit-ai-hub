@@ -42,14 +42,8 @@ const nutritionRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      // HK midnight = UTC midnight - 8h
-      const hkMidnight = (dateStr: string, endOfDay = false) => {
-        const [y, m, d] = dateStr.split('-').map(Number);
-        const utcMs = Date.UTC(y, m - 1, d) - 8 * 3600 * 1000;
-        return new Date(endOfDay ? utcMs + 86400000 - 1 : utcMs);
-      };
       return db.select().from(mealLogs)
-        .where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.loggedAt} >= ${hkMidnight(input.date)}`, sql`${mealLogs.loggedAt} < ${hkMidnight(input.date, true)}`))       
+        .where(and(eq(mealLogs.userId, OWNER_USER_ID), eq(mealLogs.logDate, input.date)))
         .orderBy(mealLogs.createdAt);
     }),
 
@@ -59,24 +53,19 @@ const nutritionRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      const hkMidnight = (dateStr: string, endOfDay = false) => {
-        const [y, m, d] = dateStr.split('-').map(Number);
-        const utcMs = Date.UTC(y, m - 1, d) - 8 * 3600 * 1000;
-        return new Date(endOfDay ? utcMs + 86400000 - 1 : utcMs);
-      };
       return db.select().from(mealLogs)
         .where(and(
           eq(mealLogs.userId, OWNER_USER_ID),
-          sql`${mealLogs.loggedAt} >= ${hkMidnight(input.startDate)}`,
-          sql`${mealLogs.loggedAt} < ${hkMidnight(input.endDate, true)}`
+          sql`${mealLogs.logDate} >= ${input.startDate}::date`,
+          sql`${mealLogs.logDate} <= ${input.endDate}::date`
         ))
-        .orderBy(desc(mealLogs.loggedAt));
+        .orderBy(desc(mealLogs.logDate));
     }),
 
   // Add meal log
   addMealLog: publicProcedure
     .input(z.object({
-      date: z.string(),
+      date: z.string(), // YYYY-MM-DD in HK timezone
       mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
       foodName: z.string(),
       foodItemId: z.number().optional(),
@@ -93,10 +82,10 @@ const nutritionRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      // Convert HK date string to HK noon UTC so chart grouping by HK date is correct
       const { date, ...rest } = input;
+      // logDate: calendar date (HK), loggedAt: HK noon UTC for legacy compat
       const loggedAt = new Date(date + "T12:00:00+08:00");
-      await db.insert(mealLogs).values({ ...rest, userId: OWNER_USER_ID, loggedAt });
+      await db.insert(mealLogs).values({ ...rest, userId: OWNER_USER_ID, logDate: date, loggedAt });
       return { success: true };
     }),
 
@@ -104,6 +93,7 @@ const nutritionRouter = router({
   updateMealLog: ownerProcedure
     .input(z.object({
       id: z.number(),
+      date: z.string().optional(), // YYYY-MM-DD in HK timezone
       foodName: z.string().optional(),
       quantity: z.number().optional(),
       calories: z.number().optional(),
@@ -116,8 +106,13 @@ const nutritionRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const { id, ...data } = input;
-      await db.update(mealLogs).set(data).where(and(eq(mealLogs.id, id), eq(mealLogs.userId, OWNER_USER_ID)));
+      const { id, date, ...rest } = input;
+      const updateData: any = { ...rest };
+      if (date) {
+        updateData.logDate = date;
+        updateData.loggedAt = new Date(date + "T12:00:00+08:00");
+      }
+      await db.update(mealLogs).set(updateData).where(and(eq(mealLogs.id, id), eq(mealLogs.userId, OWNER_USER_ID)));
       return { success: true };
     }),
 
@@ -1063,7 +1058,7 @@ const insightsRouter = router({
       const weekAgo = new Date(weekAgoStr + "T00:00:00+08:00");
 
       const [meals, sessions, body, sleep, hr] = await Promise.all([
-        db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.loggedAt} >= ${weekAgo}`)).limit(50),
+        db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.logDate} >= ${weekAgoStr}::date`)).limit(50),
         db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, OWNER_USER_ID), sql`${workoutSessions.startTime} >= ${weekAgo}`)),
         db.select().from(bodyComposition).where(eq(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc(bodyComposition.date)).limit(5),
         db.select().from(sleepLogs).where(and(eq(sleepLogs.userId, OWNER_USER_ID), gte(sleepLogs.date, weekAgoStr))),
@@ -1113,12 +1108,12 @@ const dashboardRouter = router({
     const weekAgoStr = daysAgoHK(7);
     const weekAgoDate = new Date(weekAgoStr + "T00:00:00+08:00");
     const [todayMeals, recentSessions, latestBody, latestSleep, latestHr, weekMeals, todayWorkouts, todayRunning, todayStepsRows] = await Promise.all([
-      db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.loggedAt} >= ${todayStart}`, sql`${mealLogs.loggedAt} <= ${todayEnd}`)),
+      db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), eq(mealLogs.logDate, todayStr))),
       db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, OWNER_USER_ID), sql`${workoutSessions.startTime} >= ${weekAgoDate}`)).orderBy(desc(workoutSessions.startTime)).limit(7),
       db.select().from(bodyComposition).where(eq(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc(bodyComposition.date)).limit(2),
       db.select().from(sleepLogs).where(eq(sleepLogs.userId, OWNER_USER_ID)).orderBy(desc(sleepLogs.date)).limit(1),
       db.select().from(heartRateLogs).where(eq(heartRateLogs.userId, OWNER_USER_ID)).orderBy(desc(heartRateLogs.date)).limit(1),
-      db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.loggedAt} >= ${weekAgoDate}`)),
+      db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.logDate} >= ${weekAgoStr}::date`)),
       // Today's workout sessions
       db.select({ id: workoutSessions.id, name: workoutSessions.name, duration: workoutSessions.duration, caloriesBurned: workoutSessions.caloriesBurned })
         .from(workoutSessions)
@@ -1345,7 +1340,8 @@ const csvImportRouter = router({
               carbs: r.carbs,
               fat: r.fat,
               fiber: r.fiber,
-              loggedAt: new Date(r.date + "T12:00:00Z"),
+              logDate: r.date,
+              loggedAt: new Date(r.date + "T12:00:00+08:00"),
               notes: "Imported from CSV",
             });
             inserted++;
@@ -1605,9 +1601,8 @@ const chartsRouter = router({
       const db = await getDb();
       if (!db) return [];
       const sinceStr = daysAgoHK(input.days);
-      const sinceDate = new Date(sinceStr + "T00:00:00+08:00");
       const rows = await db.select({
-        date: sql<string>`TO_CHAR(${mealLogs.loggedAt} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
+        date: sql<string>`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`.as("date"),
         totalCalories: sql<number>`COALESCE(SUM(${mealLogs.calories}), 0)`.as("totalCalories"),
         totalProtein: sql<number>`COALESCE(SUM(${mealLogs.protein}), 0)`.as("totalProtein"),
         totalCarbs: sql<number>`COALESCE(SUM(${mealLogs.carbs}), 0)`.as("totalCarbs"),
@@ -1615,10 +1610,10 @@ const chartsRouter = router({
       }).from(mealLogs)
         .where(and(
           eq(mealLogs.userId, OWNER_USER_ID),
-          sql`${mealLogs.loggedAt} >= ${sinceDate}`
+          sql`${mealLogs.logDate} >= ${sinceStr}::date`
         ))
-        .groupBy(sql`TO_CHAR(${mealLogs.loggedAt} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`)
-        .orderBy(sql`TO_CHAR(${mealLogs.loggedAt} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`);
+        .groupBy(sql`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`)
+        .orderBy(sql`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`);
       return rows;
     }),
 });
@@ -1930,7 +1925,8 @@ For steps data: extract daily step count, floors climbed, distance, active minut
           carbs: input.nutrition.carbs ?? undefined,
           fat: input.nutrition.fat ?? undefined,
           fiber: input.nutrition.fiber ?? undefined,
-          loggedAt: new Date(input.date + "T12:00:00Z"),
+          logDate: input.date,
+          loggedAt: new Date(input.date + "T12:00:00+08:00"),
           notes: "Imported from image",
         });
       }

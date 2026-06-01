@@ -58,6 +58,7 @@ export default function Nutrition() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showPhotoDialog, setShowPhotoDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
+  const [dialogDate, setDialogDate] = useState(todayHKString);
   const [mealType, setMealType] = useState<MealType>("breakfast");
   const [searchQuery, setSearchQuery] = useState("");
   const [form, setForm] = useState<FoodEntry>({ name: "", quantity: 100, calories: 0, protein: 0, carbs: 0, fat: 0 });
@@ -89,7 +90,13 @@ export default function Nutrition() {
     onError: (e) => toast.error(e.message),
   });
   const updateMutation = trpc.nutrition.updateMealLog.useMutation({
-    onSuccess: () => { utils.nutrition.getMealLogs.invalidate(); toast.success("Updated!"); setEditEntry(null); },
+    onSuccess: () => {
+      utils.nutrition.getMealLogs.invalidate();
+      utils.nutrition.getMealLogsRange.invalidate();
+      toast.success("Updated!");
+      setEditEntry(null);
+      setShowAddDialog(false);
+    },
   });
   const deleteMutation = trpc.nutrition.deleteMealLog.useMutation({
     onSuccess: () => { utils.nutrition.getMealLogs.invalidate(); utils.nutrition.getMealLogsRange.invalidate(); toast.success("Deleted"); },
@@ -130,7 +137,7 @@ export default function Nutrition() {
   const weekChartData = (() => {
     const map: Record<string, { cal: number; protein: number; carbs: number; fat: number }> = {};
     weekMeals.forEach(m => {
-      const dateKey = toHKDateString(new Date(m.loggedAt));
+      const dateKey = m.logDate ?? toHKDateString(new Date(m.loggedAt));
       if (!map[dateKey]) map[dateKey] = { cal: 0, protein: 0, carbs: 0, fat: 0 };
       map[dateKey].cal += (m.calories ?? 0);
       map[dateKey].protein += (m.protein ?? 0);
@@ -179,6 +186,7 @@ export default function Nutrition() {
 
   const handleAddFromAI = (food: any) => {
     setForm({ name: food.name, nameZh: food.nameZh, quantity: food.quantity, calories: food.calories, protein: food.protein, carbs: food.carbs, fat: food.fat, fiber: food.fiber });
+    setDialogDate(selectedDate);
     setShowPhotoDialog(false);
     setShowAddDialog(true);
   };
@@ -186,9 +194,9 @@ export default function Nutrition() {
   const handleSubmit = () => {
     if (!form.name) return toast.error("Food name required");
     if (editEntry) {
-      updateMutation.mutate({ id: editEntry.id, ...form });
+      updateMutation.mutate({ id: editEntry.id, date: dialogDate, mealType, foodName: form.name, quantity: form.quantity, calories: form.calories, protein: form.protein, carbs: form.carbs, fat: form.fat, fiber: form.fiber });
     } else {
-      addMutation.mutate({ date: selectedDate, mealType, foodName: form.name, quantity: form.quantity, calories: form.calories, protein: form.protein, carbs: form.carbs, fat: form.fat, fiber: form.fiber });
+      addMutation.mutate({ date: dialogDate, mealType, foodName: form.name, quantity: form.quantity, calories: form.calories, protein: form.protein, carbs: form.carbs, fat: form.fat, fiber: form.fiber });
     }
   };
 
@@ -209,7 +217,7 @@ export default function Nutrition() {
             </Button>
           )}
           {isOwner && (
-            <Button onClick={() => { setEditEntry(null); resetForm(); setShowAddDialog(true); }} size="sm" className="gap-2">
+            <Button onClick={() => { setEditEntry(null); setDialogDate(selectedDate); resetForm(); setShowAddDialog(true); }} size="sm" className="gap-2">
               <Plus className="w-4 h-4" /> Log Meal
             </Button>
           )}
@@ -294,7 +302,7 @@ export default function Nutrition() {
                   </Badge>
                 </div>
                 <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs"
-                  onClick={() => { setMealType(type); setEditEntry(null); resetForm(); setShowAddDialog(true); }}>
+                  onClick={() => { setMealType(type); setEditEntry(null); setDialogDate(selectedDate); resetForm(); setShowAddDialog(true); }}>
                   <Plus className="w-3.5 h-3.5" /> Add
                 </Button>
               </div>
@@ -312,7 +320,7 @@ export default function Nutrition() {
                       <span className="text-sm font-semibold text-foreground shrink-0">{Math.round(m.calories ?? 0)} kcal</span>
                       {isOwner && (
                         <div className="flex gap-1 shrink-0">
-                          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditEntry(m); setForm({ name: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0 }); setMealType(m.mealType as MealType); setShowAddDialog(true); }}>
+                          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditEntry(m); setDialogDate(m.logDate ?? selectedDate); setForm({ name: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? undefined }); setMealType(m.mealType as MealType); setShowAddDialog(true); }}>
                             <Edit2 className="w-3.5 h-3.5" />
                           </Button>
                           <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: m.id })}>
@@ -385,12 +393,16 @@ export default function Nutrition() {
       </Tabs>
 
       {/* Add/Edit Meal Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      <Dialog open={showAddDialog} onOpenChange={(open) => { setShowAddDialog(open); if (!open) setEditEntry(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{editEntry ? "Edit Meal Entry" : "Log Meal"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Date</label>
+              <Input type="date" value={dialogDate} onChange={e => setDialogDate(e.target.value)} />
+            </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Meal Type</label>
               <Select value={mealType} onValueChange={v => setMealType(v as MealType)}>
@@ -527,6 +539,7 @@ export default function Nutrition() {
                     <Button className="w-full" onClick={() => {
                       if (aiResult.foods?.[0]) {
                         setForm({ name: aiResult.foods[0].name, quantity: aiResult.foods[0].quantity, calories: aiResult.totalCalories, protein: aiResult.totalProtein, carbs: aiResult.totalCarbs, fat: aiResult.totalFat });
+                        setDialogDate(selectedDate);
                         setShowPhotoDialog(false);
                         setShowAddDialog(true);
                       }

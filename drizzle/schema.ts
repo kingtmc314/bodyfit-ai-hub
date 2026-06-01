@@ -71,6 +71,7 @@ export const mealLogs = pgTable("meal_logs", {
   fat: real("fat"),
   fiber: real("fiber"),
   notes: text("notes"),
+  logDate: date("logDate"),
   loggedAt: timestamp("loggedAt").defaultNow().notNull(),
   photoUrl: text("photoUrl"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

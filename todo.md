@@ -198,3 +198,11 @@
 - [x] Fix: extract date from input, set loggedAt = HK noon UTC (date + T12:00:00+08:00)
 - [x] Backfill: ran SQL to fix all 15 existing meal_logs records (set loggedAt to HK noon of createdAt date)
 - [x] Update version to v3.5.3
+
+## v3.5.4 Meal Log Date Field Migration (2026-06-01)
+- [x] Schema: add logDate date column to meal_logs, keep loggedAt for backward compat
+- [x] Migration: backfill logDate from loggedAt (HK date)
+- [x] Routers: update getMealLogs, getMealLogsRange, addMealLog, updateMealLog, calorieHistory to use logDate
+- [x] Frontend: add date picker to Log Meal dialog (defaults to selectedDate)
+- [x] Frontend: add date picker to Edit Meal dialog (pre-filled from record date)
+- [x] Update version to v3.5.4
