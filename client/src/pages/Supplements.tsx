@@ -400,9 +400,23 @@ export default function Supplements() {
                     </div>
 
                     {/* Meta */}
-                    <div className="text-xs text-muted-foreground space-y-0.5">
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      {(s.timeOfDay || s.dailyDose) && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {s.timeOfDay && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium">
+                              {s.timeOfDay === 'morning' ? '🌅' : s.timeOfDay === 'afternoon' ? '☀️' : s.timeOfDay === 'evening' ? '🌆' : s.timeOfDay === 'night' ? '🌙' : s.timeOfDay === 'pre_workout' ? '💪' : s.timeOfDay === 'post_workout' ? '🏋️' : '🍽️'}
+                              {t(`supplements.time_${s.timeOfDay}`)}
+                            </span>
+                          )}
+                          {s.dailyDose && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-xs">
+                              {s.dailyDose} {t('supplements.units')}/{t('common.day', { defaultValue: '日' })}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {s.servingSize && <p>{t('supplements.serving')}: {s.servingSize}</p>}
-                      {s.dailyDose && <p>{t('supplements.daily_dose')}: {s.dailyDose} {t('supplements.units')}</p>}
                       {s.expiryDate && <p className={new Date(s.expiryDate) < new Date() ? 'text-red-400' : ''}>{t('supplements.expiry')}: {formatHKDate(s.expiryDate)}</p>}
                     </div>
                     {/* Description expand */}

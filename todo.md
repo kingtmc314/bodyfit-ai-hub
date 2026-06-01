@@ -227,3 +227,8 @@
 - [x] Add/fix intake time (進食時間) field in supplement add/edit dialog
 - [x] Add dailyDose (每日劑量) field to supplement add/edit dialog
 - [x] Update version to v3.6.1
+
+## v3.6.2 Supplement Card Badge + Sleep Duration Line (2026-06-02)
+- [x] Supplement inventory cards: show timeOfDay label + dailyDose badge (e.g. 「早上 · 2粒/日」)
+- [x] Sleep window chart (Trends.tsx): overlay sleep duration (hours) as a secondary line using right Y axis
+- [x] Update version to v3.6.2

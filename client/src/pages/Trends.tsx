@@ -261,7 +261,7 @@ function fmtDecimalHour(v: number | null): string {
 // ─── Sleep Window Chart (陰陽鐲 style) ─────────────────────────────────────────
 // Renders a horizontal range bar per day: from bedtime to waketime
 // Y-axis: time of day (18:00 → 00:00 → 12:00), each bar is a colored band
-type SleepWindowEntry = { label: string; bedtime: number | null; waketime: number | null; bedtimeRaw: string | null; waketimeRaw: string | null };
+type SleepWindowEntry = { label: string; bedtime: number | null; waketime: number | null; bedtimeRaw: string | null; waketimeRaw: string | null; duration?: number | null };
 
 function SleepWindowChart({ data }: { data: SleepWindowEntry[] }) {
   const valid = data.filter(d => d.bedtime != null && d.waketime != null);
@@ -270,21 +270,20 @@ function SleepWindowChart({ data }: { data: SleepWindowEntry[] }) {
   // Y domain: from -6 (22:00 prev day) to 12 (noon)
   const Y_MIN = -6;
   const Y_MAX = 12;
-  const Y_RANGE = Y_MAX - Y_MIN;
 
   // Build bar data: base = bedtime, length = waketime - bedtime (handles midnight crossover)
   const barData = valid.map(d => {
     const bed = d.bedtime!;
     const wake = d.waketime!;
     const len = wake - bed; // e.g. -1.5 to 7 = 8.5h
-    return { label: d.label, base: bed, len, bedtimeRaw: d.bedtimeRaw, waketimeRaw: d.waketimeRaw };
+    return { label: d.label, base: bed, len, bedtimeRaw: d.bedtimeRaw, waketimeRaw: d.waketimeRaw, duration: d.duration ?? len };
   });
 
   // Average bedtime and waketime for reference lines
   const avgBed = valid.reduce((s, d) => s + d.bedtime!, 0) / valid.length;
   const avgWake = valid.reduce((s, d) => s + d.waketime!, 0) / valid.length;
 
-  // Custom tick formatter for Y axis
+  // Custom tick formatter for left Y axis (time)
   const yTickFmt = (v: number) => {
     const actual = v < 0 ? v + 24 : v;
     const h = Math.floor(actual);
@@ -302,14 +301,14 @@ function SleepWindowChart({ data }: { data: SleepWindowEntry[] }) {
         <p style={{ color: "hsl(var(--muted-foreground))", marginBottom: 4 }}>{label}</p>
         <p>🌙 就寢: <strong>{d.bedtimeRaw ?? fmtDecimalHour(d.base)}</strong></p>
         <p>☀️ 起床: <strong>{d.waketimeRaw ?? fmtDecimalHour(d.base + d.len)}</strong></p>
-        <p>⏱ 睡眠: <strong>{d.len?.toFixed(1)}h</strong></p>
+        <p>⏱ 睡眠: <strong>{d.duration?.toFixed(1)}h</strong></p>
       </div>
     );
   };
 
   return (
-    <ResponsiveContainer width="100%" height={240}>
-      <BarChart data={barData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }} barCategoryGap="20%">
+    <ResponsiveContainer width="100%" height={260}>
+      <ComposedChart data={barData} margin={{ top: 5, right: 45, left: 0, bottom: 5 }} barCategoryGap="20%">
         <defs>
           <linearGradient id="sleepWindowGrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#1e40af" stopOpacity={0.9} />
@@ -319,7 +318,9 @@ function SleepWindowChart({ data }: { data: SleepWindowEntry[] }) {
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
         <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+        {/* Left Y axis: time of day */}
         <YAxis
+          yAxisId="time"
           tick={{ fontSize: 10 }}
           stroke="hsl(var(--muted-foreground))"
           domain={[Y_MAX, Y_MIN]}
@@ -328,21 +329,34 @@ function SleepWindowChart({ data }: { data: SleepWindowEntry[] }) {
           width={42}
           reversed
         />
+        {/* Right Y axis: sleep duration in hours */}
+        <YAxis
+          yAxisId="dur"
+          orientation="right"
+          tick={{ fontSize: 10 }}
+          stroke="#22c55e"
+          domain={[0, 12]}
+          unit="h"
+          width={36}
+        />
         <Tooltip content={<CustomTooltip />} />
+        <Legend wrapperStyle={{ fontSize: 11 }} formatter={(value) => value === 'duration' ? '睡眠時長' : value === 'len' ? '睡眠窗口' : value} />
         {/* Invisible base bar to offset the visible bar */}
-        <Bar dataKey="base" stackId="sleep" fill="transparent" isAnimationActive={false} />
+        <Bar yAxisId="time" dataKey="base" stackId="sleep" fill="transparent" isAnimationActive={false} legendType="none" />
         {/* Visible sleep window bar */}
-        <Bar dataKey="len" stackId="sleep" fill="url(#sleepWindowGrad)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+        <Bar yAxisId="time" dataKey="len" stackId="sleep" fill="url(#sleepWindowGrad)" radius={[3, 3, 0, 0]} isAnimationActive={false} name="len" />
+        {/* Sleep duration line overlay */}
+        <Line yAxisId="dur" type="monotone" dataKey="duration" stroke="#22c55e" strokeWidth={2.5} dot={{ r: 3, fill: "#22c55e", strokeWidth: 0 }} name="duration" connectNulls />
         {/* Midnight reference line */}
-        <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="6 3" strokeWidth={1.5}
+        <ReferenceLine yAxisId="time" y={0} stroke="#94a3b8" strokeDasharray="6 3" strokeWidth={1.5}
           label={{ value: "午夜", fontSize: 9, fill: "#94a3b8", position: "insideTopRight" }} />
         {/* Average bedtime reference */}
-        <ReferenceLine y={avgBed} stroke="#3b82f6" strokeDasharray="4 2" strokeWidth={1}
+        <ReferenceLine yAxisId="time" y={avgBed} stroke="#3b82f6" strokeDasharray="4 2" strokeWidth={1}
           label={{ value: `平均就寢 ${fmtDecimalHour(avgBed)}`, fontSize: 9, fill: "#3b82f6", position: "insideBottomLeft" }} />
         {/* Average waketime reference */}
-        <ReferenceLine y={avgWake} stroke="#f97316" strokeDasharray="4 2" strokeWidth={1}
+        <ReferenceLine yAxisId="time" y={avgWake} stroke="#f97316" strokeDasharray="4 2" strokeWidth={1}
           label={{ value: `平均起床 ${fmtDecimalHour(avgWake)}`, fontSize: 9, fill: "#f97316", position: "insideTopLeft" }} />
-      </BarChart>
+      </ComposedChart>
     </ResponsiveContainer>
   );
 }
@@ -472,7 +486,7 @@ function SleepCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
       <Card className="md:col-span-2">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">就寢時間 &amp; 起床時間對照圖</CardTitle>
-          <CardDescription className="text-xs">每日睡眠窗口（就寢→起床），深藍色帶為睡眠時段，橙色點為起床時間，深藍色點為就寢時間</CardDescription>
+          <CardDescription className="text-xs">每日睡眠窗口（就寢→起床），深藍色帶為睡眠時段，綠色折線為睡眠時長（右軸）</CardDescription>
         </CardHeader>
         <CardContent>
           <SleepWindowChart data={chartData} />

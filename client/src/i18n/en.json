@@ -650,7 +650,8 @@
     "optional_notes": "Optional notes...",
     "fill_required": "Please fill in required fields",
     "sort_date_desc": "Date (Newest)",
-    "sort_date_asc": "Date (Oldest)"
+    "sort_date_asc": "Date (Oldest)",
+    "day": "day"
   },
   "steps": {
     "title": "Steps & Stairs",

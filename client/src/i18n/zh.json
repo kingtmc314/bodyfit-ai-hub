@@ -686,7 +686,8 @@
     "optional_notes": "備注（可選）...",
     "fill_required": "請填寫必填欄位",
     "sort_date_desc": "日期（最新）",
-    "sort_date_asc": "日期（最舊）"
+    "sort_date_asc": "日期（最舊）",
+    "day": "日"
   },
   "steps": {
     "title": "步數及樓梯",
