@@ -322,10 +322,11 @@ function SleepWindowChart({ data }: { data: SleepWindowEntry[] }) {
         <YAxis
           tick={{ fontSize: 10 }}
           stroke="hsl(var(--muted-foreground))"
-          domain={[Y_MIN, Y_MAX]}
-          ticks={[-4, -2, 0, 2, 4, 6, 8, 10]}
+          domain={[Y_MAX, Y_MIN]}
+          ticks={[10, 8, 6, 4, 2, 0, -2, -4]}
           tickFormatter={yTickFmt}
           width={42}
+          reversed
         />
         <Tooltip content={<CustomTooltip />} />
         {/* Invisible base bar to offset the visible bar */}
