@@ -221,3 +221,9 @@
 - [x] Frontend: add Personal Profile section in Goals page (height, birth year, gender)
 - [x] Frontend: show BMR formula preview when all profile fields are filled
 - [x] Update version to v3.6.0
+
+## v3.6.1 Sleep Chart Y-Axis + Supplement Intake Time Fix (2026-06-02)
+- [x] Reverse Y axis on sleep window chart (bedtime on top, waketime on bottom)
+- [x] Add/fix intake time (進食時間) field in supplement add/edit dialog
+- [x] Add dailyDose (每日劑量) field to supplement add/edit dialog
+- [x] Update version to v3.6.1

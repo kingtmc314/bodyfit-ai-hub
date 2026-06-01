@@ -40,7 +40,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   other: 'bg-muted text-muted-foreground',
 };
 
-const defaultSupplementForm = { name: '', brand: '', category: 'vitamin', servingSize: '', currentStock: '', lowStockThreshold: '30', purchaseDate: '', expiryDate: '', notes: '', isActive: true, reminderEnabled: false, reminderTime: '08:00' };
+const defaultSupplementForm = { name: '', brand: '', category: 'vitamin', servingSize: '', currentStock: '', lowStockThreshold: '30', purchaseDate: '', expiryDate: '', notes: '', isActive: true, reminderEnabled: false, reminderTime: '08:00', timeOfDay: 'morning', dailyDose: '' };
 const defaultLogForm = { supplementId: '', date: todayHKString(), quantity: '1', timeOfDay: 'morning', notes: '' };
 const defaultRestockForm = { supplementId: '', quantity: '' };
 const defaultPurchaseForm = { supplementId: '', purchaseDate: '', quantity: '', unitPrice: '', totalPrice: '', currency: 'USD', source: 'iHerb', orderNo: '', notes: '', addToStock: true };
@@ -376,7 +376,7 @@ export default function Supplements() {
                         <div className="flex gap-1 shrink-0">
                           <Button variant="ghost" size="icon" className="w-6 h-6" onClick={() => {
                             setEditSupplement(s);
-                            setSupplementForm({ name: s.name, brand: s.brand || '', category: s.category || 'vitamin', servingSize: s.servingSize || '', currentStock: s.currentStock ?? '', lowStockThreshold: s.lowStockThreshold ?? 30, purchaseDate: s.purchaseDate || '', expiryDate: s.expiryDate || '', notes: s.notes || '', isActive: s.isActive ?? true, reminderEnabled: s.reminderEnabled ?? false, reminderTime: s.reminderTime || '08:00' });
+                            setSupplementForm({ name: s.name, brand: s.brand || '', category: s.category || 'vitamin', servingSize: s.servingSize || '', currentStock: s.currentStock ?? '', lowStockThreshold: s.lowStockThreshold ?? 30, purchaseDate: s.purchaseDate || '', expiryDate: s.expiryDate || '', notes: s.notes || '', isActive: s.isActive ?? true, reminderEnabled: s.reminderEnabled ?? false, reminderTime: s.reminderTime || '08:00', timeOfDay: s.timeOfDay || 'morning', dailyDose: s.dailyDose ?? '' });
                             setShowSupplementDialog(true);
                           }}><Edit2 className="w-3 h-3" /></Button>
                           <Button variant="ghost" size="icon" className="w-6 h-6 text-destructive" onClick={() => deleteSupplement.mutate({ id: s.id })}><Trash2 className="w-3 h-3" /></Button>
@@ -843,6 +843,19 @@ export default function Supplements() {
                 <Input type="date" value={supplementForm.expiryDate} onChange={e => setSupplementForm((f: any) => ({ ...f, expiryDate: e.target.value }))} />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('supplements.time_of_day')}</label>
+                <Select value={supplementForm.timeOfDay || 'morning'} onValueChange={v => setSupplementForm((f: any) => ({ ...f, timeOfDay: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{TIME_OF_DAY.map(tod => <SelectItem key={tod} value={tod}>{t(`supplements.time_${tod}`)}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('supplements.daily_dose', { defaultValue: '每日劑量（粒）' })}</label>
+                <Input type="number" min="1" placeholder="1" value={supplementForm.dailyDose} onChange={e => setSupplementForm((f: any) => ({ ...f, dailyDose: e.target.value }))} />
+              </div>
+            </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">{t('common.notes')}</label>
               <Textarea placeholder={t('common.optional_notes')} value={supplementForm.notes} onChange={e => setSupplementForm((f: any) => ({ ...f, notes: e.target.value }))} rows={2} />
@@ -878,7 +891,7 @@ export default function Supplements() {
             <Button variant="outline" onClick={() => { setShowSupplementDialog(false); setEditSupplement(null); }}>{t('common.cancel')}</Button>
             <Button onClick={() => {
               if (!supplementForm.name.trim()) { toast.error(t('supplements.name_required')); return; }
-              const payload = { ...supplementForm, currentStock: supplementForm.currentStock ? Number(supplementForm.currentStock) : undefined, lowStockThreshold: supplementForm.lowStockThreshold ? Number(supplementForm.lowStockThreshold) : 30, purchaseDate: supplementForm.purchaseDate || undefined, expiryDate: supplementForm.expiryDate || undefined };
+              const payload = { ...supplementForm, currentStock: supplementForm.currentStock ? Number(supplementForm.currentStock) : undefined, lowStockThreshold: supplementForm.lowStockThreshold ? Number(supplementForm.lowStockThreshold) : 30, purchaseDate: supplementForm.purchaseDate || undefined, expiryDate: supplementForm.expiryDate || undefined, dailyDose: supplementForm.dailyDose ? Number(supplementForm.dailyDose) : undefined };
               if (editSupplement) updateSupplement.mutate({ id: editSupplement.id, ...payload });
               else addSupplement.mutate(payload);
             }} disabled={addSupplement.isPending || updateSupplement.isPending}>
