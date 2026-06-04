@@ -99,6 +99,15 @@ const BUILT_IN_EXERCISES = [
   { name: "Wrist Curl", nameZh: "腕彎舉", muscleGroup: "forearms", equipment: "Barbell" },
   { name: "Reverse Curl", nameZh: "反握彎舉", muscleGroup: "forearms", equipment: "Barbell" },
   { name: "Farmer's Walk", nameZh: "農夫走路", muscleGroup: "forearms", equipment: "Dumbbell" },
+  // Cardio Machines
+  { name: "Stationary Bike", nameZh: "单車機", muscleGroup: "cardio", equipment: "Machine", instructions: "Adjust seat height, maintain steady cadence, track time and resistance level." },
+  { name: "Treadmill", nameZh: "跑步機", muscleGroup: "cardio", equipment: "Machine", instructions: "Set speed and incline, maintain upright posture, track distance and time." },
+  { name: "Stair Climber", nameZh: "行山機", muscleGroup: "cardio", equipment: "Machine", instructions: "Step at a steady pace, avoid leaning heavily on handles, track steps and time." },
+  { name: "Elliptical Trainer", nameZh: "橢圓機", muscleGroup: "cardio", equipment: "Machine", instructions: "Use full stride, engage arms, maintain upright posture, track distance and time." },
+  { name: "Rowing Machine", nameZh: "劃船機", muscleGroup: "cardio", equipment: "Machine", instructions: "Drive with legs first, then lean back, pull handle to lower chest, track distance and strokes." },
+  { name: "Ski Erg", nameZh: "Ski Erg 機", muscleGroup: "cardio", equipment: "Machine", instructions: "Pull handles down with straight arms, engage core and hips, track distance and time." },
+  { name: "Air Bike", nameZh: "風阻单車", muscleGroup: "cardio", equipment: "Machine", instructions: "Push and pull handles while pedaling, maintain steady pace or do intervals." },
+  { name: "Jacob's Ladder", nameZh: "天梯機", muscleGroup: "cardio", equipment: "Machine", instructions: "Climb at steady pace, engage core, track time and floors." },
 ];
 
 const CustomTooltip = ({ active, payload, label }: any) => {

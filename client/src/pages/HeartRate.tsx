@@ -111,6 +111,12 @@ export default function HeartRate() {
     const withHrv = (hrHistory as any[]).filter(r => r.hrv != null);
     return withHrv.length > 0 ? withHrv[withHrv.length - 1]?.hrv : null;
   }, [hrHistory]);
+  // Build date→sleepHRV map from hrHistory so the table can show the same HRV as the chart
+  const sleepHrvByDate = useMemo(() => {
+    const map = new Map<string, number>();
+    (hrHistory as any[]).forEach(r => { if (r.hrv != null) map.set(r.date, r.hrv); });
+    return map;
+  }, [hrHistory]);
 
   const latest = records[0];
 
@@ -245,7 +251,7 @@ export default function HeartRate() {
               case 'date_asc': hrList.sort((a,b)=>new Date(a.date).getTime()-new Date(b.date).getTime()); break;
               case 'date_desc': hrList.sort((a,b)=>new Date(b.date).getTime()-new Date(a.date).getTime()); break;
               case 'resting_asc': hrList.sort((a,b)=>Number(a.restingHr||999)-Number(b.restingHr||999)); break;
-              case 'hrv_desc': hrList.sort((a,b)=>Number(b.hrv||0)-Number(a.hrv||0)); break;
+              case 'hrv_desc': hrList.sort((a,b)=>Number(sleepHrvByDate.get(b.date)||b.hrv||0)-Number(sleepHrvByDate.get(a.date)||a.hrv||0)); break;
             }
             return (
               <>
@@ -279,7 +285,7 @@ export default function HeartRate() {
                       <td className="px-4 py-3">{r.restingHr ? `${r.restingHr} bpm` : "—"}</td>
                       <td className="px-4 py-3">{r.highHr ? `${r.highHr} bpm` : "—"}</td>
                       <td className="px-4 py-3">{r.avgHr ? `${r.avgHr} bpm` : "—"}</td>
-                      <td className="px-4 py-3">{r.hrv != null ? `${Number(r.hrv).toFixed(0)} ms` : "—"}</td>
+                      <td className="px-4 py-3">{sleepHrvByDate.has(r.date) ? <span className="font-medium text-cyan-400">{sleepHrvByDate.get(r.date)} ms</span> : r.hrv != null ? `${Number(r.hrv).toFixed(0)} ms` : "—"}</td>
                       <td className="px-4 py-3 max-w-32 truncate text-muted-foreground">{r.notes || "—"}</td>
                       {isOwner && (
                       <td className="px-4 py-3">

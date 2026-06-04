@@ -318,13 +318,16 @@ function SleepWindowChart({ data }: { data: SleepWindowEntry[] }) {
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
         <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-        {/* Left Y axis: time of day */}
+        {/* Left Y axis: time of day
+             reversed=true makes Recharts put the domain start (Y_MIN = -6 = 18:00) at the TOP
+             and domain end (Y_MAX = 12 = noon) at the BOTTOM.
+             So bedtime ~22:00 (-2) appears near the top, waketime ~07:00 (7) near the bottom. */}
         <YAxis
           yAxisId="time"
           tick={{ fontSize: 10 }}
           stroke="hsl(var(--muted-foreground))"
-          domain={[Y_MAX, Y_MIN]}
-          ticks={[10, 8, 6, 4, 2, 0, -2, -4]}
+          domain={[Y_MIN, Y_MAX]}
+          ticks={[-4, -2, 0, 2, 4, 6, 8, 10]}
           tickFormatter={yTickFmt}
           width={42}
           reversed

@@ -232,3 +232,10 @@
 - [x] Supplement inventory cards: show timeOfDay label + dailyDose badge (e.g. 「早上 · 2粒/日」)
 - [x] Sleep window chart (Trends.tsx): overlay sleep duration (hours) as a secondary line using right Y axis
 - [x] Update version to v3.6.2
+
+## v3.6.3 Chart/Workout/HR Fixes (2026-06-05)
+- [x] Sleep window chart: reverse Y-axis tick labels so earlier times appear at top (bedtime ~22:00 at top, waketime ~07:00 lower)
+- [x] Workout log: add cardio machine exercise types (bike/cycling machine, treadmill, stair climber/elliptical, rowing machine)
+- [x] Heart rate management table: add HRV column showing sleep HRV value (from sleep_logs via hrHistory map)
+- [x] Fix Nutrition.tsx TS errors: fiber field in updateMealLog schema, todayHKString() calls
+- [x] Update version to v3.6.3

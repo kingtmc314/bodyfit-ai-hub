@@ -55,11 +55,11 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 export default function Nutrition() {
   const { t } = useTranslation();
   const isOwner = useIsOwner();
-  const [selectedDate, setSelectedDate] = useState(todayHKString);
+  const [selectedDate, setSelectedDate] = useState(() => todayHKString());
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showPhotoDialog, setShowPhotoDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
-  const [dialogDate, setDialogDate] = useState(todayHKString);
+  const [dialogDate, setDialogDate] = useState(() => todayHKString());
   const [mealType, setMealType] = useState<MealType>("breakfast");
   const [searchQuery, setSearchQuery] = useState("");
   const [form, setForm] = useState<FoodEntry>({ name: "", quantity: 100, calories: 0, protein: 0, carbs: 0, fat: 0 });
@@ -222,10 +222,10 @@ export default function Nutrition() {
               const d = new Date(selectedDate + 'T12:00:00+08:00');
               d.setDate(d.getDate() + 1);
               setSelectedDate(d.toISOString().slice(0, 10));
-            }} disabled={selectedDate >= todayHKString}><ChevronRight className="w-4 h-4" /></Button>
+            }} disabled={selectedDate >= todayHKString()}><ChevronRight className="w-4 h-4" /></Button>
           </div>
-          {selectedDate !== todayHKString && (
-            <Button variant="ghost" size="sm" className="text-xs h-8 px-2 text-primary" onClick={() => setSelectedDate(todayHKString)}>Today</Button>
+          {selectedDate !== todayHKString() && (
+            <Button variant="ghost" size="sm" className="text-xs h-8 px-2 text-primary" onClick={() => setSelectedDate(todayHKString())}>Today</Button>
           )}
           {isOwner && (
             <Button onClick={() => setShowPhotoDialog(true)} variant="outline" size="sm" className="gap-2">

@@ -100,6 +100,7 @@ const nutritionRouter = router({
       protein: z.number().optional(),
       carbs: z.number().optional(),
       fat: z.number().optional(),
+      fiber: z.number().optional(),
       notes: z.string().optional(),
       mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
     }))
