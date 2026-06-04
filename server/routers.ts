@@ -375,6 +375,8 @@ const workoutRouter = router({
       weight: z.number().optional(),
       duration: z.number().optional(),
       distance: z.number().optional(),
+      avgHr: z.number().optional(),
+      calories: z.number().optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
@@ -383,8 +385,8 @@ const workoutRouter = router({
       const { exerciseId, ...rest } = input;
       // Always use raw SQL to avoid Drizzle type issues with nullable exerciseId
       await db.execute(sql`
-        INSERT INTO workout_sets ("sessionId", "exerciseId", "exerciseName", "setNumber", reps, weight, duration, distance, notes)
-        VALUES (${rest.sessionId}, ${exerciseId ?? null}, ${rest.exerciseName}, ${rest.setNumber}, ${rest.reps ?? null}, ${rest.weight ?? null}, ${rest.duration ?? null}, ${rest.distance ?? null}, ${rest.notes ?? null})
+        INSERT INTO workout_sets ("sessionId", "exerciseId", "exerciseName", "setNumber", reps, weight, duration, distance, "avgHr", calories, notes)
+        VALUES (${rest.sessionId}, ${exerciseId ?? null}, ${rest.exerciseName}, ${rest.setNumber}, ${rest.reps ?? null}, ${rest.weight ?? null}, ${rest.duration ?? null}, ${rest.distance ?? null}, ${rest.avgHr ?? null}, ${rest.calories ?? null}, ${rest.notes ?? null})
       `);
       // Recalculate and update totalVolume on the session
       const volumeResult = await db.execute(sql`
@@ -406,6 +408,9 @@ const workoutRouter = router({
       reps: z.number().optional(),
       weight: z.number().optional(),
       duration: z.number().optional(),
+      distance: z.number().optional(),
+      avgHr: z.number().optional(),
+      calories: z.number().optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {

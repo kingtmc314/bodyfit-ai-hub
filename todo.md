@@ -239,3 +239,11 @@
 - [x] Heart rate management table: add HRV column showing sleep HRV value (from sleep_logs via hrHistory map)
 - [x] Fix Nutrition.tsx TS errors: fiber field in updateMealLog schema, todayHKString() calls
 - [x] Update version to v3.6.3
+
+## v3.6.4 Cardio Fields (2026-06-05)
+- [x] DB schema: add avgHr (integer), calories (integer) columns to workout_sets table (duration/distance already existed)
+- [x] Migration: applied SQL ALTER TABLE for new columns
+- [x] tRPC: updated addSet and updateSet procedures to accept avgHr, calories, distance fields
+- [x] UI: detect cardio exercises (muscleGroup==='cardio') and show duration/distance/avgHr/calories fields instead of weight/reps
+- [x] History display: show cardio fields in set history rows
+- [x] Update version to v3.6.4

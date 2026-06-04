@@ -138,7 +138,7 @@ export default function Workout() {
   const [detailExercise, setDetailExercise] = useState<any>(null);
   const [activeSession, setActiveSession] = useState<any>(null);
   const [selectedExercise, setSelectedExercise] = useState<any>(null);
-  const [setForm, setSetForm] = useState({ reps: 10, weight: 0, notes: "" });
+  const [setForm, setSetForm] = useState({ reps: 10, weight: 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: "" });
   const [sessionName, setSessionName] = useState("");
   const [editSet, setEditSet] = useState<any>(null);
   const [sessionSort, setSessionSort] = useState<'date_desc'|'date_asc'|'volume_desc'|'duration_desc'>('date_desc');
@@ -352,17 +352,15 @@ export default function Workout() {
   const handleAddSet = () => {
     if (!selectedExercise || !activeSession) return;
     const setNum = (sessionDetail?.sets.filter(s => s.exerciseName === selectedExercise.name).length || 0) + 1;
+    const isCardio = selectedExercise?.muscleGroup === 'cardio';
     if (editSet) {
-      updateSet.mutate({ id: editSet.id, reps: setForm.reps, weight: setForm.weight, notes: setForm.notes });
+      updateSet.mutate(isCardio
+        ? { id: editSet.id, duration: setForm.duration || undefined, distance: setForm.distance || undefined, avgHr: setForm.avgHr || undefined, calories: setForm.calories || undefined, notes: setForm.notes || undefined }
+        : { id: editSet.id, reps: setForm.reps, weight: setForm.weight, notes: setForm.notes });
     } else {
-      addSet.mutate({
-        sessionId: activeSession.id,
-        exerciseName: selectedExercise.name,
-        setNumber: setNum,
-        reps: setForm.reps,
-        weight: setForm.weight,
-        notes: setForm.notes,
-      });
+      addSet.mutate(isCardio
+        ? { sessionId: activeSession.id, exerciseName: selectedExercise.name, setNumber: setNum, duration: setForm.duration || undefined, distance: setForm.distance || undefined, avgHr: setForm.avgHr || undefined, calories: setForm.calories || undefined, notes: setForm.notes || undefined }
+        : { sessionId: activeSession.id, exerciseName: selectedExercise.name, setNumber: setNum, reps: setForm.reps, weight: setForm.weight, notes: setForm.notes });
     }
   };
 
@@ -516,7 +514,7 @@ export default function Workout() {
                             </div>
                             <div className="flex gap-1">
                               {isOwner && <Button size="sm" variant="ghost" className="gap-1 text-xs"
-                                onClick={() => { setSelectedExercise(ex || { name: exerciseName }); setSetForm({ reps: 10, weight: sets[sets.length - 1]?.weight || 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
+                                onClick={() => { const isCardio = (ex?.muscleGroup || '') === 'cardio'; setSelectedExercise(ex || { name: exerciseName }); setSetForm(isCardio ? { reps: 0, weight: 0, duration: sets[sets.length-1]?.duration || 0, distance: sets[sets.length-1]?.distance || 0, avgHr: sets[sets.length-1]?.avgHr || 0, calories: sets[sets.length-1]?.calories || 0, notes: "" } : { reps: 10, weight: sets[sets.length-1]?.weight || 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
                                 <Plus className="w-3.5 h-3.5" /> Set
                               </Button>}
                               <Button size="sm" variant="ghost" className="gap-1 text-xs text-purple-500 hover:text-purple-600"
@@ -529,11 +527,17 @@ export default function Workout() {
                             {sets.map((s, i) => (
                               <div key={s.id} className="flex items-center gap-3 px-5 py-2.5 hover:bg-muted/20">
                                 <span className="text-xs text-muted-foreground w-8">Set {i + 1}</span>
-                                <span className="text-sm font-semibold text-foreground flex-1">{s.reps} reps × {s.weight} kg</span>
-                                <span className="text-xs text-muted-foreground">{Math.round((s.reps || 0) * (s.weight || 0))} kg vol</span>
+                                {(ex?.muscleGroup === 'cardio') ? (
+                                  <span className="text-sm font-semibold text-foreground flex-1">
+                                    {s.duration ? `${s.duration} min` : ''}{s.distance ? ` · ${s.distance} km` : ''}{(s as any).avgHr ? ` · ${(s as any).avgHr} bpm` : ''}{(s as any).calories ? ` · ${(s as any).calories} kcal` : ''}
+                                  </span>
+                                ) : (
+                                  <span className="text-sm font-semibold text-foreground flex-1">{s.reps} reps × {s.weight} kg</span>
+                                )}
+                                {(ex?.muscleGroup !== 'cardio') && <span className="text-xs text-muted-foreground">{Math.round((s.reps || 0) * (s.weight || 0))} kg vol</span>}
                                 {isOwner && <div className="flex gap-1">
                                   <Button variant="ghost" size="icon" className="w-6 h-6"
-                                    onClick={() => { setEditSet(s); setSelectedExercise(ex || { name: exerciseName }); setSetForm({ reps: s.reps || 10, weight: s.weight || 0, notes: s.notes || "" }); setShowAddSetDialog(true); }}>
+                                    onClick={() => { const isCardio = (ex?.muscleGroup || '') === 'cardio'; setEditSet(s); setSelectedExercise(ex || { name: exerciseName }); setSetForm(isCardio ? { reps: 0, weight: 0, duration: s.duration || 0, distance: s.distance || 0, avgHr: (s as any).avgHr || 0, calories: (s as any).calories || 0, notes: s.notes || "" } : { reps: s.reps || 10, weight: s.weight || 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: s.notes || "" }); setShowAddSetDialog(true); }}>
                                     <Edit2 className="w-3 h-3" />
                                   </Button>
                                   <Button variant="ghost" size="icon" className="w-6 h-6 text-destructive"
@@ -633,7 +637,7 @@ export default function Workout() {
                             </Button>
                             {activeSession && (
                               <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
-                                onClick={(e) => { e.stopPropagation(); setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
+                                onClick={(e) => { e.stopPropagation(); setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
                                 <Plus className="w-3.5 h-3.5" />
                               </Button>
                             )}
@@ -681,7 +685,7 @@ export default function Workout() {
                         )}
                         {activeSession && (
                           <Button size="sm" variant="ghost" className="h-8 w-8 p-0"
-                            onClick={(e) => { e.stopPropagation(); setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
+                            onClick={(e) => { e.stopPropagation(); setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
                             <Plus className="w-4 h-4" />
                           </Button>
                         )}
@@ -810,7 +814,7 @@ export default function Workout() {
             <div className="space-y-1 flex-1 overflow-y-auto">
               {filteredExercises.map((ex: any, i: number) => (
                 <button key={i} className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-muted/50 transition-colors"
-                  onClick={() => { setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, notes: "" }); setEditSet(null); setShowExerciseDialog(false); setShowAddSetDialog(true); }}>
+                  onClick={() => { setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: "" }); setEditSet(null); setShowExerciseDialog(false); setShowAddSetDialog(true); }}>
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-foreground">{ex.name}{(ex as any).isCustom && <Badge variant="secondary" className="ml-1.5 text-[10px] py-0">自訂</Badge>}</p>
@@ -921,24 +925,59 @@ export default function Workout() {
             <DialogTitle>{editSet ? "Edit Set" : `Log Set — ${selectedExercise?.name}`}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Reps</label>
-                <Input type="number" value={setForm.reps} onChange={e => setSetForm(f => ({ ...f, reps: Number(e.target.value) }))} />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Weight (kg)</label>
-                <Input type="number" step="0.5" value={setForm.weight} onChange={e => setSetForm(f => ({ ...f, weight: Number(e.target.value) }))} />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Notes (optional)</label>
-              <Input placeholder="e.g. felt strong, paused reps…" value={setForm.notes} onChange={e => setSetForm(f => ({ ...f, notes: e.target.value }))} />
-            </div>
-            <div className="bg-muted/50 rounded-xl p-3 text-center">
-              <p className="text-xs text-muted-foreground">Volume</p>
-              <p className="text-xl font-bold text-foreground">{Math.round(setForm.reps * setForm.weight)} <span className="text-sm font-normal">kg</span></p>
-            </div>
+            {selectedExercise?.muscleGroup === 'cardio' ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">時間（分鐘）</label>
+                    <Input type="number" min="0" value={setForm.duration || ''} placeholder="0" onChange={e => setSetForm(f => ({ ...f, duration: Number(e.target.value) }))} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">距離（km）</label>
+                    <Input type="number" min="0" step="0.1" value={setForm.distance || ''} placeholder="0.0" onChange={e => setSetForm(f => ({ ...f, distance: Number(e.target.value) }))} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">心跳（bpm）</label>
+                    <Input type="number" min="0" value={setForm.avgHr || ''} placeholder="0" onChange={e => setSetForm(f => ({ ...f, avgHr: Number(e.target.value) }))} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">卡路里（kcal）</label>
+                    <Input type="number" min="0" value={setForm.calories || ''} placeholder="0" onChange={e => setSetForm(f => ({ ...f, calories: Number(e.target.value) }))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">備註（可選）</label>
+                  <Input placeholder="例：阶段訓練、慢跳恢復…" value={setForm.notes} onChange={e => setSetForm(f => ({ ...f, notes: e.target.value }))} />
+                </div>
+                <div className="bg-muted/50 rounded-xl p-3 grid grid-cols-2 gap-2 text-center">
+                  <div><p className="text-xs text-muted-foreground">時間</p><p className="text-lg font-bold text-foreground">{setForm.duration || 0} <span className="text-xs font-normal">min</span></p></div>
+                  <div><p className="text-xs text-muted-foreground">卡路里</p><p className="text-lg font-bold text-orange-500">{setForm.calories || 0} <span className="text-xs font-normal">kcal</span></p></div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Reps</label>
+                    <Input type="number" value={setForm.reps} onChange={e => setSetForm(f => ({ ...f, reps: Number(e.target.value) }))} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Weight (kg)</label>
+                    <Input type="number" step="0.5" value={setForm.weight} onChange={e => setSetForm(f => ({ ...f, weight: Number(e.target.value) }))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Notes (optional)</label>
+                  <Input placeholder="e.g. felt strong, paused reps…" value={setForm.notes} onChange={e => setSetForm(f => ({ ...f, notes: e.target.value }))} />
+                </div>
+                <div className="bg-muted/50 rounded-xl p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Volume</p>
+                  <p className="text-xl font-bold text-foreground">{Math.round(setForm.reps * setForm.weight)} <span className="text-sm font-normal">kg</span></p>
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowAddSetDialog(false); setEditSet(null); }}>Cancel</Button>
@@ -959,7 +998,7 @@ export default function Workout() {
         onAddToSession={() => {
           if (detailExercise) {
             setSelectedExercise(detailExercise);
-            setSetForm({ reps: 10, weight: 0, notes: "" });
+            setSetForm({ reps: 10, weight: 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: "" });
             setEditSet(null);
             setShowAddSetDialog(true);
           }

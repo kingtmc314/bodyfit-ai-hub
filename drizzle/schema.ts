@@ -144,6 +144,8 @@ export const workoutSets = pgTable("workout_sets", {
   weight: real("weight"),
   duration: integer("duration"),
   distance: real("distance"),
+  avgHr: integer("avgHr"),
+  calories: integer("calories"),
   notes: text("notes"),
   isPersonalRecord: boolean("isPersonalRecord").notNull().default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
