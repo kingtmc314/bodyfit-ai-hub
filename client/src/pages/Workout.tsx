@@ -189,6 +189,7 @@ export default function Workout() {
   const { data: sessionDetail } = trpc.workout.getSessionWithSets.useQuery(
     { sessionId: activeSession?.id }, { enabled: !!activeSession?.id }
   );
+  const { data: exercisePRs = {} } = trpc.workout.getExercisePRs.useQuery();
 
   const createSession = trpc.workout.createSession.useMutation({
     onSuccess: (data) => {
@@ -649,7 +650,14 @@ export default function Workout() {
                                     {s.duration ? `${s.duration} min` : ''}{s.distance ? ` · ${s.distance} km` : ''}{(s as any).avgHr ? ` · ${(s as any).avgHr} bpm` : ''}{(s as any).calories ? ` · ${(s as any).calories} kcal` : ''}
                                   </span>
                                 ) : (
-                                  <span className="text-sm font-semibold text-foreground flex-1">{s.reps} reps × {historyUnit === 'lbs' ? Math.round((s.weight || 0) * 2.20462) : s.weight} {historyUnit}</span>
+                                  <span className="text-sm font-semibold text-foreground flex-1 flex items-center gap-1.5">
+                                    {s.reps} reps × {historyUnit === 'lbs' ? Math.round((s.weight || 0) * 2.20462) : s.weight} {historyUnit}
+                                    {s.weight && exercisePRs[exerciseName] && s.weight >= exercisePRs[exerciseName] && (
+                                      <span className="text-xs font-bold text-amber-500 flex items-center gap-0.5" title="Personal Record!">
+                                        <Trophy className="w-3 h-3" /> PR
+                                      </span>
+                                    )}
+                                  </span>
                                 )}
                                 {(ex?.muscleGroup !== 'cardio') && <span className="text-xs text-muted-foreground">{historyUnit === 'lbs' ? Math.round((s.reps || 0) * (s.weight || 0) * 2.20462) : Math.round((s.reps || 0) * (s.weight || 0))} {historyUnit} vol</span>}
                                 {isOwner && <div className="flex gap-1">

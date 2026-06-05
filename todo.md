@@ -305,3 +305,11 @@
 ## v3.9.1 (2026-06-05)
 - [x] Bug fix: updateSession now recalculates duration and caloriesBurned when startTime/endTime are changed (volume-adjusted MET formula)
 - [x] Bug fix: Steps.tsx edit mode now auto-recalculates calories when steps change (same formula as new entry)
+
+## v3.9.2 (2026-06-05)
+- [x] Workout: PR badge — added getExercisePRs query (returns max weight per exercise across all sessions)
+- [x] Workout: PR badge — frontend shows 🏆 PR in amber next to set weight when it matches the all-time max
+- [x] Steps: calcStepsCalories updated to steps × 0.0004 × kg + floors × 0.17 × kg
+- [x] Steps: auto-recalc now triggers on floorsClimbed change too
+- [x] Steps: backfillCalories now recalculates ALL records (not just 0/null) using new formula
+- [x] Update version to v3.9.2

@@ -720,6 +720,29 @@ const workoutRouter = router({
         equipment: string; instructions: string; confidence: string;
       };
     }),
+
+  // Get personal records (max weight per exercise) for the owner
+  getExercisePRs: publicProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return {};
+      // Get max weight per exercise name across all sessions for this user
+      const rows = await db.execute(sql`
+        SELECT ws."exerciseName", MAX(ws.weight) as max_weight
+        FROM workout_sets ws
+        INNER JOIN workout_sessions sess ON ws."sessionId" = sess.id
+        WHERE sess."userId" = ${OWNER_USER_ID}
+          AND ws.weight IS NOT NULL
+          AND ws.weight > 0
+        GROUP BY ws."exerciseName"
+      `);
+      const prMap: Record<string, number> = {};
+      const resultRows = (rows as any).rows ?? rows;
+      for (const row of resultRows) {
+        prMap[row.exerciseName] = Number(row.max_weight);
+      }
+      return prMap;
+    }),
 });
 
 // ─── Body Metrics Router ──────────────────────────────────────────────────────
@@ -3154,17 +3177,17 @@ const stepsRouter = router({
       return { success: true };
     }),
 
-  // Backfill calories for steps records that have 0 or null calories
+  // Backfill calories for ALL steps records using updated formula (steps + floors bonus)
   // Uses body weight on or before each step record's date for accurate estimation
+  // Formula: steps × 0.0004 × weightKg + floors × 0.17 × weightKg
   backfillCalories: ownerProcedure
     .mutation(async () => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
-      // Get all steps records with 0 or null calories that have steps > 0
+      // Get ALL steps records that have steps > 0 (recalculate all with new formula)
       const stepsToFill = await db.select().from(dailySteps)
         .where(and(
           eq(dailySteps.userId, OWNER_USER_ID),
-          sql`(${dailySteps.calories} IS NULL OR ${dailySteps.calories} = 0)`,
           sql`${dailySteps.steps} > 0`,
         ))
         .orderBy(dailySteps.date);
@@ -3189,7 +3212,9 @@ const stepsRouter = router({
           .filter(b => b.date <= step.date)
           .at(-1); // last element = most recent
         const weightKg = (weightRecord?.weight as number | null) ?? 70;
-        const estimated = Math.round((step.steps ?? 0) * 0.0004 * weightKg);
+        const floors = step.floorsClimbed ?? 0;
+        // New formula: steps × 0.0004 × kg + floors × 0.17 × kg
+        const estimated = Math.round((step.steps ?? 0) * 0.0004 * weightKg + floors * 0.17 * weightKg);
         if (estimated > 0) {
           await db.update(dailySteps)
             .set({ calories: estimated })

@@ -62,9 +62,9 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 // Auto-calculate calories from steps using body weight
 // Formula based on MET 3.5 (walking), stride ~0.75m:
-// Calories = steps × 0.0004 × weight_kg
-function calcStepsCalories(steps: number, weightKg: number): number {
-  return Math.round(steps * 0.0004 * weightKg);
+// Calories = steps × 0.0004 × weight_kg + floors × 0.17 × weight_kg
+function calcStepsCalories(steps: number, weightKg: number, floors = 0): number {
+  return Math.round(steps * 0.0004 * weightKg + floors * 0.17 * weightKg);
 }
 
 export default function Steps() {
@@ -109,7 +109,7 @@ export default function Steps() {
   const backfillMutation = trpc.steps.backfillCalories.useMutation({
     onSuccess: (result) => {
       utils.steps.getAll.invalidate();
-      toast.success(`已更新 ${result.updated} 筆步數記錄的卡路里估算`);
+      toast.success(`已更新 ${result.updated} / ${result.total} 筆步數記錄（含樓梯加成公式）`);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -118,13 +118,14 @@ export default function Steps() {
   useEffect(() => {
     if (form.steps) {
       const steps = Number(form.steps);
+      const floors = Number(form.floorsClimbed) || 0;
       if (steps > 0) {
-        const estimated = calcStepsCalories(steps, latestWeight);
+        const estimated = calcStepsCalories(steps, latestWeight, floors);
         setForm((f: any) => ({ ...f, calories: String(estimated) }));
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.steps, latestWeight]);
+  }, [form.steps, form.floorsClimbed, latestWeight]);
 
   const handleSubmit = () => {
     const payload = {
