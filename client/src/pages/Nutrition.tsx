@@ -73,8 +73,42 @@ export default function Nutrition() {
   const [aiLookupFood, setAILookupFood] = useState("");
   const [aiLookupQty, setAILookupQty] = useState(100);
   const [aiLookupResult, setAILookupResult] = useState<any>(null);
+  const [showRecentFoods, setShowRecentFoods] = useState(false);
+  const [foodHistory, setFoodHistory] = useState<any[]>(() => {
+    try { return JSON.parse(localStorage.getItem('bf-food-history') || '[]'); } catch { return []; }
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  const saveFoodToHistory = (food: any) => {
+    const key = `${(food.nameZh || food.name).toLowerCase()}|${(food.restaurantName || '').toLowerCase()}`;
+    const entry = { ...food, key, savedAt: Date.now() };
+    setFoodHistory(prev => {
+      const filtered = prev.filter((f: any) => f.key !== key);
+      const updated = [entry, ...filtered].slice(0, 30);
+      localStorage.setItem('bf-food-history', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const applyFoodFromHistory = (food: any) => {
+    setForm({
+      name: food.nameZh || food.name,
+      quantity: food.quantity,
+      calories: food.calories,
+      protein: food.protein,
+      carbs: food.carbs,
+      fat: food.fat,
+      fiber: food.fiber,
+    });
+    setShowRecentFoods(false);
+  };
+
+  const clearFoodHistory = () => {
+    setFoodHistory([]);
+    localStorage.removeItem('bf-food-history');
+    toast.success('已清除查詢記錄');
+  };
 
   const utils = trpc.useUtils();
   const { data: meals = [], isLoading } = trpc.nutrition.getMealLogs.useQuery({ date: selectedDate });
@@ -192,7 +226,11 @@ export default function Nutrition() {
   };
 
   const lookupFoodMutation = trpc.nutrition.lookupFoodNutrition.useMutation({
-    onSuccess: (data) => { setAILookupResult(data); },
+    onSuccess: (data) => {
+      setAILookupResult(data);
+      // Save to history with restaurant name for context
+      saveFoodToHistory({ ...data, restaurantName: aiLookupRestaurant || '' });
+    },
     onError: (e) => { toast.error('AI 查詢失敗: ' + e.message); },
   });
 
@@ -460,6 +498,50 @@ export default function Nutrition() {
             <DialogTitle>{editEntry ? "Edit Meal Entry" : "Log Meal"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {/* Recent Foods History */}
+            {isOwner && foodHistory.length > 0 && (
+              <div className="border border-border rounded-xl p-3 bg-muted/20">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground/70">
+                    <span>🕒</span>
+                    常用食物
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowRecentFoods(v => !v)}>
+                      {showRecentFoods ? '收起' : `展開 (${foodHistory.length})`}
+                    </button>
+                    {showRecentFoods && (
+                      <button className="text-xs text-destructive hover:text-destructive/80" onClick={clearFoodHistory}>清除</button>
+                    )}
+                  </div>
+                </div>
+                {showRecentFoods && (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {foodHistory.map((food: any, idx: number) => (
+                      <button key={idx} className="w-full text-left bg-card hover:bg-accent border border-border rounded-lg px-3 py-2 transition-colors"
+                        onClick={() => applyFoodFromHistory(food)}>
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-foreground truncate">{food.nameZh || food.name}</div>
+                            {food.restaurantName && <div className="text-[10px] text-muted-foreground truncate">{food.restaurantName}</div>}
+                          </div>
+                          <div className="text-right shrink-0 ml-2">
+                            <div className="text-xs font-bold text-orange-500">{food.calories} kcal</div>
+                            <div className="text-[10px] text-muted-foreground">{food.quantity}{food.unit || 'g'}</div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 mt-1 text-[10px] text-muted-foreground">
+                          <span>🥩 {food.protein}g</span>
+                          <span>🍞 {food.carbs}g</span>
+                          <span>🧈 {food.fat}g</span>
+                          {food.fiber > 0 && <span>🌿 {food.fiber}g</span>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {/* AI Food Lookup */}
             {isOwner && (
               <div className="border border-border rounded-xl p-3 bg-muted/30">

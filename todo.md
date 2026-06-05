@@ -334,3 +334,10 @@
 - [x] Verified: All DB connections use Supabase PostgreSQL (drizzle-orm/node-postgres), no MySQL
 - [x] Column audit completed; user decided to keep all columns
 - [x] Update version to v3.10.0
+
+## v3.10.1 (2026-06-05)
+- [x] Nutrition: save each AI food lookup result to localStorage (bf-food-history, max 30 entries, keyed by foodName+restaurant)
+- [x] Nutrition: show "常用食物" panel in add meal dialog when history exists (collapsed by default, shows count)
+- [x] Nutrition: each recent food item shows name, restaurant, kcal, macros; click to auto-fill form
+- [x] Nutrition: add clear history button in recent foods panel
+- [x] Update version to v3.10.1
