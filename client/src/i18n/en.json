@@ -25,6 +25,7 @@
     "medical": "Medical Records",
     "physio": "Physiotherapy",
     "supplements": "Supplements",
+    "fasting": "Fasting Log",
     "settings": "Settings",
     "logout": "Logout",
     "login": "Login"

@@ -22,6 +22,7 @@ import {
   Stethoscope,
   Pill,
   Droplets,
+  Timer,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
@@ -54,6 +55,7 @@ const navGroups: NavGroup[] = [
     groupKey: "group_health",
     items: [
       { path: "/nutrition",  key: "nutrition",    icon: Utensils,     badgeClass: "icon-badge-yellow" },
+      { path: "/fasting",    key: "fasting",      icon: Timer,        badgeClass: "icon-badge-orange" },
       { path: "/body",       key: "body",         icon: Scale,        badgeClass: "icon-badge-green"  },
       { path: "/heart-rate",     key: "heartrate",      icon: Heart,      badgeClass: "icon-badge-red"    },
       { path: "/blood-pressure",  key: "bloodpressure",  icon: Droplets,   badgeClass: "icon-badge-red"    },
@@ -165,7 +167,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </Button>
           </div>
         </div>
-        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v3.10.4</p>
+        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v3.11.0</p>
       </div>
     </div>
   );

@@ -618,3 +618,20 @@ export const physioExercises = pgTable("physio_exercises", {
 });
 export type PhysioExercise = typeof physioExercises.$inferSelect;
 export type InsertPhysioExercise = typeof physioExercises.$inferInsert;
+
+// ─── Fasting Logs ─────────────────────────────────────────────────────────────
+export const fastingLogs = pgTable("fasting_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  fastingType: varchar("fasting_type", { length: 32 }).notNull().default("16:8"),
+  targetHours: real("target_hours").notNull().default(16),
+  startTime: timestamp("start_time").notNull(),
+  endTime: timestamp("end_time"),
+  actualHours: real("actual_hours"),
+  isCompleted: boolean("is_completed").notNull().default(false),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type FastingLog = typeof fastingLogs.$inferSelect;
+export type InsertFastingLog = typeof fastingLogs.$inferInsert;

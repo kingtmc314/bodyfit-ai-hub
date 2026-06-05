@@ -353,3 +353,12 @@
 - [x] Fix: User prompt rewritten in Traditional Chinese with explicit instruction to use 繁體中文 for all sections
 - [x] Fix: Login upsert DB conflict — handle duplicate openId constraint by checking for conflicting row and clearing it before owner account merge (prevents "duplicate key value violates unique constraint users_open_id_key")
 - [x] Update version to v3.10.3
+
+## v3.11.0 (2026-06-06)
+- [x] DB: create fasting_logs table (id, userId, fasting_type, target_hours, start_time, end_time, actual_hours, is_completed, notes, createdAt, updatedAt)
+- [x] tRPC: fastingRouter with list, getActive, start, end, delete, stats procedures
+- [x] Frontend: Fasting.tsx page — preset selector (16:8, 18:6, 20:4, OMAD, 24h, custom), real-time HH:MM:SS timer, progress bar, stats cards (次數/平均/最長/連續), history list with delete
+- [x] AppLayout: add 斷食紀錄 nav item (Timer icon, orange badge, /fasting)
+- [x] App.tsx: add /fasting route
+- [x] i18n: add "fasting" key to zh.json and en.json
+- [x] Update version to v3.11.0

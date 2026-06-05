@@ -25,6 +25,7 @@
     "medical": "醫療記錄",
     "physio": "物理治療",
     "supplements": "補充品",
+    "fasting": "斷食紀錄",
     "settings": "設定",
     "logout": "登出",
     "login": "登入"

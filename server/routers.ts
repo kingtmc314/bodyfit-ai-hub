@@ -11,7 +11,7 @@ import {
   dailySteps, medicalConditions, medicalVisits, medicalAttachments,
   supplements, supplementLogs, supplementPurchases, supplementStockAdjustments,
   runningLogPhotos, stepLogPhotos, customExercises, userProfile, bloodPressureLogs,
-  physioSessions, physioExercises
+  physioSessions, physioExercises, fastingLogs
 } from "../drizzle/schema";
 import { eq, and, desc, gte, lte, like, or, sql, inArray } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -4247,6 +4247,107 @@ const physioRouter = router({
     }),
 });
 
+// ─── Fasting Router ─────────────────────────────────────────────────────────
+const fastingRouter = router({
+  list: publicProcedure
+    .input(z.object({ limit: z.number().optional().default(50) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(fastingLogs)
+        .where(eq(fastingLogs.userId, OWNER_USER_ID))
+        .orderBy(desc(fastingLogs.startTime))
+        .limit(input.limit);
+    }),
+
+  getActive: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return null;
+    const rows = await db.select().from(fastingLogs)
+      .where(and(eq(fastingLogs.userId, OWNER_USER_ID), eq(fastingLogs.isCompleted, false)))
+      .orderBy(desc(fastingLogs.startTime))
+      .limit(1);
+    return rows[0] ?? null;
+  }),
+
+  start: publicProcedure
+    .input(z.object({
+      fastingType: z.string().default('16:8'),
+      targetHours: z.number().default(16),
+      startTime: z.string(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const existing = await db.select().from(fastingLogs)
+        .where(and(eq(fastingLogs.userId, OWNER_USER_ID), eq(fastingLogs.isCompleted, false)))
+        .limit(1);
+      if (existing.length > 0) {
+        const now = new Date();
+        const actualHours = (now.getTime() - new Date(existing[0].startTime).getTime()) / 3600000;
+        await db.update(fastingLogs)
+          .set({ endTime: now, isCompleted: true, actualHours, updatedAt: now })
+          .where(eq(fastingLogs.id, existing[0].id));
+      }
+      const [row] = await db.insert(fastingLogs).values({
+        userId: OWNER_USER_ID,
+        fastingType: input.fastingType,
+        targetHours: input.targetHours,
+        startTime: new Date(input.startTime),
+        notes: input.notes ?? null,
+      }).returning();
+      return row;
+    }),
+
+  end: publicProcedure
+    .input(z.object({ id: z.number(), endTime: z.string(), notes: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const rows = await db.select().from(fastingLogs).where(eq(fastingLogs.id, input.id)).limit(1);
+      if (!rows.length) throw new Error('Fast not found');
+      const endTime = new Date(input.endTime);
+      const actualHours = (endTime.getTime() - new Date(rows[0].startTime).getTime()) / 3600000;
+      const [updated] = await db.update(fastingLogs)
+        .set({ endTime, isCompleted: true, actualHours, notes: input.notes ?? rows[0].notes, updatedAt: new Date() })
+        .where(eq(fastingLogs.id, input.id))
+        .returning();
+      return updated;
+    }),
+
+  delete: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.delete(fastingLogs).where(and(eq(fastingLogs.id, input.id), eq(fastingLogs.userId, OWNER_USER_ID)));
+      return { success: true };
+    }),
+
+  stats: publicProcedure
+    .input(z.object({ days: z.number().default(30) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { totalFasts: 0, completedFasts: 0, avgHours: 0, longestFast: 0, currentStreak: 0 };
+      const since = new Date(Date.now() - input.days * 86400000);
+      const rows = await db.select().from(fastingLogs)
+        .where(and(eq(fastingLogs.userId, OWNER_USER_ID), gte(fastingLogs.startTime, since), eq(fastingLogs.isCompleted, true)))
+        .orderBy(desc(fastingLogs.startTime));
+      const totalFasts = rows.length;
+      const avgHours = totalFasts > 0 ? rows.reduce((s, r) => s + (r.actualHours ?? 0), 0) / totalFasts : 0;
+      const longestFast = totalFasts > 0 ? Math.max(...rows.map(r => r.actualHours ?? 0)) : 0;
+      const fastDates = new Set(rows.map(r => new Date(r.startTime).toISOString().slice(0, 10)));
+      let streak = 0;
+      for (let i = 0; i < 365; i++) {
+        const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+        if (fastDates.has(d)) streak++;
+        else if (i > 0) break;
+      }
+      return { totalFasts, completedFasts: totalFasts, avgHours, longestFast, currentStreak: streak };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -4276,6 +4377,7 @@ export const appRouter = router({
   profile: profileRouter,
   bloodPressure: bloodPressureRouter,
   physio: physioRouter,
+  fasting: fastingRouter,
 });
 export type AppRouter = typeof appRouter;
 

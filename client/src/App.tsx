@@ -24,6 +24,7 @@ import Medical from "@/pages/Medical";
 import Supplements from "@/pages/Supplements";
 import BloodPressure from "@/pages/BloodPressure";
 import PhysioTherapy from "@/pages/PhysioTherapy";
+import Fasting from "@/pages/Fasting";
 
 function Router() {
   return (
@@ -45,6 +46,7 @@ function Router() {
       <Route path="/supplements" component={() => <AppLayout><Supplements /></AppLayout>} />
       <Route path="/blood-pressure" component={() => <AppLayout><BloodPressure /></AppLayout>} />
       <Route path="/physio" component={() => <AppLayout><PhysioTherapy /></AppLayout>} />
+      <Route path="/fasting" component={() => <AppLayout><Fasting /></AppLayout>} />
       <Route path="/login" component={Login} />
       <Route path="/auth/callback" component={AuthCallback} />
       <Route path="/404" component={NotFound} />
