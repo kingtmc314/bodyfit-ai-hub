@@ -22,6 +22,12 @@ import Papa from "papaparse";
 // Fixed owner user ID - no login required
 const OWNER_USER_ID = 2;
 
+// Cardio exercise names (must match BUILT_IN_EXERCISES in Workout.tsx)
+const CARDIO_EXERCISE_NAMES = [
+  'Stationary Bike', 'Treadmill', 'Stair Climber', 'Elliptical Trainer',
+  'Rowing Machine', 'Ski Erg', 'Air Bike', "Jacob's Ladder",
+];
+
 
 // ─── Nutrition Router ─────────────────────────────────────────────────────────
 const nutritionRouter = router({
@@ -1113,7 +1119,7 @@ const dashboardRouter = router({
     const todayEnd = new Date(todayStr + "T23:59:59+08:00");
     const weekAgoStr = daysAgoHK(7);
     const weekAgoDate = new Date(weekAgoStr + "T00:00:00+08:00");
-    const [todayMeals, recentSessions, latestBody, latestSleep, latestHr, weekMeals, todayWorkouts, todayRunning, todayStepsRows, profileRows] = await Promise.all([
+    const [todayMeals, recentSessions, latestBody, latestSleep, latestHr, weekMeals, todayWorkouts, todayRunning, todayStepsRows, profileRows, todayCardioSets] = await Promise.all([
       db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), eq(mealLogs.logDate, todayStr))),
       db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, OWNER_USER_ID), sql`${workoutSessions.startTime} >= ${weekAgoDate}`)).orderBy(desc(workoutSessions.startTime)).limit(7),
       db.select().from(bodyComposition).where(eq(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc(bodyComposition.date)).limit(2),
@@ -1134,6 +1140,16 @@ const dashboardRouter = router({
         .where(and(eq(dailySteps.userId, OWNER_USER_ID), sql`${dailySteps.date} = ${todayStr}`)),
       // User profile for Mifflin-St Jeor BMR
       db.select().from(userProfile).where(eq(userProfile.userId, OWNER_USER_ID)).limit(1),
+      // Today's cardio sets calories (from workout_sets joined with today's sessions)
+      db.select({ calories: workoutSets.calories, exerciseName: workoutSets.exerciseName, duration: workoutSets.duration, distance: workoutSets.distance })
+        .from(workoutSets)
+        .innerJoin(workoutSessions, eq(workoutSets.sessionId, workoutSessions.id))
+        .where(and(
+          eq(workoutSessions.userId, OWNER_USER_ID),
+          sql`${workoutSessions.startTime} >= ${todayStart}`,
+          sql`${workoutSessions.startTime} <= ${todayEnd}`,
+          sql`${workoutSets.exerciseName} = ANY(${sql.raw(`ARRAY[${CARDIO_EXERCISE_NAMES.map(n => `'${n.replace(/'/g, "''")}' `).join(',')}]::text[]`)})`,
+        )),
     ]);
 
     const todayCalories = todayMeals.reduce((s, m) => s + (m.calories ?? 0), 0);
@@ -1154,7 +1170,11 @@ const dashboardRouter = router({
     const workoutCaloriesBurned = todayWorkouts.reduce((s, w) => s + (w.caloriesBurned ?? 0), 0);
     const runningCaloriesBurned = todayRunning.reduce((s, r) => s + (r.calories ?? 0), 0);
     const stepsCaloriesBurned = todayStepsRows.reduce((s, st) => s + (st.calories ?? 0), 0);
-    const totalCaloriesBurned = workoutCaloriesBurned + runningCaloriesBurned + stepsCaloriesBurned;
+    // Cardio calories from individual sets (user-entered kcal from machine display)
+    const cardioCaloriesBurned = todayCardioSets.reduce((s, set) => s + (set.calories ?? 0), 0);
+    const cardioTotalDuration = todayCardioSets.reduce((s, set) => s + (set.duration ?? 0), 0);
+    const cardioTotalDistance = todayCardioSets.reduce((s, set) => s + (set.distance ?? 0), 0);
+    const totalCaloriesBurned = workoutCaloriesBurned + runningCaloriesBurned + stepsCaloriesBurned + cardioCaloriesBurned;
     const netCalories = todayCalories - totalCaloriesBurned;
 
     // Calculate TDEE using Mifflin-St Jeor formula:
@@ -1186,6 +1206,9 @@ const dashboardRouter = router({
         workoutBurned: workoutCaloriesBurned,
         runningBurned: runningCaloriesBurned,
         stepsBurned: stepsCaloriesBurned,
+        cardioBurned: cardioCaloriesBurned,
+        cardioTotalDuration,
+        cardioTotalDistance,
         netCalories,
         todayWorkouts,
         todayRunning,

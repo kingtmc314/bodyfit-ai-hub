@@ -247,3 +247,8 @@
 - [x] UI: detect cardio exercises (muscleGroup==='cardio') and show duration/distance/avgHr/calories fields instead of weight/reps
 - [x] History display: show cardio fields in set history rows
 - [x] Update version to v3.6.4
+
+## v3.6.5 Dashboard Cardio Calories (2026-06-05)
+- [x] tRPC dashboard procedure: added CARDIO_EXERCISE_NAMES list and joined workout_sets to sum cardio calories for today
+- [x] Dashboard UI: added 有氧卡路里 card (orange) to exercise summary grid (now 4 columns), shows kcal + duration in minutes
+- [x] Update version to v3.6.5

@@ -6,7 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   Utensils, Dumbbell, Scale, Heart, Moon, Flame,
   TrendingUp, TrendingDown, Minus, Activity, Target,
-  ChevronRight, Sparkles, Sun, Zap, Plus, X, Footprints
+  ChevronRight, Sparkles, Sun, Zap, Plus, X, Footprints, Bike
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
@@ -325,7 +325,7 @@ export default function Dashboard() {
               −{Math.round(totalBurned)} kcal
             </span>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Link href="/workout">
               <div className={`rounded-xl p-3 border text-center cursor-pointer transition-all hover:shadow-md ${(exercise?.workoutBurned ?? 0) > 0 ? "bg-blue-50 border-blue-200" : "bg-muted/20 border-border"}`}>
                 <div className="icon-badge icon-badge-blue mx-auto mb-2"><Dumbbell className="w-4 h-4" /></div>
@@ -334,6 +334,17 @@ export default function Dashboard() {
                 <p className="text-[10px] text-muted-foreground">kcal</p>
                 {(exercise?.todayWorkouts?.length ?? 0) > 0 && (
                   <p className="text-[10px] text-blue-500 mt-1 font-medium">{exercise!.todayWorkouts!.length} session{exercise!.todayWorkouts!.length > 1 ? "s" : ""}</p>
+                )}
+              </div>
+            </Link>
+            <Link href="/workout">
+              <div className={`rounded-xl p-3 border text-center cursor-pointer transition-all hover:shadow-md ${(exercise?.cardioBurned ?? 0) > 0 ? "bg-orange-50 border-orange-200" : "bg-muted/20 border-border"}`}>
+                <div className="icon-badge icon-badge-orange mx-auto mb-2"><Bike className="w-4 h-4" /></div>
+                <p className="text-xs text-muted-foreground font-medium">{t('dashboard.cardio_burned', { defaultValue: '有氧卡路里' })}</p>
+                <p className={`text-lg font-extrabold mt-0.5 ${(exercise?.cardioBurned ?? 0) > 0 ? "text-orange-600" : "text-muted-foreground/40"}`}>{Math.round(exercise?.cardioBurned ?? 0)}</p>
+                <p className="text-[10px] text-muted-foreground">kcal</p>
+                {(exercise?.cardioTotalDuration ?? 0) > 0 && (
+                  <p className="text-[10px] text-orange-500 mt-1 font-medium">{exercise!.cardioTotalDuration} min</p>
                 )}
               </div>
             </Link>
