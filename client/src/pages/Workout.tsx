@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Dumbbell, Trash2, Edit2, Search, ChevronRight, Loader2,
   Flame, Timer, Weight, BarChart2, X, Check, Trophy, Target, Star, ArrowUpDown,
-  Camera, Sparkles, PlusCircle, AlertCircle, CheckCircle2
+  Camera, Sparkles, PlusCircle, AlertCircle, CheckCircle2, Copy, Stethoscope
 } from "lucide-react";
 import MuscleMap, { MUSCLE_GROUPS } from "@/components/MuscleMap";
 import ExerciseDetailModal from "@/components/ExerciseDetailModal";
@@ -28,6 +28,9 @@ const EQUIPMENT_LIST = [
   "Kettlebell", "Resistance Band", "Bodyweight", "TRX / Suspension",
   "Pull-up Bar", "Dip Bar", "EZ Bar", "Trap Bar", "Plate",
   "Foam Roller", "Medicine Ball", "Battle Rope", "Cardio Machine",
+  // PT Equipment
+  "Balance Board", "TENS Machine", "Ultrasound Device", "IFC Machine",
+  "Hot Pack", "Cold Pack", "Traction Table", "Parallel Bars", "Hydrotherapy Pool",
 ];
 
 const BUILT_IN_EXERCISES = [
@@ -108,6 +111,31 @@ const BUILT_IN_EXERCISES = [
   { name: "Ski Erg", nameZh: "Ski Erg 機", muscleGroup: "cardio", equipment: "Machine", instructions: "Pull handles down with straight arms, engage core and hips, track distance and time." },
   { name: "Air Bike", nameZh: "風阻单車", muscleGroup: "cardio", equipment: "Machine", instructions: "Push and pull handles while pedaling, maintain steady pace or do intervals." },
   { name: "Jacob's Ladder", nameZh: "天梯機", muscleGroup: "cardio", equipment: "Machine", instructions: "Climb at steady pace, engage core, track time and floors." },
+  // Physiotherapy Exercises
+  { name: "Straight Leg Raise", nameZh: "直腿抬高", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Lie flat, tighten quad, raise straight leg to 45°, hold 2s, lower slowly." },
+  { name: "Short Arc Quad", nameZh: "短弧股四頭肌", muscleGroup: "physio", equipment: "Foam Roller", instructions: "Place roller under knee, extend leg fully from 45°, hold 2s, lower slowly." },
+  { name: "Terminal Knee Extension", nameZh: "終末伸膝", muscleGroup: "physio", equipment: "Resistance Band", instructions: "Band behind knee, stand on one leg, straighten knee against resistance." },
+  { name: "Clamshell", nameZh: "蛤蜊式", muscleGroup: "physio", equipment: "Resistance Band", instructions: "Side-lying, knees bent, feet together, open top knee like a clamshell." },
+  { name: "Hip Abduction", nameZh: "髖關節外展", muscleGroup: "physio", equipment: "Resistance Band", instructions: "Stand, band around ankles, lift leg sideways, control the return." },
+  { name: "Ankle Pumps", nameZh: "踝關節泵", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Seated or lying, pump ankle up and down to improve circulation." },
+  { name: "Heel Slides", nameZh: "足跟滑動", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Lying flat, slide heel toward buttocks bending knee, then extend." },
+  { name: "Quad Sets", nameZh: "股四頭肌收縮", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Lying flat, tighten quad by pressing back of knee to floor, hold 5s." },
+  { name: "Hamstring Curl (PT)", nameZh: "腿後肌彎曲（物理治療）", muscleGroup: "physio", equipment: "Resistance Band", instructions: "Prone, band around ankle, curl heel toward buttocks against resistance." },
+  { name: "Calf Raises (PT)", nameZh: "小腿提升（物理治療）", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Stand on step edge, lower heel below step, raise to tiptoe." },
+  { name: "Step-ups (PT)", nameZh: "踏步（物理治療）", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Step up onto low step, control descent, alternate legs." },
+  { name: "Balance Board Training", nameZh: "平衡板訓練", muscleGroup: "physio", equipment: "Balance Board", instructions: "Stand on balance board, maintain balance, progress to single leg." },
+  { name: "Theraband Shoulder Rotation", nameZh: "彈力帶肩旋轉", muscleGroup: "physio", equipment: "Resistance Band", instructions: "Elbow at 90°, rotate shoulder outward/inward against band resistance." },
+  { name: "Theraband Ankle Eversion", nameZh: "彈力帶踝外翻", muscleGroup: "physio", equipment: "Resistance Band", instructions: "Band around foot, evert ankle outward against resistance, control return." },
+  { name: "Prone Hip Extension", nameZh: "俯臥髖伸展", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Lying prone, tighten glute, lift straight leg 6 inches off table, hold 2s." },
+  { name: "Wall Slides", nameZh: "牆壁滑動", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Back against wall, slide down to 45° squat, hold, slide back up." },
+  { name: "TENS Therapy", nameZh: "電療（TENS）", muscleGroup: "physio", equipment: "TENS Machine", instructions: "Apply electrode pads to target area, set frequency 80-100Hz for pain relief." },
+  { name: "Ultrasound Therapy", nameZh: "超聲波治療", muscleGroup: "physio", equipment: "Ultrasound Device", instructions: "Apply gel to skin, move probe in circular motion over target tissue." },
+  { name: "IFC Therapy", nameZh: "干擾電流治療", muscleGroup: "physio", equipment: "IFC Machine", instructions: "Apply 4 electrodes around target area, set carrier frequency 4000Hz." },
+  { name: "Hot Pack Therapy", nameZh: "熱敷治療", muscleGroup: "physio", equipment: "Hot Pack", instructions: "Apply moist heat pack with towel barrier for 15-20 minutes." },
+  { name: "Cold Pack Therapy", nameZh: "冷敷治療", muscleGroup: "physio", equipment: "Cold Pack", instructions: "Apply ice pack with cloth barrier for 10-15 minutes to reduce inflammation." },
+  { name: "Traction Therapy", nameZh: "牽引治療", muscleGroup: "physio", equipment: "Traction Table", instructions: "Mechanical traction to decompress spinal joints, follow therapist settings." },
+  { name: "Parallel Bars Walking", nameZh: "平行桿步行", muscleGroup: "physio", equipment: "Parallel Bars", instructions: "Hold bars for support, practice weight-bearing walking and balance." },
+  { name: "Hydrotherapy Exercise", nameZh: "水療運動", muscleGroup: "physio", equipment: "Hydrotherapy Pool", instructions: "Perform exercises in warm water to reduce joint load and improve mobility." },
 ];
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -144,7 +172,7 @@ export default function Workout() {
   const [sessionSort, setSessionSort] = useState<'date_desc'|'date_asc'|'volume_desc'|'duration_desc'>('date_desc');
   const [sessionSearch, setSessionSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'session'|'exercises'|'history'>('session');
-  const [exerciseLibMode, setExerciseLibMode] = useState<'strength'|'cardio'>('strength');
+  const [exerciseLibMode, setExerciseLibMode] = useState<'strength'|'cardio'|'physio'>('strength');
   const [weightUnit, setWeightUnit] = useState<'kg'|'lbs'>('kg');
   const [historyUnit, setHistoryUnit] = useState<'kg'|'lbs'>('kg');
   // Custom exercise creation state
@@ -196,6 +224,73 @@ export default function Workout() {
       toast.success("Set deleted");
     },
   });
+
+  // Edit completed session
+  const [showEditSessionDialog, setShowEditSessionDialog] = useState(false);
+  const [editSessionForm, setEditSessionForm] = useState({ name: '', date: '', startHH: '08', startMM: '00', endHH: '09', endMM: '00', notes: '' });
+  const updateSession = trpc.workout.updateSession.useMutation({
+    onSuccess: () => {
+      utils.workout.getSessions.invalidate();
+      utils.workout.getSessionWithSets.invalidate();
+      setShowEditSessionDialog(false);
+      toast.success('訓練記錄已更新！');
+    },
+    onError: (e) => toast.error('更新失敗: ' + e.message),
+  });
+
+  const handleOpenEditSession = (s: any) => {
+    const start = s.startTime ? new Date(s.startTime) : new Date();
+    const end = s.endTime ? new Date(s.endTime) : new Date(start.getTime() + 3600000);
+    const toHKH = (d: Date) => String(d.getUTCHours() + 8 > 23 ? d.getUTCHours() + 8 - 24 : d.getUTCHours() + 8).padStart(2, '0');
+    const toHKM = (d: Date) => String(d.getUTCMinutes()).padStart(2, '0');
+    setEditSessionForm({
+      name: s.name || '',
+      date: s.startTime ? new Date(new Date(s.startTime).getTime() + 8 * 3600000).toISOString().slice(0, 10) : '',
+      startHH: toHKH(start),
+      startMM: toHKM(start),
+      endHH: toHKH(end),
+      endMM: toHKM(end),
+      notes: s.notes || '',
+    });
+    setShowEditSessionDialog(true);
+  };
+
+  const handleSaveEditSession = () => {
+    if (!activeSession) return;
+    const dateStr = editSessionForm.date;
+    if (!dateStr) return toast.error('請選擇日期');
+    const hh = parseInt(editSessionForm.startHH, 10);
+    const mm = parseInt(editSessionForm.startMM, 10);
+    const eh = parseInt(editSessionForm.endHH, 10);
+    const em = parseInt(editSessionForm.endMM, 10);
+    if (isNaN(hh) || hh < 0 || hh > 23 || isNaN(mm) || mm < 0 || mm > 59) return toast.error('開始時間格式錯誤（HH: 00-23, MM: 00-59）');
+    if (isNaN(eh) || eh < 0 || eh > 23 || isNaN(em) || em < 0 || em > 59) return toast.error('結束時間格式錯誤（HH: 00-23, MM: 00-59）');
+    const startISO = `${dateStr}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00+08:00`;
+    const endISO = `${dateStr}T${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}:00+08:00`;
+    if (new Date(endISO).getTime() <= new Date(startISO).getTime()) return toast.error('結束時間必須晚於開始時間');
+    const durationMin = Math.round((new Date(endISO).getTime() - new Date(startISO).getTime()) / 60000);
+    updateSession.mutate({
+      id: activeSession.id,
+      name: editSessionForm.name || undefined,
+      notes: editSessionForm.notes || undefined,
+      startTime: startISO,
+      endTime: endISO,
+      duration: durationMin,
+    }, {
+      onSuccess: () => {
+        // Update local activeSession so header reflects edits immediately
+        setActiveSession((prev: any) => prev ? {
+          ...prev,
+          name: editSessionForm.name || prev.name,
+          notes: editSessionForm.notes || prev.notes,
+          startTime: startISO,
+          endTime: endISO,
+          duration: durationMin,
+          date: dateStr,
+        } : prev);
+      }
+    });
+  };
 
   const [, navigate] = useLocation();
   const [finishLoading, setFinishLoading] = useState(false);
@@ -272,14 +367,16 @@ export default function Workout() {
   const filteredExercises = useMemo(() => {
     return allExercises.filter(e => {
       const isCardioEx = e.muscleGroup === 'cardio';
-      if (exerciseLibMode === 'cardio') {
-        const matchSearch = !searchQuery || e.name.toLowerCase().includes(searchQuery.toLowerCase()) || (e.nameZh||'').includes(searchQuery);
-        return isCardioEx && matchSearch;
+      const isPhysioEx = e.muscleGroup === 'physio';
+      const matchSearch = !searchQuery || e.name.toLowerCase().includes(searchQuery.toLowerCase()) || ((e as any).nameZh||'').includes(searchQuery);
+      if (exerciseLibMode === 'cardio') return isCardioEx && matchSearch;
+      if (exerciseLibMode === 'physio') {
+        const matchEquip = selectedEquipment === 'all' || e.equipment === selectedEquipment;
+        return isPhysioEx && matchSearch && matchEquip;
       }
       const matchMuscle = !selectedMuscle || e.muscleGroup === selectedMuscle;
       const matchEquip = selectedEquipment === 'all' || e.equipment === selectedEquipment;
-      const matchSearch = !searchQuery || e.name.toLowerCase().includes(searchQuery.toLowerCase()) || (e.nameZh||'').includes(searchQuery);
-      return !isCardioEx && matchMuscle && matchEquip && matchSearch;
+      return !isCardioEx && !isPhysioEx && matchMuscle && matchEquip && matchSearch;
     });
   }, [allExercises, selectedMuscle, selectedEquipment, searchQuery, exerciseLibMode]);
 
@@ -479,10 +576,15 @@ export default function Workout() {
                     </div>
                     <div className="flex gap-2 items-center">
                       {activeSession.endTime ? (
-                        // Completed session - read-only badge
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-500/15 text-green-500 border border-green-500/30">
-                          <Check className="w-3 h-3" /> 已完成
-                        </span>
+                        // Completed session - edit button + badge
+                        <>
+                          {isOwner && <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => handleOpenEditSession(activeSession)}>
+                            <Edit2 className="w-3.5 h-3.5" /> 修改
+                          </Button>}
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-500/15 text-green-500 border border-green-500/30">
+                            <Check className="w-3 h-3" /> 已完成
+                          </span>
+                        </>
                       ) : (
                         // Active session - show edit controls
                         <>
@@ -548,6 +650,10 @@ export default function Workout() {
                                 )}
                                 {(ex?.muscleGroup !== 'cardio') && <span className="text-xs text-muted-foreground">{historyUnit === 'lbs' ? Math.round((s.reps || 0) * (s.weight || 0) * 2.20462) : Math.round((s.reps || 0) * (s.weight || 0))} {historyUnit} vol</span>}
                                 {isOwner && <div className="flex gap-1">
+                                  <Button variant="ghost" size="icon" className="w-6 h-6 text-blue-500 hover:text-blue-600" title="複製此組"
+                                    onClick={() => { const isCardio = (ex?.muscleGroup || '') === 'cardio'; setSelectedExercise(ex || { name: exerciseName }); setSetForm(isCardio ? { reps: 0, weight: 0, duration: s.duration || 0, distance: s.distance || 0, avgHr: (s as any).avgHr || 0, calories: (s as any).calories || 0, notes: '' } : { reps: s.reps || 10, weight: s.weight || 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: '' }); setEditSet(null); setShowAddSetDialog(true); }}>
+                                    <Copy className="w-3 h-3" />
+                                  </Button>
                                   <Button variant="ghost" size="icon" className="w-6 h-6"
                                     onClick={() => { const isCardio = (ex?.muscleGroup || '') === 'cardio'; setEditSet(s); setSelectedExercise(ex || { name: exerciseName }); setSetForm(isCardio ? { reps: 0, weight: 0, duration: s.duration || 0, distance: s.distance || 0, avgHr: (s as any).avgHr || 0, calories: (s as any).calories || 0, notes: s.notes || "" } : { reps: s.reps || 10, weight: s.weight || 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: s.notes || "" }); setShowAddSetDialog(true); }}>
                                     <Edit2 className="w-3 h-3" />
@@ -588,8 +694,8 @@ export default function Workout() {
 
         {/* Exercise Library Tab */}
         <TabsContent value="exercises" className="mt-4">
-          {/* Strength / Cardio mode toggle */}
-          <div className="flex gap-2 mb-4">
+          {/* Strength / Cardio / Physio mode toggle */}
+          <div className="flex gap-2 mb-4 flex-wrap">
             <Button variant={exerciseLibMode === 'strength' ? 'default' : 'outline'} size="sm" className="gap-1.5"
               onClick={() => setExerciseLibMode('strength')}>
               <Dumbbell className="w-4 h-4" /> 肌肉訓練
@@ -597,6 +703,10 @@ export default function Workout() {
             <Button variant={exerciseLibMode === 'cardio' ? 'default' : 'outline'} size="sm" className="gap-1.5"
               onClick={() => setExerciseLibMode('cardio')}>
               <Flame className="w-4 h-4" /> 有氧
+            </Button>
+            <Button variant={exerciseLibMode === 'physio' ? 'default' : 'outline'} size="sm" className="gap-1.5"
+              onClick={() => setExerciseLibMode('physio')}>
+              <Stethoscope className="w-4 h-4" /> 物理治療
             </Button>
           </div>
 
@@ -640,6 +750,61 @@ export default function Workout() {
                 {filteredExercises.length === 0 && (
                   <div className="col-span-3 text-center py-8">
                     <p className="text-muted-foreground text-sm">找不到相關有氧動作</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : exerciseLibMode === 'physio' ? (
+            /* Physio Exercise Grid */
+            <div className="space-y-3">
+              <div className="flex gap-2 flex-wrap">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input placeholder="搜尋物理治療動作…" className="pl-9" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                </div>
+                <Select value={selectedEquipment} onValueChange={setSelectedEquipment}>
+                  <SelectTrigger className="w-44">
+                    <SelectValue placeholder="Equipment" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Equipment</SelectItem>
+                    {EQUIPMENT_LIST.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {filteredExercises.map((ex: any, i) => (
+                  <div key={i} className="bg-card border border-teal-200/40 rounded-xl p-4 hover:border-teal-400/60 transition-colors cursor-pointer"
+                    onClick={() => { setDetailExercise(ex); setShowExerciseDetail(true); }}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-2xl">🩺</span>
+                          <div>
+                            <p className="font-semibold text-foreground text-sm leading-tight">{ex.name}</p>
+                            <p className="text-xs text-muted-foreground">{ex.nameZh}</p>
+                          </div>
+                        </div>
+                        {ex.instructions && (
+                          <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{ex.instructions}</p>
+                        )}
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          <Badge className="text-xs bg-teal-100 text-teal-700 border-teal-200">物理治療</Badge>
+                          <Badge variant="outline" className="text-xs">{ex.equipment}</Badge>
+                        </div>
+                      </div>
+                      {activeSession && (
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 shrink-0"
+                          onClick={(e) => { e.stopPropagation(); setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {filteredExercises.length === 0 && (
+                  <div className="col-span-3 text-center py-8">
+                    <p className="text-muted-foreground text-sm">找不到相關物理治療動作</p>
                   </div>
                 )}
               </div>
@@ -841,6 +1006,10 @@ export default function Workout() {
                         onClick={() => { setActiveSession(s); setActiveTab('session'); }}>
                         <ChevronRight className="w-3.5 h-3.5" />
                       </Button>
+                      {isOwner && <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground hover:text-foreground" title="修改記錄"
+                        onClick={() => { setActiveSession(s); handleOpenEditSession(s); }}>
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </Button>}
                       {isOwner && <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive"
                         onClick={() => deleteSession.mutate({ id: s.id })}>
                         <Trash2 className="w-3.5 h-3.5" />
@@ -1105,6 +1274,52 @@ export default function Workout() {
           }
         }}
       />
+
+      {/* Edit Session Dialog */}
+      <Dialog open={showEditSessionDialog} onOpenChange={setShowEditSessionDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>修改訓練記錄</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">訓練名稱</label>
+              <Input value={editSessionForm.name} onChange={e => setEditSessionForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Push Day" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">日期（香港時間）</label>
+              <Input type="date" value={editSessionForm.date} onChange={e => setEditSessionForm(f => ({ ...f, date: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">開始時間（HH:MM）</label>
+                <div className="flex gap-1">
+                  <Input className="w-14 text-center" maxLength={2} value={editSessionForm.startHH} onChange={e => setEditSessionForm(f => ({ ...f, startHH: e.target.value.replace(/\D/g,'').slice(0,2) }))} placeholder="08" />
+                  <span className="self-center text-muted-foreground">:</span>
+                  <Input className="w-14 text-center" maxLength={2} value={editSessionForm.startMM} onChange={e => setEditSessionForm(f => ({ ...f, startMM: e.target.value.replace(/\D/g,'').slice(0,2) }))} placeholder="00" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">結束時間（HH:MM）</label>
+                <div className="flex gap-1">
+                  <Input className="w-14 text-center" maxLength={2} value={editSessionForm.endHH} onChange={e => setEditSessionForm(f => ({ ...f, endHH: e.target.value.replace(/\D/g,'').slice(0,2) }))} placeholder="09" />
+                  <span className="self-center text-muted-foreground">:</span>
+                  <Input className="w-14 text-center" maxLength={2} value={editSessionForm.endMM} onChange={e => setEditSessionForm(f => ({ ...f, endMM: e.target.value.replace(/\D/g,'').slice(0,2) }))} placeholder="00" />
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">備註（選填）</label>
+              <Input value={editSessionForm.notes} onChange={e => setEditSessionForm(f => ({ ...f, notes: e.target.value }))} placeholder="備註…" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditSessionDialog(false)}>取消</Button>
+            <Button onClick={handleSaveEditSession} disabled={updateSession.isPending}>
+              {updateSession.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              儲存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* AI Exercise Analysis Dialog */}
       <Dialog open={showAiAnalysis} onOpenChange={setShowAiAnalysis}>

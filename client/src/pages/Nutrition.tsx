@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Plus, Camera, Search, Trash2, Edit2, X, Loader2, Utensils,
+  Plus, Camera, Search, Trash2, Edit2, X, Loader2, Utensils, Copy,
   Flame, Beef, Wheat, Droplets, ChevronDown, Upload, Sparkles,
   ChevronLeft, ChevronRight
 } from "lucide-react";
@@ -336,6 +336,11 @@ export default function Nutrition() {
                       <span className="text-sm font-semibold text-foreground shrink-0">{Math.round(m.calories ?? 0)} kcal</span>
                       {isOwner && (
                         <div className="flex gap-1 shrink-0">
+                          <Button variant="ghost" size="icon" className="w-7 h-7 text-blue-500 hover:text-blue-600" title="複製到今天" onClick={() => {
+                            addMutation.mutate({ date: selectedDate, mealType: m.mealType as MealType, foodName: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? undefined });
+                          }}>
+                            <Copy className="w-3.5 h-3.5" />
+                          </Button>
                           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditEntry(m); setDialogDate(m.logDate ?? selectedDate); setForm({ name: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? undefined }); setMealType(m.mealType as MealType); setShowAddDialog(true); }}>
                             <Edit2 className="w-3.5 h-3.5" />
                           </Button>

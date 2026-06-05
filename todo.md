@@ -277,3 +277,14 @@
 - [x] Add lbs/kg toggle to workout history session list (All Sessions panel)
 - [x] Add blood pressure chart to Trends health tab (Heart tab)
 - [x] Update version to v3.7.2
+
+## v3.8.0 Copy Features + Physiotherapy (2026-06-05)
+- [x] Workout: add Copy Set icon button on each set row (blue copy icon, pre-fills form with same reps/weight)
+- [x] Nutrition: add Copy button on each meal log row (duplicates the meal to currently selected date)
+- [x] Exercise library: add Physiotherapy tab (3rd mode toggle)
+- [x] Add 20 PT exercises: Straight Leg Raise, Short Arc Quad, Terminal Knee Extension, Clamshell, Hip Abduction, Ankle Pumps, Heel Slides, Quad Sets, Hamstring Curl, Calf Raises, Step-ups, Balance Board, Theraband Shoulder/Ankle, Prone Hip Extension, Wall Slides, TENS Therapy, Ultrasound Therapy, IFC Therapy, Hot/Cold Pack, Traction, Parallel Bars, Hydrotherapy
+- [x] Add PT equipment to EQUIPMENT_LIST: Balance Board, TENS Machine, Ultrasound Device, IFC Machine, Hot Pack, Cold Pack, Traction Table, Parallel Bars, Hydrotherapy Pool
+- [x] Workout history: allow editing completed session (name, date, start/end time HH:MM, notes) via Edit button
+- [x] Edit button in All Sessions history list (opens edit dialog for any past session)
+- [x] updateSession procedure expanded to accept startTime, endTime, caloriesBurned
+- [x] Update version to v3.8.0

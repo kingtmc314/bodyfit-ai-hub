@@ -350,11 +350,17 @@ const workoutRouter = router({
       duration: z.number().optional(),
       notes: z.string().optional(),
       totalVolume: z.number().optional(),
+      startTime: z.string().optional(), // ISO string
+      endTime: z.string().optional(),   // ISO string
+      caloriesBurned: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const { id, ...data } = input;
+      const { id, startTime, endTime, ...rest } = input;
+      const data: any = { ...rest };
+      if (startTime) data.startTime = new Date(startTime);
+      if (endTime) data.endTime = new Date(endTime);
       await db.update(workoutSessions).set(data).where(and(eq(workoutSessions.id, id), eq(workoutSessions.userId, OWNER_USER_ID)));
       return { success: true };
     }),
