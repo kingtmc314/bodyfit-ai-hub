@@ -269,3 +269,11 @@
 ## v3.7.1 Bug Fix (2026-06-05)
 - [x] Fix workout set log: when weightUnit==='lbs', convert to kg before saving to DB (was saving raw lbs value as kg)
 - [x] Update version to v3.7.1
+
+## v3.7.2 (2026-06-05)
+- [x] Fix workout set save failure (root cause: MySQL backtick SQL syntax; switched to Drizzle ORM .insert() method)
+- [x] Add avgHr and calories columns to workout_sets table in Supabase
+- [x] Add historyUnit state to Workout.tsx for lbs/kg toggle in workout history
+- [x] Add lbs/kg toggle to workout history session list (All Sessions panel)
+- [x] Add blood pressure chart to Trends health tab (Heart tab)
+- [x] Update version to v3.7.2

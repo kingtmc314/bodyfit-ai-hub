@@ -390,10 +390,19 @@ const workoutRouter = router({
       if (!db) throw new Error("DB unavailable");
       const { exerciseId, ...rest } = input;
       // Always use raw SQL to avoid Drizzle type issues with nullable exerciseId
-      await db.execute(sql`
-        INSERT INTO workout_sets ("sessionId", "exerciseId", "exerciseName", "setNumber", reps, weight, duration, distance, "avgHr", calories, notes)
-        VALUES (${rest.sessionId}, ${exerciseId ?? null}, ${rest.exerciseName}, ${rest.setNumber}, ${rest.reps ?? null}, ${rest.weight ?? null}, ${rest.duration ?? null}, ${rest.distance ?? null}, ${rest.avgHr ?? null}, ${rest.calories ?? null}, ${rest.notes ?? null})
-      `);
+      await db.insert(workoutSets).values({
+        sessionId: rest.sessionId,
+        exerciseId: exerciseId ?? null,
+        exerciseName: rest.exerciseName,
+        setNumber: rest.setNumber,
+        reps: rest.reps ?? null,
+        weight: rest.weight ?? null,
+        duration: rest.duration ?? null,
+        distance: rest.distance ?? null,
+        avgHr: rest.avgHr ?? null,
+        calories: rest.calories ?? null,
+        notes: rest.notes ?? null,
+      });
       // Recalculate and update totalVolume on the session
       const volumeResult = await db.execute(sql`
         SELECT COALESCE(SUM(reps * weight), 0) as total

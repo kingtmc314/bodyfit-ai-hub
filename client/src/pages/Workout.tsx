@@ -146,6 +146,7 @@ export default function Workout() {
   const [activeTab, setActiveTab] = useState<'session'|'exercises'|'history'>('session');
   const [exerciseLibMode, setExerciseLibMode] = useState<'strength'|'cardio'>('strength');
   const [weightUnit, setWeightUnit] = useState<'kg'|'lbs'>('kg');
+  const [historyUnit, setHistoryUnit] = useState<'kg'|'lbs'>('kg');
   // Custom exercise creation state
   const [showCreateExerciseDialog, setShowCreateExerciseDialog] = useState(false);
   const [createExForm, setCreateExForm] = useState({ name: '', nameZh: '', muscleGroup: 'chest', equipment: 'Barbell', instructions: '' });
@@ -543,9 +544,9 @@ export default function Workout() {
                                     {s.duration ? `${s.duration} min` : ''}{s.distance ? ` · ${s.distance} km` : ''}{(s as any).avgHr ? ` · ${(s as any).avgHr} bpm` : ''}{(s as any).calories ? ` · ${(s as any).calories} kcal` : ''}
                                   </span>
                                 ) : (
-                                  <span className="text-sm font-semibold text-foreground flex-1">{s.reps} reps × {s.weight} kg</span>
+                                  <span className="text-sm font-semibold text-foreground flex-1">{s.reps} reps × {historyUnit === 'lbs' ? Math.round((s.weight || 0) * 2.20462) : s.weight} {historyUnit}</span>
                                 )}
-                                {(ex?.muscleGroup !== 'cardio') && <span className="text-xs text-muted-foreground">{Math.round((s.reps || 0) * (s.weight || 0))} kg vol</span>}
+                                {(ex?.muscleGroup !== 'cardio') && <span className="text-xs text-muted-foreground">{historyUnit === 'lbs' ? Math.round((s.reps || 0) * (s.weight || 0) * 2.20462) : Math.round((s.reps || 0) * (s.weight || 0))} {historyUnit} vol</span>}
                                 {isOwner && <div className="flex gap-1">
                                   <Button variant="ghost" size="icon" className="w-6 h-6"
                                     onClick={() => { const isCardio = (ex?.muscleGroup || '') === 'cardio'; setEditSet(s); setSelectedExercise(ex || { name: exerciseName }); setSetForm(isCardio ? { reps: 0, weight: 0, duration: s.duration || 0, distance: s.distance || 0, avgHr: (s as any).avgHr || 0, calories: (s as any).calories || 0, notes: s.notes || "" } : { reps: s.reps || 10, weight: s.weight || 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: s.notes || "" }); setShowAddSetDialog(true); }}>
@@ -794,7 +795,13 @@ export default function Workout() {
 
             {/* Session History */}
             <div className="bg-card border border-border rounded-2xl p-5">
-              <h3 className="font-semibold text-foreground mb-3">All Sessions</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-foreground">All Sessions</h3>
+                <div className="flex items-center border border-border rounded-lg overflow-hidden text-xs">
+                  <button className={`px-2 py-0.5 transition-colors ${historyUnit === 'kg' ? 'bg-primary text-primary-foreground' : 'bg-transparent text-muted-foreground hover:bg-muted'}`} onClick={() => setHistoryUnit('kg')}>kg</button>
+                  <button className={`px-2 py-0.5 transition-colors ${historyUnit === 'lbs' ? 'bg-primary text-primary-foreground' : 'bg-transparent text-muted-foreground hover:bg-muted'}`} onClick={() => setHistoryUnit('lbs')}>lbs</button>
+                </div>
+              </div>
               <div className="flex flex-wrap items-center gap-2 mb-3">
                 <Input placeholder={t('common.search')+'...'} value={sessionSearch} onChange={e=>setSessionSearch(e.target.value)} className="h-8 text-xs w-36" />
                 <Select value={sessionSort} onValueChange={v=>setSessionSort(v as any)}>
@@ -829,7 +836,7 @@ export default function Workout() {
                     </div>
                     <div className="flex items-center gap-2">
                       {(s as any).caloriesBurned ? <span className="text-xs font-semibold text-orange-500">{Math.round((s as any).caloriesBurned)} kcal</span> : null}
-                      {s.totalVolume && <span className="text-xs font-semibold text-primary">{Math.round(s.totalVolume)} kg</span>}
+                      {s.totalVolume && <span className="text-xs font-semibold text-primary">{historyUnit === 'lbs' ? Math.round(s.totalVolume * 2.20462).toLocaleString() + ' lbs' : Math.round(s.totalVolume).toLocaleString() + ' kg'}</span>}
                       <Button variant="ghost" size="icon" className="w-7 h-7"
                         onClick={() => { setActiveSession(s); setActiveTab('session'); }}>
                         <ChevronRight className="w-3.5 h-3.5" />

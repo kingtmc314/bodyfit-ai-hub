@@ -896,6 +896,63 @@ function NutritionCharts({ days, goals }: { days: number; goals: GoalRecord[] })
   );
 }
 
+// ─── Blood Pressure Chart ───────────────────────────────────────────────────
+function BloodPressureChart({ days }: { days: number }) {
+  const { data: records = [], isLoading, error, refetch } = trpc.bloodPressure.getAll.useQuery({ days });
+  const chartData = useMemo(() =>
+    [...records].reverse().map(r => ({
+      label: new Date(r.measuredAt).toLocaleDateString("zh-HK", { timeZone: "Asia/Hong_Kong", month: "2-digit", day: "2-digit" }),
+      systolic: r.systolic,
+      diastolic: r.diastolic,
+      pulse: r.pulse,
+    })), [records]);
+
+  if (isLoading) return <ChartSkeleton />;
+  if (error) return <ErrorChart message={String(error)} onRetry={refetch} />;
+  if (!chartData.length) return <EmptyChart message="No blood pressure data. Go to 血壓記錄 page to log readings." />;
+
+  const systolics = chartData.map(d => d.systolic).filter((v): v is number => v != null);
+  const diastolics = chartData.map(d => d.diastolic).filter((v): v is number => v != null);
+  const latestSys = systolics[systolics.length - 1];
+  const latestDia = diastolics[diastolics.length - 1];
+
+  return (
+    <Card className="md:col-span-2">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium">🩺 血壓趨勢</CardTitle>
+          <div className="flex items-center gap-2">
+            {latestSys != null && latestDia != null && (
+              <span className="text-xs text-muted-foreground">
+                最新：{latestSys}/{latestDia} mmHg
+              </span>
+            )}
+            <TrendBadge values={systolics} unit=" mmHg" inverse={true} />
+          </div>
+        </div>
+        <CardDescription className="text-xs">收縮壓 / 舒張壓 / 脈搏趨勢</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ResponsiveContainer width="100%" height={240}>
+          <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
+            <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+            <YAxis yAxisId="bp" domain={[50, 200]} tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" unit=" mmHg" />
+            <YAxis yAxisId="pulse" orientation="right" domain={[40, 140]} tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" unit=" bpm" />
+            <Tooltip {...TooltipStyle} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <ReferenceLine yAxisId="bp" y={120} stroke="#22c55e" strokeDasharray="4 2" strokeWidth={1} label={{ value: "正常收縮壓", fontSize: 9, fill: "#22c55e", position: "insideTopRight" }} />
+            <ReferenceLine yAxisId="bp" y={80} stroke="#3b82f6" strokeDasharray="4 2" strokeWidth={1} label={{ value: "正常舒張壓", fontSize: 9, fill: "#3b82f6", position: "insideTopRight" }} />
+            <Line yAxisId="bp" type="monotone" dataKey="systolic" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: "#ef4444" }} name="收縮壓" connectNulls />
+            <Line yAxisId="bp" type="monotone" dataKey="diastolic" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3, fill: "#3b82f6" }} name="舒張壓" connectNulls />
+            <Line yAxisId="pulse" type="monotone" dataKey="pulse" stroke="#f97316" strokeWidth={1.5} strokeDasharray="4 2" dot={{ r: 2, fill: "#f97316" }} name="脈搏" connectNulls />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Main Trends Page ─────────────────────────────────────────────────────────
 export default function Trends() {
   const { t } = useTranslation();
@@ -954,7 +1011,12 @@ export default function Trends() {
           <SleepCharts days={days} goals={goals} />
         </TabsContent>
         <TabsContent value="heart" className="mt-4">
-          <HeartRateCharts days={days} goals={goals} />
+          <div className="space-y-4">
+            <HeartRateCharts days={days} goals={goals} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <BloodPressureChart days={days} />
+            </div>
+          </div>
         </TabsContent>
         <TabsContent value="workout" className="mt-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
