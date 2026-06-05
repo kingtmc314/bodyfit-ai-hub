@@ -360,14 +360,18 @@ export default function Workout() {
     if (!selectedExercise || !activeSession) return;
     const setNum = (sessionDetail?.sets.filter(s => s.exerciseName === selectedExercise.name).length || 0) + 1;
     const isCardio = selectedExercise?.muscleGroup === 'cardio';
+    // Always store weight in kg; convert from lbs if needed
+    const weightKg = weightUnit === 'lbs'
+      ? parseFloat((setForm.weight / 2.20462).toFixed(2))
+      : setForm.weight;
     if (editSet) {
       updateSet.mutate(isCardio
         ? { id: editSet.id, duration: setForm.duration || undefined, distance: setForm.distance || undefined, avgHr: setForm.avgHr || undefined, calories: setForm.calories || undefined, notes: setForm.notes || undefined }
-        : { id: editSet.id, reps: setForm.reps, weight: setForm.weight, notes: setForm.notes });
+        : { id: editSet.id, reps: setForm.reps, weight: weightKg, notes: setForm.notes });
     } else {
       addSet.mutate(isCardio
         ? { sessionId: activeSession.id, exerciseName: selectedExercise.name, setNumber: setNum, duration: setForm.duration || undefined, distance: setForm.distance || undefined, avgHr: setForm.avgHr || undefined, calories: setForm.calories || undefined, notes: setForm.notes || undefined }
-        : { sessionId: activeSession.id, exerciseName: selectedExercise.name, setNumber: setNum, reps: setForm.reps, weight: setForm.weight, notes: setForm.notes });
+        : { sessionId: activeSession.id, exerciseName: selectedExercise.name, setNumber: setNum, reps: setForm.reps, weight: weightKg, notes: setForm.notes });
     }
   };
 
