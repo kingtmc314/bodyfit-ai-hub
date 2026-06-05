@@ -341,3 +341,9 @@
 - [x] Nutrition: each recent food item shows name, restaurant, kcal, macros; click to auto-fill form
 - [x] Nutrition: add clear history button in recent foods panel
 - [x] Update version to v3.10.1
+
+## v3.10.2 (2026-06-05)
+- [x] Nutrition: added ⭐ star button on each meal log row to manually save food to 常用食物 history
+- [x] Nutrition: starred foods show ⭐ filled yellow icon; clicking again removes from history with toast confirmation
+- [x] Nutrition: 常用食物 panel shows both AI-queried and manually starred foods (same localStorage bf-food-history)
+- [x] Update version to v3.10.2

@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Camera, Search, Trash2, Edit2, X, Loader2, Utensils, Copy,
   Flame, Beef, Wheat, Droplets, ChevronDown, Upload, Sparkles,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Star
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -422,6 +422,31 @@ export default function Nutrition() {
                           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditEntry(m); setDialogDate(m.logDate ?? selectedDate); setForm({ name: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? undefined }); setMealType(m.mealType as MealType); setShowAddDialog(true); }}>
                             <Edit2 className="w-3.5 h-3.5" />
                           </Button>
+                          {(() => {
+                            const histKey = `${m.foodName.toLowerCase()}|`;
+                            const altKey = `${m.foodName.toLowerCase()}|${''}`;
+                            const isStarred = foodHistory.some((f: any) => (f.nameZh || f.name).toLowerCase() === m.foodName.toLowerCase());
+                            return (
+                              <Button variant="ghost" size="icon"
+                                className={`w-7 h-7 ${isStarred ? 'text-yellow-500 hover:text-yellow-600' : 'text-muted-foreground hover:text-yellow-500'}`}
+                                title={isStarred ? '已在常用食物（點擊移除）' : '加入常用食物'}
+                                onClick={() => {
+                                  if (isStarred) {
+                                    setFoodHistory(prev => {
+                                      const updated = prev.filter((f: any) => (f.nameZh || f.name).toLowerCase() !== m.foodName.toLowerCase());
+                                      localStorage.setItem('bf-food-history', JSON.stringify(updated));
+                                      return updated;
+                                    });
+                                    toast.success(`已從常用食物移除 ${m.foodName}`);
+                                  } else {
+                                    saveFoodToHistory({ name: m.foodName, nameZh: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? 0, unit: 'g', restaurantName: '' });
+                                    toast.success(`已將 ${m.foodName} 加入常用食物`);
+                                  }
+                                }}>
+                                <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-yellow-500' : ''}`} />
+                              </Button>
+                            );
+                          })()}
                           <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: m.id })}>
                             <Trash2 className="w-3.5 h-3.5" />
                           </Button>
