@@ -73,9 +73,11 @@ export async function upsertUser(user: InsertUser): Promise<void> {
           const conflictRow = await db.select().from(users)
             .where(eq(users.openId, user.openId)).limit(1).then(r => r[0] ?? null);
           if (conflictRow && conflictRow.id !== existingOwner.id) {
-            // Nullify the openId on the conflicting row so we can take it for the owner row
-            await db.update(users).set({ openId: sql`NULL` }).where(eq(users.id, conflictRow.id));
-            console.log(`[Auth] Cleared conflicting openId=${user.openId} from user.id=${conflictRow.id}`);
+            // Reassign the conflicting row's openId to a unique placeholder so we can
+            // take the real openId for the owner row (openId column is NOT NULL)
+            const placeholderOpenId = `_merged_${conflictRow.id}_${Date.now()}`;
+            await db.update(users).set({ openId: placeholderOpenId }).where(eq(users.id, conflictRow.id));
+            console.log(`[Auth] Reassigned conflicting openId=${user.openId} from user.id=${conflictRow.id} to placeholder`);
           }
         }
         // Update the existing owner row: update openId to the current login's openId

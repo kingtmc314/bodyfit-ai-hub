@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { useTranslation } from "react-i18next";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -258,110 +258,172 @@ function fmtDecimalHour(v: number | null): string {
   return `${sign}${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-// ─── Sleep Window Chart (陰陽鐲 style) ─────────────────────────────────────────
-// Renders a horizontal range bar per day: from bedtime to waketime
-// Y-axis: time of day (18:00 → 00:00 → 12:00), each bar is a colored band
+// ─── Sleep Window Chart (pure SVG — no Recharts stacked bar) ─────────────────
+// Renders a range bar per day: from bedtime to waketime
+// Y-axis: 22:00 at TOP, 10:00 at BOTTOM (night → morning, top → bottom)
+// Uses pure SVG to avoid Recharts stacked-bar domain direction issues
 type SleepWindowEntry = { label: string; bedtime: number | null; waketime: number | null; bedtimeRaw: string | null; waketimeRaw: string | null; duration?: number | null };
 
 function SleepWindowChart({ data }: { data: SleepWindowEntry[] }) {
+  const [tooltip, setTooltip] = React.useState<{ x: number; y: number; d: any } | null>(null);
   const valid = data.filter(d => d.bedtime != null && d.waketime != null);
   if (!valid.length) return <div className="h-[220px] flex items-center justify-center text-muted-foreground text-sm">No bedtime/waketime data</div>;
 
-  // Y domain: from -2 (22:00 prev day) to 10 (10:00 next morning)
-  // With reversed=true, Y_MIN (-2 = 22:00) appears at TOP, Y_MAX (10 = 10:00) at BOTTOM
-  const Y_MIN = -2;
-  const Y_MAX = 10;
+  // Y axis: TOP = 22:00 (=-2 decimal), BOTTOM = 10:00 (=10 decimal)
+  // Pure SVG: we manually map decimal hours to pixel Y coordinates
+  const Y_TOP_VAL = -2;  // 22:00 at top
+  const Y_BOT_VAL = 10;  // 10:00 at bottom
+  const Y_RANGE = Y_BOT_VAL - Y_TOP_VAL; // 12 hours total range
 
-  // Build bar data: base = bedtime, length = waketime - bedtime (handles midnight crossover)
-  const barData = valid.map(d => {
-    const bed = d.bedtime!;
-    const wake = d.waketime!;
-    const len = wake - bed; // e.g. -1.5 to 7 = 8.5h
-    return { label: d.label, base: bed, len, bedtimeRaw: d.bedtimeRaw, waketimeRaw: d.waketimeRaw, duration: d.duration ?? len };
-  });
+  const SVG_W = 900;
+  const SVG_H = 240;
+  const MARGIN = { top: 10, right: 50, bottom: 30, left: 46 };
+  const plotW = SVG_W - MARGIN.left - MARGIN.right;
+  const plotH = SVG_H - MARGIN.top - MARGIN.bottom;
 
-  // Average bedtime and waketime for reference lines
+  // Map a decimal hour value to SVG Y pixel (TOP_VAL -> 0, BOT_VAL -> plotH)
+  const toY = (val: number) => ((val - Y_TOP_VAL) / Y_RANGE) * plotH;
+
+  // Y axis ticks: every 2 hours from 22:00 to 10:00
+  const yTicks = [-2, 0, 2, 4, 6, 8, 10]; // decimal hours
+  const fmtHour = (v: number) => {
+    const actual = v < 0 ? v + 24 : v;
+    return `${String(Math.floor(actual)).padStart(2, '0')}:00`;
+  };
+
+  // Bar width
+  const n = valid.length;
+  const barW = Math.max(4, Math.min(18, (plotW / n) * 0.7));
+  const step = plotW / n;
+
+  // Average bedtime and waketime
   const avgBed = valid.reduce((s, d) => s + d.bedtime!, 0) / valid.length;
   const avgWake = valid.reduce((s, d) => s + d.waketime!, 0) / valid.length;
 
-  // Custom tick formatter for left Y axis (time)
-  const yTickFmt = (v: number) => {
-    const actual = v < 0 ? v + 24 : v;
-    const h = Math.floor(actual);
-    const m = Math.round((actual - h) * 60);
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-  };
-
-  // Custom tooltip
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (!active || !payload?.length) return null;
-    const d = payload[0]?.payload;
-    if (!d) return null;
-    return (
-      <div style={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "hsl(var(--card-foreground))" }}>
-        <p style={{ color: "hsl(var(--muted-foreground))", marginBottom: 4 }}>{label}</p>
-        <p>🌙 就寢: <strong>{d.bedtimeRaw ?? fmtDecimalHour(d.base)}</strong></p>
-        <p>☀️ 起床: <strong>{d.waketimeRaw ?? fmtDecimalHour(d.base + d.len)}</strong></p>
-        <p>⏱ 睡眠: <strong>{d.duration?.toFixed(1)}h</strong></p>
-      </div>
-    );
-  };
+  // Duration line points (right axis: 0-12h mapped to plotH-0)
+  const durPoints = valid.map((d, i) => {
+    const dur = d.duration ?? (d.waketime! - d.bedtime!);
+    const cx = MARGIN.left + i * step + step / 2;
+    const cy = MARGIN.top + plotH - (dur / 12) * plotH;
+    return { cx, cy, dur };
+  });
 
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <ComposedChart data={barData} margin={{ top: 5, right: 45, left: 0, bottom: 5 }} barCategoryGap="20%">
+    <div style={{ position: 'relative', width: '100%' }}>
+      <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} style={{ width: '100%', height: 260, display: 'block' }}>
         <defs>
-          <linearGradient id="sleepWindowGrad" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id="swGrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#1e40af" stopOpacity={0.9} />
             <stop offset="60%" stopColor="#3b82f6" stopOpacity={0.8} />
             <stop offset="100%" stopColor="#f97316" stopOpacity={0.7} />
           </linearGradient>
+          <clipPath id="swClip">
+            <rect x={MARGIN.left} y={MARGIN.top} width={plotW} height={plotH} />
+          </clipPath>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
-        <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-        {/* Left Y axis: time of day
-             reversed=true makes Recharts put the domain start (Y_MIN = -6 = 18:00) at the TOP
-             and domain end (Y_MAX = 12 = noon) at the BOTTOM.
-             So bedtime ~22:00 (-2) appears near the top, waketime ~07:00 (7) near the bottom. */}
-        <YAxis
-          yAxisId="time"
-          tick={{ fontSize: 10 }}
-          stroke="hsl(var(--muted-foreground))"
-          domain={[Y_MIN, Y_MAX]}
-          ticks={[-2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
-          tickFormatter={yTickFmt}
-          width={42}
-          reversed
-        />
-        {/* Right Y axis: sleep duration in hours */}
-        <YAxis
-          yAxisId="dur"
-          orientation="right"
-          tick={{ fontSize: 10 }}
-          stroke="#22c55e"
-          domain={[0, 12]}
-          unit="h"
-          width={36}
-        />
-        <Tooltip content={<CustomTooltip />} />
-        <Legend wrapperStyle={{ fontSize: 11 }} formatter={(value) => value === 'duration' ? '睡眠時長' : value === 'len' ? '睡眠窗口' : value} />
-        {/* Invisible base bar to offset the visible bar */}
-        <Bar yAxisId="time" dataKey="base" stackId="sleep" fill="transparent" isAnimationActive={false} legendType="none" />
-        {/* Visible sleep window bar */}
-        <Bar yAxisId="time" dataKey="len" stackId="sleep" fill="url(#sleepWindowGrad)" radius={[3, 3, 0, 0]} isAnimationActive={false} name="len" />
-        {/* Sleep duration line overlay */}
-        <Line yAxisId="dur" type="monotone" dataKey="duration" stroke="#22c55e" strokeWidth={2.5} dot={{ r: 3, fill: "#22c55e", strokeWidth: 0 }} name="duration" connectNulls />
+
+        {/* Grid lines */}
+        {yTicks.map(v => {
+          const py = MARGIN.top + toY(v);
+          return <line key={v} x1={MARGIN.left} x2={MARGIN.left + plotW} y1={py} y2={py}
+            stroke="hsl(var(--border))" strokeOpacity={0.4} strokeDasharray="3 3" />;
+        })}
+
+        {/* Y axis labels (left) */}
+        {yTicks.map(v => {
+          const py = MARGIN.top + toY(v);
+          return <text key={v} x={MARGIN.left - 4} y={py + 4} textAnchor="end" fontSize={10}
+            fill="hsl(var(--muted-foreground))">{fmtHour(v)}</text>;
+        })}
+
+        {/* Right Y axis labels (duration 0-12h) */}
+        {[0, 3, 6, 9, 12].map(h => {
+          const py = MARGIN.top + plotH - (h / 12) * plotH;
+          return <text key={h} x={MARGIN.left + plotW + 4} y={py + 4} textAnchor="start" fontSize={10}
+            fill="#22c55e">{h}h</text>;
+        })}
+
         {/* Midnight reference line */}
-        <ReferenceLine yAxisId="time" y={0} stroke="#94a3b8" strokeDasharray="6 3" strokeWidth={1.5}
-          label={{ value: "午夜", fontSize: 9, fill: "#94a3b8", position: "insideTopRight" }} />
-        {/* Average bedtime reference */}
-        <ReferenceLine yAxisId="time" y={avgBed} stroke="#3b82f6" strokeDasharray="4 2" strokeWidth={1}
-          label={{ value: `平均就寢 ${fmtDecimalHour(avgBed)}`, fontSize: 9, fill: "#3b82f6", position: "insideBottomLeft" }} />
-        {/* Average waketime reference */}
-        <ReferenceLine yAxisId="time" y={avgWake} stroke="#f97316" strokeDasharray="4 2" strokeWidth={1}
-          label={{ value: `平均起床 ${fmtDecimalHour(avgWake)}`, fontSize: 9, fill: "#f97316", position: "insideTopLeft" }} />
-      </ComposedChart>
-    </ResponsiveContainer>
+        <line x1={MARGIN.left} x2={MARGIN.left + plotW}
+          y1={MARGIN.top + toY(0)} y2={MARGIN.top + toY(0)}
+          stroke="#94a3b8" strokeDasharray="6 3" strokeWidth={1.5} />
+        <text x={MARGIN.left + plotW - 2} y={MARGIN.top + toY(0) - 3} textAnchor="end" fontSize={9} fill="#94a3b8">午夜</text>
+
+        {/* Average bedtime reference line */}
+        <line x1={MARGIN.left} x2={MARGIN.left + plotW}
+          y1={MARGIN.top + toY(avgBed)} y2={MARGIN.top + toY(avgBed)}
+          stroke="#3b82f6" strokeDasharray="4 2" strokeWidth={1} />
+        <text x={MARGIN.left + 4} y={MARGIN.top + toY(avgBed) - 3} fontSize={9} fill="#3b82f6">平均就寢 {fmtDecimalHour(avgBed)}</text>
+
+        {/* Average waketime reference line */}
+        <line x1={MARGIN.left} x2={MARGIN.left + plotW}
+          y1={MARGIN.top + toY(avgWake)} y2={MARGIN.top + toY(avgWake)}
+          stroke="#f97316" strokeDasharray="4 2" strokeWidth={1} />
+        <text x={MARGIN.left + 4} y={MARGIN.top + toY(avgWake) + 11} fontSize={9} fill="#f97316">平均起床 {fmtDecimalHour(avgWake)}</text>
+
+        {/* Sleep window bars */}
+        <g clipPath="url(#swClip)">
+          {valid.map((d, i) => {
+            const bed = d.bedtime!;
+            const wake = d.waketime!;
+            const barX = MARGIN.left + i * step + (step - barW) / 2;
+            const barTop = MARGIN.top + toY(bed);
+            const barBot = MARGIN.top + toY(wake);
+            const barH = barBot - barTop;
+            return (
+              <rect key={i} x={barX} y={barTop} width={barW} height={Math.max(2, barH)}
+                rx={3} ry={3} fill="url(#swGrad)"
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={(e) => setTooltip({ x: barX + barW / 2, y: barTop, d })}
+                onMouseLeave={() => setTooltip(null)}
+              />
+            );
+          })}
+        </g>
+
+        {/* Duration line */}
+        <polyline
+          points={durPoints.map(p => `${p.cx},${p.cy}`).join(' ')}
+          fill="none" stroke="#22c55e" strokeWidth={2.5}
+          clipPath="url(#swClip)"
+        />
+        {durPoints.map((p, i) => (
+          <circle key={i} cx={p.cx} cy={p.cy} r={3} fill="#22c55e" clipPath="url(#swClip)" />
+        ))}
+
+        {/* X axis labels */}
+        {valid.map((d, i) => {
+          if (n > 30 && i % 3 !== 0) return null;
+          if (n > 14 && n <= 30 && i % 2 !== 0) return null;
+          const cx = MARGIN.left + i * step + step / 2;
+          return <text key={i} x={cx} y={SVG_H - 4} textAnchor="middle" fontSize={10}
+            fill="hsl(var(--muted-foreground))">{d.label}</text>;
+        })}
+
+        {/* Tooltip */}
+        {tooltip && (
+          <g>
+            <rect x={tooltip.x - 60} y={tooltip.y - 70} width={120} height={65} rx={6} ry={6}
+              fill="hsl(var(--card))" stroke="hsl(var(--border))" strokeWidth={1} />
+            <text x={tooltip.x} y={tooltip.y - 52} textAnchor="middle" fontSize={11} fill="hsl(var(--muted-foreground))">{tooltip.d.label}</text>
+            <text x={tooltip.x} y={tooltip.y - 36} textAnchor="middle" fontSize={11} fill="hsl(var(--card-foreground))">🌙 {tooltip.d.bedtimeRaw ?? fmtDecimalHour(tooltip.d.bedtime)}</text>
+            <text x={tooltip.x} y={tooltip.y - 20} textAnchor="middle" fontSize={11} fill="hsl(var(--card-foreground))">☀️ {tooltip.d.waketimeRaw ?? fmtDecimalHour(tooltip.d.waketime)}</text>
+            <text x={tooltip.x} y={tooltip.y - 4} textAnchor="middle" fontSize={11} fill="#22c55e">⏱ {((tooltip.d.waketime ?? 0) - (tooltip.d.bedtime ?? 0)).toFixed(1)}h</text>
+          </g>
+        )}
+      </svg>
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: 16, justifyContent: 'center', fontSize: 11, color: 'hsl(var(--muted-foreground))', marginTop: 4 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 12, height: 12, background: 'linear-gradient(#1e40af, #f97316)', borderRadius: 2, display: 'inline-block' }} />
+          睡眠窗口
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 20, height: 2, background: '#22c55e', display: 'inline-block' }} />
+          睡眠時長
+        </span>
+      </div>
+    </div>
   );
 }
 
