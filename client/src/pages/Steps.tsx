@@ -114,9 +114,9 @@ export default function Steps() {
     onError: (e) => toast.error(e.message),
   });
 
-  // Auto-calculate calories when steps change (only for new entries, not edits)
+  // Auto-calculate calories when steps change (for both new entries and edits)
   useEffect(() => {
-    if (!editEntry && form.steps) {
+    if (form.steps) {
       const steps = Number(form.steps);
       if (steps > 0) {
         const estimated = calcStepsCalories(steps, latestWeight);
@@ -352,7 +352,7 @@ export default function Steps() {
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">
                 {t('steps.calories')} (kcal)
-                {!editEntry && form.steps && (
+                {form.steps && (
                   <span className="ml-1 text-primary text-[10px]">
                     · 自動估算 ({latestWeight}kg
                     {weightRecord && (weightRecord as any).date !== form.date

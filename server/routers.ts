@@ -362,6 +362,32 @@ const workoutRouter = router({
       const data: any = { ...rest };
       if (startTime) data.startTime = new Date(startTime);
       if (endTime) data.endTime = new Date(endTime);
+
+      // Recalculate duration and calories when time is changed
+      if (startTime || endTime) {
+        // Fetch current session to get the other time if only one is provided
+        const rows = await db.select().from(workoutSessions)
+          .where(and(eq(workoutSessions.id, id), eq(workoutSessions.userId, OWNER_USER_ID))).limit(1);
+        if (rows.length) {
+          const session = rows[0];
+          const newStart = data.startTime ?? (session.startTime ? new Date(session.startTime) : null);
+          const newEnd = data.endTime ?? (session.endTime ? new Date(session.endTime) : null);
+          if (newStart && newEnd && newEnd > newStart) {
+            const durationMin = Math.max(1, Math.round((newEnd.getTime() - newStart.getTime()) / 60000));
+            data.duration = durationMin;
+            // Recalculate calories using volume-adjusted MET formula
+            const volumeResult = await db.execute(sql`
+              SELECT COALESCE(SUM(reps * weight), 0) as total
+              FROM workout_sets WHERE "sessionId" = ${id}
+              AND reps IS NOT NULL AND weight IS NOT NULL
+            `);
+            const totalVolume = Number(((volumeResult as any).rows?.[0] ?? (volumeResult as any)[0])?.total ?? 0);
+            const met = totalVolume > 5000 ? 6 : totalVolume > 2000 ? 5.5 : 5;
+            data.caloriesBurned = Math.round(met * 70 * (durationMin / 60));
+          }
+        }
+      }
+
       await db.update(workoutSessions).set(data).where(and(eq(workoutSessions.id, id), eq(workoutSessions.userId, OWNER_USER_ID)));
       return { success: true };
     }),

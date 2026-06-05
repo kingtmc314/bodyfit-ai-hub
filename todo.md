@@ -301,3 +301,7 @@
 - [x] Workout: allow adding exercises to completed sessions (補錄動作 button shown for completed sessions)
 - [x] Nutrition: cross-day copy — dropdown with 複製到今天 / 複製到當前日期
 - [x] Update version to v3.9.0
+
+## v3.9.1 (2026-06-05)
+- [x] Bug fix: updateSession now recalculates duration and caloriesBurned when startTime/endTime are changed (volume-adjusted MET formula)
+- [x] Bug fix: Steps.tsx edit mode now auto-recalculates calories when steps change (same formula as new entry)
