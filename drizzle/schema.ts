@@ -573,3 +573,17 @@ export const customExercises = pgTable("custom_exercises", {
 });
 export type CustomExercise = typeof customExercises.$inferSelect;
 export type InsertCustomExercise = typeof customExercises.$inferInsert;
+
+// ─── Blood Pressure Logs ──────────────────────────────────────────────────────
+export const bloodPressureLogs = pgTable("blood_pressure_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull(),
+  measuredAt: timestamp("measured_at").notNull(),
+  systolic: integer("systolic").notNull(),      // mmHg upper
+  diastolic: integer("diastolic").notNull(),    // mmHg lower
+  pulse: integer("pulse"),                      // bpm
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type BloodPressureLog = typeof bloodPressureLogs.$inferSelect;
+export type InsertBloodPressureLog = typeof bloodPressureLogs.$inferInsert;

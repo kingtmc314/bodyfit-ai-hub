@@ -252,3 +252,16 @@
 - [x] tRPC dashboard procedure: added CARDIO_EXERCISE_NAMES list and joined workout_sets to sum cardio calories for today
 - [x] Dashboard UI: added 有氧卡路里 card (orange) to exercise summary grid (now 4 columns), shows kcal + duration in minutes
 - [x] Update version to v3.6.5
+- [ ] Trends: add cardio history chart (weekly/monthly calories burned from cardio sets)
+- [ ] Blood pressure: schema, tRPC procedures, UI page with log and chart
+- [ ] AI health analysis: use all connected data (workout, sleep, heart rate, nutrition, supplements, blood pressure) for comprehensive analysis
+
+## v3.7.0 Multi-Feature (2026-06-05)
+- [x] Workout exercise library: add Cardio sub-tab to separate cardio machines from strength exercises
+- [x] Medical records: fix attachment 404 error (use signed URLs from storage)
+- [x] Supplements daily plan: add one-tap "log all" button per time slot
+- [x] Workout set dialog: add lbs/kg toggle for weight input
+- [x] Trends: add cardio history chart (weekly/monthly calories) to workout tab
+- [x] Blood pressure: add DB table (blood_pressure_logs), tRPC CRUD router, BloodPressure.tsx page with chart
+- [x] AI health analysis: expanded data context to include running, steps, supplements, blood pressure, goals, body composition, cardio sets
+- [x] Update version to v3.7.0

@@ -10,9 +10,9 @@ import {
   healthGoals, runningLogs, runningShoes, races, favouriteExercises,
   dailySteps, medicalConditions, medicalVisits, medicalAttachments,
   supplements, supplementLogs, supplementPurchases, supplementStockAdjustments,
-  runningLogPhotos, stepLogPhotos, customExercises, userProfile
+  runningLogPhotos, stepLogPhotos, customExercises, userProfile, bloodPressureLogs
 } from "../drizzle/schema";
-import { eq, and, desc, gte, lte, like, or, sql } from "drizzle-orm";
+import { eq, and, desc, gte, lte, like, or, sql, inArray } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
 import { storagePut, storageGetSignedUrl } from "./storage";
 import { nanoid } from "nanoid";
@@ -1069,25 +1069,98 @@ const insightsRouter = router({
       const weekAgoStr = daysAgoHK(7);
       const weekAgo = new Date(weekAgoStr + "T00:00:00+08:00");
 
-      const [meals, sessions, body, sleep, hr] = await Promise.all([
+      const monthAgoStr = daysAgoHK(30);
+
+      const [meals, sessions, workoutSetRows, body, sleep, hr, running, steps, suppLogs, suppStock, bloodPressure, goals, profile] = await Promise.all([
         db.select().from(mealLogs).where(and(eq(mealLogs.userId, OWNER_USER_ID), sql`${mealLogs.logDate} >= ${weekAgoStr}::date`)).limit(50),
         db.select().from(workoutSessions).where(and(eq(workoutSessions.userId, OWNER_USER_ID), sql`${workoutSessions.startTime} >= ${weekAgo}`)),
-        db.select().from(bodyComposition).where(eq(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc(bodyComposition.date)).limit(5),
+        db.select().from(workoutSets).innerJoin(workoutSessions, eq(workoutSets.sessionId, workoutSessions.id)).where(and(eq(workoutSessions.userId, OWNER_USER_ID), sql`${workoutSessions.startTime} >= ${weekAgo}`)).limit(100),
+        // workoutSetRows joined
+        db.select().from(bodyComposition).where(eq(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc(bodyComposition.date)).limit(10),
         db.select().from(sleepLogs).where(and(eq(sleepLogs.userId, OWNER_USER_ID), gte(sleepLogs.date, weekAgoStr))),
         db.select().from(heartRateLogs).where(and(eq(heartRateLogs.userId, OWNER_USER_ID), gte(heartRateLogs.date, weekAgoStr))),
+        db.select().from(runningLogs).where(sql`${runningLogs.date} >= ${weekAgoStr}`).orderBy(desc(runningLogs.date)).limit(10),
+        db.select().from(dailySteps).where(and(eq(dailySteps.userId, OWNER_USER_ID), sql`${dailySteps.date} >= ${weekAgoStr}::date`)),
+        db.select().from(supplementLogs).where(and(eq(supplementLogs.userId, OWNER_USER_ID), sql`${supplementLogs.date} >= ${weekAgoStr}::date`)).limit(50),
+        db.select().from(supplements).where(eq(supplements.userId, OWNER_USER_ID)),
+        db.select().from(bloodPressureLogs).where(and(eq(bloodPressureLogs.userId, OWNER_USER_ID), sql`${bloodPressureLogs.measuredAt} >= ${weekAgo}`)).orderBy(desc(bloodPressureLogs.measuredAt)).limit(20),
+        db.select().from(healthGoals).where(and(eq(healthGoals.userId, OWNER_USER_ID), eq(healthGoals.isActive, true))).limit(10),
+        db.select().from(userProfile).where(eq(userProfile.userId, OWNER_USER_ID)).limit(1),
       ]);
 
-      const dataContext = JSON.stringify({ meals, sessions, body, sleep, hr }, null, 2);
+      // Summarize cardio sets from workout sets (joined result has nested structure)
+      const cardioSets = workoutSetRows.filter(s => s.workout_sets.duration && s.workout_sets.duration > 0);
+      const strengthSets = workoutSetRows.filter(s => s.workout_sets.reps && s.workout_sets.reps > 0);
+
+      // Compute weekly averages for sleep
+      const avgSleepDuration = sleep.length > 0 ? (sleep.reduce((a, s) => a + (s.sleepDuration ?? 0), 0) / sleep.length).toFixed(1) : null;
+      const avgSleepScore = sleep.length > 0 ? Math.round(sleep.reduce((a, s) => a + (s.sleepScore ?? 0), 0) / sleep.length) : null;
+      const avgHRV = sleep.filter(s => s.hrv).length > 0 ? Math.round(sleep.filter(s => s.hrv).reduce((a, s) => a + (s.hrv ?? 0), 0) / sleep.filter(s => s.hrv).length) : null;
+
+      // Compute nutrition averages
+      const avgDailyCalories = meals.length > 0 ? Math.round(meals.reduce((a, m) => a + (m.calories ?? 0), 0) / 7) : null;
+      const avgDailyProtein = meals.length > 0 ? Math.round(meals.reduce((a, m) => a + (m.protein ?? 0), 0) / 7) : null;
+
+      // Blood pressure summary
+      const bpSummary = bloodPressure.length > 0 ? {
+        count: bloodPressure.length,
+        latestSystolic: bloodPressure[0]?.systolic,
+        latestDiastolic: bloodPressure[0]?.diastolic,
+        latestPulse: bloodPressure[0]?.pulse,
+        avgSystolic: Math.round(bloodPressure.reduce((a, b) => a + (b.systolic ?? 0), 0) / bloodPressure.length),
+        avgDiastolic: Math.round(bloodPressure.reduce((a, b) => a + (b.diastolic ?? 0), 0) / bloodPressure.length),
+      } : null;
+
+      // Steps summary
+      const totalSteps = steps.reduce((a, s) => a + (s.steps ?? 0), 0);
+      const avgDailySteps = steps.length > 0 ? Math.round(totalSteps / steps.length) : null;
+      const totalFloors = steps.reduce((a, s) => a + (s.floorsClimbed ?? 0), 0);
+
+      // Running summary
+      const totalRunDistance = running.reduce((a, r) => a + (r.distanceKm ?? 0), 0);
+      const avgRunPace = running.filter(r => r.averagePace).length > 0
+        ? running.filter(r => r.averagePace).map(r => r.averagePace).join(", ")
+        : null;
+
+      // Supplement adherence
+      const suppAdherence = suppStock.length > 0 ? `${suppLogs.length} doses logged this week out of ${suppStock.length} active supplements` : null;
+
+      // Active goals
+      const activeGoals = goals.map(g => ({ type: g.goalType, target: g.targetValue, unit: g.unit, notes: g.notes }));
+
+      const dataContext = JSON.stringify({
+        profile: profile[0] ? { birthYear: profile[0].birthYear, gender: profile[0].gender, height: profile[0].height } : null,
+        period: `${weekAgoStr} to ${todayStr} (HKT)`,
+        nutrition: { avgDailyCalories, avgDailyProtein, mealCount: meals.length, meals: meals.slice(0, 20) },
+        workout: { sessions: sessions.length, strengthSets: strengthSets.length, cardioSets: cardioSets.length, sessions_detail: sessions },
+        sleep: { records: sleep.length, avgDurationHrs: avgSleepDuration, avgScore: avgSleepScore, avgHRV_ms: avgHRV, records_detail: sleep },
+        heartRate: { records: hr.length, records_detail: hr },
+        bloodPressure: bpSummary,
+        running: { runs: running.length, totalDistanceKm: totalRunDistance.toFixed(1), avgPace: avgRunPace },
+        steps: { avgDailySteps, totalFloors, daysTracked: steps.length },
+        supplements: { activeSupplements: suppStock.length, adherence: suppAdherence },
+        bodyComposition: body.slice(0, 5),
+        activeGoals,
+      }, null, 2);
 
       const response = await invokeLLM({
         messages: [
           {
             role: "system",
-            content: `You are an expert personal health coach and nutritionist. Analyze the user's fitness data and provide personalized, actionable insights. Write in a supportive, professional tone. Use markdown formatting with headers, bullet points, and emphasis. Respond in both English and Traditional Chinese (繁體中文).`
+            content: `You are an expert personal health coach, nutritionist, and sports scientist. You have access to comprehensive health data including nutrition, strength training, cardio, sleep, heart rate, blood pressure, running, daily steps, supplements, body composition, and health goals. Analyze ALL available data holistically and provide personalized, actionable insights. Identify patterns, correlations between different health metrics, and areas for improvement. Write in a supportive, professional tone. Use markdown formatting with headers, bullet points, and emphasis. Respond in Traditional Chinese (繁體中文) primarily, with key terms also in English.`
           },
           {
             role: "user",
-            content: `Here is my health data from the past week. Please provide comprehensive ${input.type || "overall"} insights, recommendations, and tips:\n\n${dataContext}\n\nProvide:\n1. Summary of current status\n2. Key observations\n3. Specific recommendations\n4. Goals for next week\n5. Motivational message`
+            content: `Here is my comprehensive health data from the past 7 days. Please provide a thorough ${input.type || "overall"} analysis:\n\n${dataContext}\n\nPlease analyze:\n1. **整體健康概況** (Overall Health Summary) - key metrics and trends
+2. **飲食分析** (Nutrition) - calorie/macro balance, meal patterns
+3. **訓練分析** (Training) - workout frequency, volume, cardio vs strength balance
+4. **恢復與睡眠** (Recovery & Sleep) - sleep quality, HRV, body battery trends
+5. **心血管健康** (Cardiovascular) - heart rate, blood pressure patterns if available
+6. **活動量** (Activity) - steps, running, overall movement
+7. **補充品依從性** (Supplement Adherence) - consistency with supplement plan
+8. **目標進度** (Goal Progress) - progress toward active health goals
+9. **本週重點建議** (Key Recommendations) - 3-5 specific actionable items
+10. **下週目標** (Next Week Focus) - specific targets to aim for`
           }
         ]
       });
@@ -1634,6 +1707,47 @@ const chartsRouter = router({
           running: Math.round(v.running),
           steps: Math.round(v.steps),
           total: Math.round(v.workout + v.running + v.steps),
+        }));
+    }),
+
+  // Cardio training history (calories + duration per day from workout_sets)
+  cardioHistory: publicProcedure
+    .input(z.object({ days: z.number().int().min(7).max(365).default(90) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const sinceDate = new Date(Date.now() - input.days * 86400000);
+      const CARDIO_NAMES_LIST = [
+        'Stationary Bike', 'Treadmill', 'Stair Climber', 'Elliptical Trainer',
+        'Rowing Machine', 'Ski Erg', 'Air Bike', "Jacob's Ladder",
+      ];
+      // Get cardio sets joined with workout sessions for date
+      const cardioSets = await db.select({
+        date: sql<string>`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as('date'),
+        calories: workoutSets.calories,
+        duration: workoutSets.duration,
+        exerciseName: workoutSets.exerciseName,
+      }).from(workoutSets)
+        .innerJoin(workoutSessions, eq(workoutSets.sessionId, workoutSessions.id))
+        .where(and(
+          eq(workoutSessions.userId, OWNER_USER_ID),
+          sql`${workoutSessions.startTime} >= ${sinceDate}`,
+          inArray(workoutSets.exerciseName, CARDIO_NAMES_LIST),
+        ));
+      // Aggregate by date
+      const dayMap: Record<string, { calories: number; duration: number }> = {};
+      for (const r of cardioSets) {
+        if (!dayMap[r.date]) dayMap[r.date] = { calories: 0, duration: 0 };
+        dayMap[r.date].calories += Number(r.calories) || 0;
+        dayMap[r.date].duration += Number(r.duration) || 0;
+      }
+      return Object.entries(dayMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, v]) => ({
+          date,
+          label: date.slice(5),
+          calories: Math.round(v.calories),
+          durationMin: Math.round(v.duration),
         }));
     }),
 
@@ -3189,9 +3303,18 @@ const medicalRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
-      return db.select().from(medicalAttachments)
+      const rows = await db.select().from(medicalAttachments)
         .where(and(eq(medicalAttachments.visitId, input.visitId), eq(medicalAttachments.userId, OWNER_USER_ID)))
         .orderBy(desc(medicalAttachments.createdAt));
+      // Generate fresh signed URLs so attachments are always accessible
+      return Promise.all(rows.map(async (row) => {
+        try {
+          const signedUrl = await storageGetSignedUrl(row.fileKey);
+          return { ...row, fileUrl: signedUrl };
+        } catch {
+          return row; // fallback to stored url if signing fails
+        }
+      }));
     }),
   uploadAttachment: ownerProcedure
     .input(z.object({
@@ -3781,6 +3904,75 @@ const profileRouter = router({
     }),
 });
 
+// ─── Blood Pressure Router ──────────────────────────────────────────────
+const bloodPressureRouter = router({
+  getAll: publicProcedure
+    .input(z.object({ days: z.number().int().min(1).max(365).default(90) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const sinceStr = daysAgoHK(input.days);
+      const sinceDate = new Date(sinceStr + 'T00:00:00+08:00');
+      return db.select().from(bloodPressureLogs)
+        .where(and(
+          eq(bloodPressureLogs.userId, OWNER_USER_ID),
+          sql`${bloodPressureLogs.measuredAt} >= ${sinceDate}`
+        ))
+        .orderBy(desc(bloodPressureLogs.measuredAt));
+    }),
+
+  add: ownerProcedure
+    .input(z.object({
+      measuredAt: z.string(), // ISO string in HK time
+      systolic: z.number().int().min(50).max(300),
+      diastolic: z.number().int().min(30).max(200),
+      pulse: z.number().int().min(30).max(300).optional(),
+      notes: z.string().max(500).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const measuredAt = new Date(input.measuredAt);
+      const rows = await db.insert(bloodPressureLogs).values({
+        userId: OWNER_USER_ID,
+        measuredAt,
+        systolic: input.systolic,
+        diastolic: input.diastolic,
+        pulse: input.pulse ?? null,
+        notes: input.notes ?? null,
+      }).returning({ id: bloodPressureLogs.id });
+      return rows[0];
+    }),
+
+  update: ownerProcedure
+    .input(z.object({
+      id: z.number().int(),
+      measuredAt: z.string().optional(),
+      systolic: z.number().int().min(50).max(300).optional(),
+      diastolic: z.number().int().min(30).max(200).optional(),
+      pulse: z.number().int().min(30).max(300).nullable().optional(),
+      notes: z.string().max(500).nullable().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { id, measuredAt, ...rest } = input;
+      const updates: Record<string, unknown> = { ...rest };
+      if (measuredAt) updates.measuredAt = new Date(measuredAt);
+      await db.update(bloodPressureLogs).set(updates).where(eq(bloodPressureLogs.id, id));
+      return { success: true };
+    }),
+
+  delete: ownerProcedure
+    .input(z.object({ id: z.number().int() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.delete(bloodPressureLogs).where(eq(bloodPressureLogs.id, input.id));
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -3808,6 +4000,7 @@ export const appRouter = router({
   medical: medicalRouter,
   supplements: supplementsRouter,
   profile: profileRouter,
+  bloodPressure: bloodPressureRouter,
 });
 export type AppRouter = typeof appRouter;
 

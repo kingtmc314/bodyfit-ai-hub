@@ -144,6 +144,8 @@ export default function Workout() {
   const [sessionSort, setSessionSort] = useState<'date_desc'|'date_asc'|'volume_desc'|'duration_desc'>('date_desc');
   const [sessionSearch, setSessionSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'session'|'exercises'|'history'>('session');
+  const [exerciseLibMode, setExerciseLibMode] = useState<'strength'|'cardio'>('strength');
+  const [weightUnit, setWeightUnit] = useState<'kg'|'lbs'>('kg');
   // Custom exercise creation state
   const [showCreateExerciseDialog, setShowCreateExerciseDialog] = useState(false);
   const [createExForm, setCreateExForm] = useState({ name: '', nameZh: '', muscleGroup: 'chest', equipment: 'Barbell', instructions: '' });
@@ -268,12 +270,17 @@ export default function Workout() {
 
   const filteredExercises = useMemo(() => {
     return allExercises.filter(e => {
+      const isCardioEx = e.muscleGroup === 'cardio';
+      if (exerciseLibMode === 'cardio') {
+        const matchSearch = !searchQuery || e.name.toLowerCase().includes(searchQuery.toLowerCase()) || (e.nameZh||'').includes(searchQuery);
+        return isCardioEx && matchSearch;
+      }
       const matchMuscle = !selectedMuscle || e.muscleGroup === selectedMuscle;
       const matchEquip = selectedEquipment === 'all' || e.equipment === selectedEquipment;
       const matchSearch = !searchQuery || e.name.toLowerCase().includes(searchQuery.toLowerCase()) || (e.nameZh||'').includes(searchQuery);
-      return matchMuscle && matchEquip && matchSearch;
+      return !isCardioEx && matchMuscle && matchEquip && matchSearch;
     });
-  }, [allExercises, selectedMuscle, selectedEquipment, searchQuery]);
+  }, [allExercises, selectedMuscle, selectedEquipment, searchQuery, exerciseLibMode]);
 
   // Auto-restore today's latest session from sessions list
   useEffect(() => {
@@ -576,6 +583,63 @@ export default function Workout() {
 
         {/* Exercise Library Tab */}
         <TabsContent value="exercises" className="mt-4">
+          {/* Strength / Cardio mode toggle */}
+          <div className="flex gap-2 mb-4">
+            <Button variant={exerciseLibMode === 'strength' ? 'default' : 'outline'} size="sm" className="gap-1.5"
+              onClick={() => setExerciseLibMode('strength')}>
+              <Dumbbell className="w-4 h-4" /> 肌肉訓練
+            </Button>
+            <Button variant={exerciseLibMode === 'cardio' ? 'default' : 'outline'} size="sm" className="gap-1.5"
+              onClick={() => setExerciseLibMode('cardio')}>
+              <Flame className="w-4 h-4" /> 有氧
+            </Button>
+          </div>
+
+          {exerciseLibMode === 'cardio' ? (
+            /* Cardio Exercise Grid */
+            <div className="space-y-3">
+              <div className="relative max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input placeholder="搜尋有氧動作…" className="pl-9" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {filteredExercises.map((ex: any, i) => (
+                  <div key={i} className="bg-card border border-orange-200/40 rounded-xl p-4 hover:border-orange-400/60 transition-colors cursor-pointer"
+                    onClick={() => { setDetailExercise(ex); setShowExerciseDetail(true); }}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-2xl">🚴</span>
+                          <div>
+                            <p className="font-semibold text-foreground text-sm leading-tight">{ex.name}</p>
+                            <p className="text-xs text-muted-foreground">{ex.nameZh}</p>
+                          </div>
+                        </div>
+                        {ex.instructions && (
+                          <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{ex.instructions}</p>
+                        )}
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          <Badge className="text-xs bg-orange-100 text-orange-700 border-orange-200">有氧</Badge>
+                          <Badge variant="outline" className="text-xs">{ex.equipment}</Badge>
+                        </div>
+                      </div>
+                      {activeSession && (
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 shrink-0"
+                          onClick={(e) => { e.stopPropagation(); setSelectedExercise(ex); setSetForm({ reps: 0, weight: 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {filteredExercises.length === 0 && (
+                  <div className="col-span-3 text-center py-8">
+                    <p className="text-muted-foreground text-sm">找不到相關有氧動作</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
             {/* Filters */}
             <div className="space-y-4">
@@ -704,6 +768,7 @@ export default function Workout() {
               </div>
             </div>
           </div>
+          )}
         </TabsContent>
 
         {/* History & Charts Tab */}
@@ -964,8 +1029,27 @@ export default function Workout() {
                     <Input type="number" value={setForm.reps} onChange={e => setSetForm(f => ({ ...f, reps: Number(e.target.value) }))} />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Weight (kg)</label>
-                    <Input type="number" step="0.5" value={setForm.weight} onChange={e => setSetForm(f => ({ ...f, weight: Number(e.target.value) }))} />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs text-muted-foreground">Weight</label>
+                      <div className="flex rounded-md overflow-hidden border border-border text-xs">
+                        <button className={`px-2 py-0.5 transition-colors ${weightUnit === 'kg' ? 'bg-primary text-primary-foreground' : 'bg-transparent text-muted-foreground hover:bg-muted'}`}
+                          onClick={() => {
+                            if (weightUnit === 'lbs') {
+                              setSetForm(f => ({ ...f, weight: parseFloat((f.weight / 2.20462).toFixed(2)) }));
+                              setWeightUnit('kg');
+                            }
+                          }}>kg</button>
+                        <button className={`px-2 py-0.5 transition-colors ${weightUnit === 'lbs' ? 'bg-primary text-primary-foreground' : 'bg-transparent text-muted-foreground hover:bg-muted'}`}
+                          onClick={() => {
+                            if (weightUnit === 'kg') {
+                              setSetForm(f => ({ ...f, weight: parseFloat((f.weight * 2.20462).toFixed(1)) }));
+                              setWeightUnit('lbs');
+                            }
+                          }}>lbs</button>
+                      </div>
+                    </div>
+                    <Input type="number" step="0.5" value={setForm.weight}
+                      onChange={e => setSetForm(f => ({ ...f, weight: Number(e.target.value) }))} />
                   </div>
                 </div>
                 <div>
@@ -974,7 +1058,13 @@ export default function Workout() {
                 </div>
                 <div className="bg-muted/50 rounded-xl p-3 text-center">
                   <p className="text-xs text-muted-foreground">Volume</p>
-                  <p className="text-xl font-bold text-foreground">{Math.round(setForm.reps * setForm.weight)} <span className="text-sm font-normal">kg</span></p>
+                  {weightUnit === 'lbs' ? (
+                    <p className="text-xl font-bold text-foreground">{Math.round(setForm.reps * setForm.weight)} <span className="text-sm font-normal">lbs</span>
+                      <span className="text-xs text-muted-foreground ml-2">({Math.round(setForm.reps * setForm.weight / 2.20462)} kg)</span>
+                    </p>
+                  ) : (
+                    <p className="text-xl font-bold text-foreground">{Math.round(setForm.reps * setForm.weight)} <span className="text-sm font-normal">kg</span></p>
+                  )}
                 </div>
               </>
             )}

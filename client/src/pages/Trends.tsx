@@ -740,6 +740,42 @@ function WorkoutCharts({ days, goals }: { days: number; goals: GoalRecord[] }) {
   );
 }
 
+// ─── Cardio History Chart ───────────────────────────────────────────────────
+function CardioHistoryChart({ days }: { days: number }) {
+  const { data, isLoading, error, refetch } = trpc.charts.cardioHistory.useQuery({ days });
+  if (isLoading) return <ChartSkeleton />;
+  if (error) return <ErrorChart message={String(error)} onRetry={refetch} />;
+  if (!data || !data.length) return <EmptyChart message="No cardio data yet. Log cardio sessions (Stationary Bike, Treadmill, etc.) to see trends." />;
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium">🚴 有氧訓練消耗</CardTitle>
+          <TrendBadge values={data.map(d => d.calories)} unit=" kcal" />
+        </div>
+        <CardDescription className="text-xs">Calories burned from cardio machines per session</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ResponsiveContainer width="100%" height={220}>
+          <ComposedChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 5 }} barSize={days <= 30 ? 14 : 6}>
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
+            <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+            <YAxis yAxisId="cal" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" unit=" kcal" />
+            <YAxis yAxisId="dur" orientation="right" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" unit=" min" />
+            <Tooltip {...TooltipStyle} formatter={(v: number, name: string) => name === 'Duration' ? [`${v} min`, name] : [`${v} kcal`, name]} />
+            <Bar yAxisId="cal" dataKey="calories" fill="#f97316" name="Calories" radius={[3, 3, 0, 0]} />
+            <Line yAxisId="dur" type="monotone" dataKey="durationMin" stroke="#22c55e" strokeWidth={2} dot={{ r: 3, fill: '#22c55e' }} name="Duration" connectNulls />
+          </ComposedChart>
+        </ResponsiveContainer>
+        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground justify-center">
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-500 inline-block"></span> Calories (kcal)</span>
+          <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-green-500 inline-block"></span> Duration (min)</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Weekly Exercise Calorie Chart ──────────────────────────────────────────
 function WeeklyExerciseCaloriesChart({ weeks }: { weeks: number }) {
   const { data, isLoading, error, refetch } = trpc.charts.weeklyExerciseCalories.useQuery({ weeks });
@@ -924,6 +960,9 @@ export default function Trends() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="col-span-full">
               <WeeklyExerciseCaloriesChart weeks={days <= 30 ? 4 : days <= 90 ? 8 : 16} />
+            </div>
+            <div className="col-span-full">
+              <CardioHistoryChart days={days} />
             </div>
           </div>
           <div className="mt-4">

@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Pill, Trash2, Edit2, Loader2, ArrowUpDown, AlertTriangle, Package, RefreshCw, Download, ShoppingCart, History, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Pill, Trash2, Edit2, Loader2, ArrowUpDown, AlertTriangle, Package, RefreshCw, Download, ShoppingCart, History, ExternalLink, ChevronDown, ChevronUp, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 const CATEGORIES = ['protein', 'vitamin', 'mineral', 'omega3', 'pre_workout', 'post_workout', 'probiotic', 'collagen', 'creatine', 'bcaa', 'electrolyte', 'antioxidant', 'joint', 'liver', 'hormone', 'adaptogen', 'nmn', 'amino_acid', 'diuretic', 'other'] as const;
@@ -747,12 +747,27 @@ export default function Supplements() {
           ] as const).map(({ key, label, icon }) => {
             const items = todaySchedule.groups[key] ?? [];
             if (items.length === 0) return null;
+            const slotAllTaken = items.every((i: any) => i.takenToday);
+            const slotUntaken = items.filter((i: any) => !i.takenToday);
             return (
               <div key={key} className="bg-card border border-border rounded-2xl p-4">
-                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                  <span>{icon}</span> {label}
-                  <span className="ml-auto text-xs text-muted-foreground">{items.filter((i: any) => i.takenToday).length}/{items.length}</span>
-                </h3>
+                <div className="flex items-center gap-2 mb-3">
+                  <h3 className="text-sm font-semibold flex items-center gap-2 flex-1">
+                    <span>{icon}</span> {label}
+                    <span className="text-xs text-muted-foreground">{items.filter((i: any) => i.takenToday).length}/{items.length}</span>
+                  </h3>
+                  {!slotAllTaken && isOwner && (
+                    <Button size="sm" variant="outline" className="h-7 text-xs px-2.5 gap-1 shrink-0"
+                      disabled={addLog.isPending}
+                      onClick={() => {
+                        slotUntaken.forEach((s: any) => {
+                          addLog.mutate({ supplementId: s.id, date: todayHKString(), quantity: s.dailyDose ?? 1, timeOfDay: key === 'other' ? 'morning' : key as any, notes: '' });
+                        });
+                      }}>
+                      <Check className="w-3 h-3" /> 全部記錄
+                    </Button>
+                  )}
+                </div>
                 <div className="space-y-2">
                   {items.map((s: any) => (
                     <div key={s.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${s.takenToday ? 'bg-green-500/10 border-green-500/30' : 'bg-muted/30 border-border'}`}>

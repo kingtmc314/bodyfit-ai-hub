@@ -21,6 +21,7 @@ import {
   Footprints,
   Stethoscope,
   Pill,
+  Droplets,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
@@ -54,9 +55,10 @@ const navGroups: NavGroup[] = [
     items: [
       { path: "/nutrition",  key: "nutrition",    icon: Utensils,     badgeClass: "icon-badge-yellow" },
       { path: "/body",       key: "body",         icon: Scale,        badgeClass: "icon-badge-green"  },
-      { path: "/heart-rate", key: "heartrate",    icon: Heart,        badgeClass: "icon-badge-red"    },
-      { path: "/sleep",      key: "sleep",        icon: Moon,         badgeClass: "icon-badge-purple" },
-      { path: "/supplements",key: "supplements",  icon: Pill,         badgeClass: "icon-badge-blue"   },
+      { path: "/heart-rate",     key: "heartrate",      icon: Heart,      badgeClass: "icon-badge-red"    },
+      { path: "/blood-pressure",  key: "bloodpressure",  icon: Droplets,   badgeClass: "icon-badge-red"    },
+      { path: "/sleep",           key: "sleep",          icon: Moon,       badgeClass: "icon-badge-purple" },
+      { path: "/supplements",     key: "supplements",    icon: Pill,       badgeClass: "icon-badge-blue"   },
     ],
   },
   {
@@ -162,7 +164,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </Button>
           </div>
         </div>
-        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v3.6.5</p>
+        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v3.7.0</p>
       </div>
     </div>
   );
