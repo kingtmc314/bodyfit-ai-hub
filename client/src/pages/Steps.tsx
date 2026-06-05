@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { useIsOwner } from "@/contexts/OwnerContext";
 import { toast } from "sonner";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Footprints, Trash2, Edit2, Loader2, ArrowUpDown, TrendingUp, Building2 } from "lucide-react";
+import { Plus, Footprints, Trash2, Edit2, Loader2, ArrowUpDown, TrendingUp, Building2, Settings, Target, CheckCircle2, X } from "lucide-react";
 import LogPhotoUploader, { LogPhotoUploaderRef } from "@/components/LogPhotoUploader";
 import ScreenshotImporter from "@/components/ScreenshotImporter";
 import { useTranslation } from "react-i18next";
@@ -23,8 +23,8 @@ const defaultForm = {
   activeMinutes: "", calories: "", notes: ""
 };
 
-const STEP_GOAL = 10000;
-const FLOOR_GOAL = 10;
+const DEFAULT_STEP_GOAL = 10000;
+const DEFAULT_FLOOR_GOAL = 10;
 
 function StepGoalRing({ steps, goal }: { steps: number; goal: number }) {
   const pct = Math.min(steps / goal, 1);
@@ -76,6 +76,29 @@ export default function Steps() {
   const photoUploaderRef = useRef<LogPhotoUploaderRef>(null);
   const [sort, setSort] = useState<'date_desc' | 'date_asc' | 'steps_desc' | 'floors_desc'>('date_desc');
   const [search, setSearch] = useState('');
+  const [stepGoal, setStepGoal] = useState<number>(() => {
+    const saved = localStorage.getItem('bf-step-goal');
+    return saved ? Number(saved) : DEFAULT_STEP_GOAL;
+  });
+  const [floorGoal, setFloorGoal] = useState<number>(() => {
+    const saved = localStorage.getItem('bf-floor-goal');
+    return saved ? Number(saved) : DEFAULT_FLOOR_GOAL;
+  });
+  const [showGoalDialog, setShowGoalDialog] = useState(false);
+  const [goalForm, setGoalForm] = useState({ steps: String(stepGoal), floors: String(floorGoal) });
+
+  const handleSaveGoals = useCallback(() => {
+    const s = Number(goalForm.steps);
+    const f = Number(goalForm.floors);
+    if (!s || s < 100 || s > 100000) return toast.error('步數目標需在 100 至 100,000 之間');
+    if (!f || f < 1 || f > 200) return toast.error('樓層目標需在 1 至 200 之間');
+    setStepGoal(s);
+    setFloorGoal(f);
+    localStorage.setItem('bf-step-goal', String(s));
+    localStorage.setItem('bf-floor-goal', String(f));
+    setShowGoalDialog(false);
+    toast.success('目標已更新');
+  }, [goalForm]);
 
   const utils = trpc.useUtils();
   const { data: records = [], isLoading } = trpc.steps.getAll.useQuery({ limit: 365 });
@@ -188,6 +211,9 @@ export default function Steps() {
               重新計算卡路里
             </Button>
           )}
+          <Button variant="outline" size="sm" onClick={() => { setGoalForm({ steps: String(stepGoal), floors: String(floorGoal) }); setShowGoalDialog(true); }} className="gap-1.5 text-xs">
+            <Target className="w-3.5 h-3.5" /> 設定目標
+          </Button>
           {isOwner && (
             <Button onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }} className="gap-2">
               <Plus className="w-4 h-4" /> {t('steps.add')}
@@ -196,18 +222,50 @@ export default function Steps() {
         </div>
       </div>
 
+      {/* Achievement stats row */}
+      {records.length > 0 && (() => {
+        const last7recs = records.slice(0, 7);
+        const last30recs = records.slice(0, 30);
+        const hit7 = last7recs.filter(r => (r.steps ?? 0) >= stepGoal).length;
+        const hit30 = last30recs.filter(r => (r.steps ?? 0) >= stepGoal).length;
+        const pct7 = last7recs.length ? Math.round(hit7 / last7recs.length * 100) : 0;
+        const pct30 = last30recs.length ? Math.round(hit30 / last30recs.length * 100) : 0;
+        return (
+          <div className="bg-gradient-to-r from-green-500/10 to-blue-500/10 border border-green-500/20 rounded-2xl p-4 flex flex-wrap gap-4 items-center">
+            <div className="flex items-center gap-2">
+              <Target className="w-4 h-4 text-green-500" />
+              <span className="text-sm font-medium text-foreground">步數目標達標率</span>
+            </div>
+            <div className="flex gap-6 flex-wrap">
+              <div className="text-center">
+                <p className="text-lg font-bold text-green-500">{pct7}%</p>
+                <p className="text-xs text-muted-foreground">迗7日 ({hit7}/{last7recs.length}天)</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-bold text-blue-500">{pct30}%</p>
+                <p className="text-xs text-muted-foreground">迗30日 ({hit30}/{last30recs.length}天)</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-bold text-amber-500">{stepGoal.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">每日目標步數</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Today's summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center gap-2">
           <p className="text-xs text-muted-foreground">{t('steps.today_steps')}</p>
-          <StepGoalRing steps={today?.steps ?? 0} goal={STEP_GOAL} />
-          <p className="text-xs text-muted-foreground">{t('steps.goal')}: {STEP_GOAL.toLocaleString()}</p>
+          <StepGoalRing steps={today?.steps ?? 0} goal={stepGoal} />
+          <p className="text-xs text-muted-foreground">{t('steps.goal')}: {stepGoal.toLocaleString()}</p>
         </div>
         <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center justify-center gap-1">
           <Building2 className="w-6 h-6 text-blue-400" />
           <p className="text-2xl font-bold text-foreground">{today?.floorsClimbed ?? 0}</p>
           <p className="text-xs text-muted-foreground">{t('steps.today_floors')}</p>
-          <p className="text-xs text-muted-foreground">{t('steps.goal')}: {FLOOR_GOAL}</p>
+          <p className="text-xs text-muted-foreground">{t('steps.goal')}: {floorGoal}</p>
         </div>
         <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center justify-center gap-1">
           <TrendingUp className="w-6 h-6 text-green-400" />
@@ -283,12 +341,12 @@ export default function Steps() {
                     <tr key={r.id} className="border-b border-border last:border-0 hover:bg-muted/20">
                       <td className="px-4 py-3 font-medium whitespace-nowrap">{formatHKDate(r.date)}</td>
                       <td className="px-4 py-3">
-                        <span className={`font-semibold ${(r.steps ?? 0) >= STEP_GOAL ? 'text-green-400' : 'text-foreground'}`}>
+                        <span className={`font-semibold ${(r.steps ?? 0) >= stepGoal ? 'text-green-400' : 'text-foreground'}`}>
                           {r.steps?.toLocaleString() ?? '—'}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`font-semibold ${(r.floorsClimbed ?? 0) >= FLOOR_GOAL ? 'text-blue-400' : 'text-foreground'}`}>
+                        <span className={`font-semibold ${(r.floorsClimbed ?? 0) >= floorGoal ? 'text-blue-400' : 'text-foreground'}`}>
                           {r.floorsClimbed ?? '—'}
                         </span>
                       </td>
@@ -385,6 +443,31 @@ export default function Steps() {
               {(addMutation.isPending || updateMutation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {t('common.save')}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Goal Setting Dialog */}
+      <Dialog open={showGoalDialog} onOpenChange={setShowGoalDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Target className="w-4 h-4 text-primary" />設定每日目標</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">每日步數目標</label>
+              <Input type="number" min={100} max={100000} step={500} value={goalForm.steps}
+                onChange={e => setGoalForm(f => ({ ...f, steps: e.target.value }))} />
+              <p className="text-xs text-muted-foreground mt-1">建議：8,000–8,000 步（一般成人），10,000 步（活躍目標）</p>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">每日樓層目標</label>
+              <Input type="number" min={1} max={200} step={1} value={goalForm.floors}
+                onChange={e => setGoalForm(f => ({ ...f, floors: e.target.value }))} />
+              <p className="text-xs text-muted-foreground mt-1">建議：10 層（一般成人）</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowGoalDialog(false)}>取消</Button>
+            <Button onClick={handleSaveGoals}>儲存目標</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

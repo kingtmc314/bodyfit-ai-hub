@@ -313,3 +313,13 @@
 - [x] Steps: auto-recalc now triggers on floorsClimbed change too
 - [x] Steps: backfillCalories now recalculates ALL records (not just 0/null) using new formula
 - [x] Update version to v3.9.2
+
+## v3.9.3 (2026-06-05)
+- [x] Workout: added getPRHistory server query (returns each exercise's PR weight, reps, date, session name)
+- [x] Workout: added "個人最佳" (PR) tab in Workout page (4th tab with 🏆 icon)
+- [x] Workout: PR tab UI — cards with exercise name, muscle group badge, PR weight (kg/lbs toggle), reps, date; search + sort by weight/name/date
+- [x] Steps: stepGoal and floorGoal stored in localStorage (bf-step-goal, bf-floor-goal), default 10000/10
+- [x] Steps: added 設定目標 button in header; goal dialog with validation
+- [x] Steps: achievement stats banner showing 7-day and 30-day goal hit rate
+- [x] Steps: goal ring and log table row highlighting use dynamic stepGoal/floorGoal
+- [x] Update version to v3.9.3

@@ -743,6 +743,59 @@ const workoutRouter = router({
       }
       return prMap;
     }),
+
+  // Get full PR history: each exercise's all-time best set with date achieved
+  getPRHistory: publicProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      // For each exercise, get the set with the highest weight and the session date
+      const rows = await db.execute(sql`
+        SELECT
+          ws."exerciseName",
+          ws.weight as pr_weight,
+          ws.reps as pr_reps,
+          sess."startTime" as achieved_at,
+          sess.name as session_name
+        FROM workout_sets ws
+        INNER JOIN workout_sessions sess ON ws."sessionId" = sess.id
+        WHERE sess."userId" = ${OWNER_USER_ID}
+          AND ws.weight IS NOT NULL
+          AND ws.weight > 0
+          AND ws.weight = (
+            SELECT MAX(ws2.weight)
+            FROM workout_sets ws2
+            INNER JOIN workout_sessions sess2 ON ws2."sessionId" = sess2.id
+            WHERE sess2."userId" = ${OWNER_USER_ID}
+              AND ws2."exerciseName" = ws."exerciseName"
+              AND ws2.weight IS NOT NULL
+          )
+        ORDER BY ws.weight DESC, sess."startTime" DESC
+      `);
+      const resultRows = (rows as any).rows ?? rows;
+      // Deduplicate: one entry per exercise (keep highest weight, earliest date if tie)
+      const seen = new Set<string>();
+      const prs: Array<{
+        exerciseName: string;
+        prWeight: number;
+        prReps: number | null;
+        achievedAt: string | null;
+        sessionName: string | null;
+      }> = [];
+      for (const row of resultRows) {
+        if (!seen.has(row.exerciseName)) {
+          seen.add(row.exerciseName);
+          prs.push({
+            exerciseName: row.exerciseName,
+            prWeight: Number(row.pr_weight),
+            prReps: row.pr_reps ? Number(row.pr_reps) : null,
+            achievedAt: row.achieved_at ? new Date(row.achieved_at).toISOString() : null,
+            sessionName: row.session_name ?? null,
+          });
+        }
+      }
+      return prs;
+    }),
 });
 
 // ─── Body Metrics Router ──────────────────────────────────────────────────────
