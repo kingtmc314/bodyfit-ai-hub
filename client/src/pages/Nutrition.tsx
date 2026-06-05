@@ -62,12 +62,17 @@ export default function Nutrition() {
   const [dialogDate, setDialogDate] = useState(() => todayHKString());
   const [mealType, setMealType] = useState<MealType>("breakfast");
   const [searchQuery, setSearchQuery] = useState("");
-  const [form, setForm] = useState<FoodEntry>({ name: "", quantity: 100, calories: 0, protein: 0, carbs: 0, fat: 0 });
+  const [form, setForm] = useState<FoodEntry>({ name: "", quantity: 100, calories: 0, protein: 0, carbs: 0, fat: 0, fiber: undefined });
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [aiResult, setAiResult] = useState<any>(null);
   const [copyMenuId, setCopyMenuId] = useState<number | null>(null);
+  const [showAILookup, setShowAILookup] = useState(false);
+  const [aiLookupRestaurant, setAILookupRestaurant] = useState("");
+  const [aiLookupFood, setAILookupFood] = useState("");
+  const [aiLookupQty, setAILookupQty] = useState(100);
+  const [aiLookupResult, setAILookupResult] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -109,7 +114,7 @@ export default function Nutrition() {
     onError: () => { setAnalyzing(false); toast.error("Analysis failed"); },
   });
 
-  const resetForm = () => setForm({ name: "", quantity: 100, calories: 0, protein: 0, carbs: 0, fat: 0 });
+  const resetForm = () => setForm({ name: "", quantity: 100, calories: 0, protein: 0, carbs: 0, fat: 0, fiber: undefined });
 
   // Fetch all exercise calories burned for the selected date (workout + running + steps)
   const { data: workoutCalData } = trpc.workout.getDailyCaloriesBurned.useQuery({ date: selectedDate });
@@ -184,6 +189,28 @@ export default function Nutrition() {
       setAnalyzing(false);
       toast.error("Upload failed");
     }
+  };
+
+  const lookupFoodMutation = trpc.nutrition.lookupFoodNutrition.useMutation({
+    onSuccess: (data) => { setAILookupResult(data); },
+    onError: (e) => { toast.error('AI 查詢失敗: ' + e.message); },
+  });
+
+  const handleApplyAILookup = () => {
+    if (!aiLookupResult) return;
+    setForm({
+      name: aiLookupResult.nameZh || aiLookupResult.name,
+      quantity: aiLookupResult.quantity,
+      calories: aiLookupResult.calories,
+      protein: aiLookupResult.protein,
+      carbs: aiLookupResult.carbs,
+      fat: aiLookupResult.fat,
+      fiber: aiLookupResult.fiber,
+    });
+    setAILookupResult(null);
+    setShowAILookup(false);
+    setAILookupRestaurant("");
+    setAILookupFood("");
   };
 
   const handleAddFromAI = (food: any) => {
@@ -433,6 +460,63 @@ export default function Nutrition() {
             <DialogTitle>{editEntry ? "Edit Meal Entry" : "Log Meal"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {/* AI Food Lookup */}
+            {isOwner && (
+              <div className="border border-border rounded-xl p-3 bg-muted/30">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    AI 食物熱量查詢
+                  </div>
+                  <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowAILookup(v => !v)}>
+                    {showAILookup ? '收起' : '展開'}
+                  </button>
+                </div>
+                {showAILookup && (
+                  <div className="space-y-2">
+                    <Input placeholder="餐廳/品牌名稱（可選）" value={aiLookupRestaurant} onChange={e => setAILookupRestaurant(e.target.value)} className="h-8 text-xs" />
+                    <Input placeholder="食品名稱（必填）" value={aiLookupFood} onChange={e => setAILookupFood(e.target.value)} className="h-8 text-xs" />
+                    <div className="flex items-center gap-2">
+                      <Input type="number" placeholder="分量 (g)" value={aiLookupQty} onChange={e => setAILookupQty(Number(e.target.value))} className="h-8 text-xs w-24" />
+                      <Button size="sm" className="h-8 text-xs flex-1" disabled={!aiLookupFood.trim() || lookupFoodMutation.isPending}
+                        onClick={() => lookupFoodMutation.mutate({ restaurantName: aiLookupRestaurant || undefined, foodName: aiLookupFood, quantity: aiLookupQty })}>
+                        {lookupFoodMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Sparkles className="w-3.5 h-3.5 mr-1" />}
+                        AI 查詢
+                      </Button>
+                    </div>
+                    {aiLookupResult && (
+                      <div className="bg-card border border-border rounded-lg p-2.5 text-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-foreground">{aiLookupResult.nameZh || aiLookupResult.name}</span>
+                          <span className="text-muted-foreground">{aiLookupResult.quantity}{aiLookupResult.unit}</span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1 text-center">
+                          <div className="bg-orange-100 dark:bg-orange-900/30 rounded p-1">
+                            <div className="font-bold text-orange-600">{aiLookupResult.calories}</div>
+                            <div className="text-muted-foreground">kcal</div>
+                          </div>
+                          <div className="bg-blue-100 dark:bg-blue-900/30 rounded p-1">
+                            <div className="font-bold text-blue-600">{aiLookupResult.protein}g</div>
+                            <div className="text-muted-foreground">蛋白</div>
+                          </div>
+                          <div className="bg-yellow-100 dark:bg-yellow-900/30 rounded p-1">
+                            <div className="font-bold text-yellow-600">{aiLookupResult.carbs}g</div>
+                            <div className="text-muted-foreground">碳水</div>
+                          </div>
+                          <div className="bg-red-100 dark:bg-red-900/30 rounded p-1">
+                            <div className="font-bold text-red-600">{aiLookupResult.fat}g</div>
+                            <div className="text-muted-foreground">脂肪</div>
+                          </div>
+                        </div>
+                        {aiLookupResult.fiber > 0 && <div className="text-muted-foreground">纖維: {aiLookupResult.fiber}g</div>}
+                        {aiLookupResult.notes && <div className="text-muted-foreground italic">{aiLookupResult.notes}</div>}
+                        <Button size="sm" className="w-full h-7 text-xs mt-1" onClick={handleApplyAILookup}>套用此熱量資料</Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Date</label>
               <Input type="date" value={dialogDate} onChange={e => setDialogDate(e.target.value)} />

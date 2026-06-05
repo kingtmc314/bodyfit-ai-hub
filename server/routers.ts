@@ -225,6 +225,60 @@ const nutritionRouter = router({
       const { url } = await storagePut(key, buffer, input.mimeType);
       return { url, key };
     }),
+
+  // AI text-based food nutrition lookup: restaurant name + food name -> macros
+  lookupFoodNutrition: ownerProcedure
+    .input(z.object({
+      restaurantName: z.string().optional(),
+      foodName: z.string().min(1),
+      quantity: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const context = input.restaurantName
+        ? `The food is from restaurant/brand: "${input.restaurantName}". Food item: "${input.foodName}".`
+        : `Food item: "${input.foodName}".`;
+      const qty = input.quantity ?? 100;
+      const response = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `You are a professional nutritionist with extensive knowledge of restaurant menus and food databases worldwide, including Hong Kong restaurants. Provide accurate nutritional estimates based on the food name and restaurant context. Always respond with valid JSON only.`
+          },
+          {
+            role: "user",
+            content: `${context} Estimate the nutritional content for ${qty}g (or 1 serving if weight is unclear). Provide the response as JSON with this exact structure: {"name":"Food Name","nameZh":"食物中文名","quantity":${qty},"unit":"g","calories":250,"protein":15,"carbs":30,"fat":8,"fiber":2,"confidence":"high","notes":"Brief note about the estimate"}`
+          }
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "food_nutrition_lookup",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                nameZh: { type: "string" },
+                quantity: { type: "number" },
+                unit: { type: "string" },
+                calories: { type: "number" },
+                protein: { type: "number" },
+                carbs: { type: "number" },
+                fat: { type: "number" },
+                fiber: { type: "number" },
+                confidence: { type: "string" },
+                notes: { type: "string" },
+              },
+              required: ["name", "nameZh", "quantity", "unit", "calories", "protein", "carbs", "fat", "fiber", "confidence", "notes"],
+              additionalProperties: false
+            }
+          }
+        }
+      });
+      const rawMsg = response.choices[0]?.message?.content;
+      const contentStr = typeof rawMsg === "string" ? rawMsg : "{}";
+      return JSON.parse(contentStr);
+    }),
 });
 
 // ─── Workout Router ───────────────────────────────────────────────────────────
@@ -744,57 +798,53 @@ const workoutRouter = router({
       return prMap;
     }),
 
-  // Get full PR history: each exercise's all-time best set with date achieved
+  // Get full PR history: each exercise's all-time best set with date achieved + previous PR for delta
   getPRHistory: publicProcedure
     .query(async () => {
       const db = await getDb();
       if (!db) return [];
-      // For each exercise, get the set with the highest weight and the session date
+      // For each exercise, get the top 2 distinct weights to calculate delta
       const rows = await db.execute(sql`
-        SELECT
-          ws."exerciseName",
-          ws.weight as pr_weight,
-          ws.reps as pr_reps,
-          sess."startTime" as achieved_at,
-          sess.name as session_name
-        FROM workout_sets ws
-        INNER JOIN workout_sessions sess ON ws."sessionId" = sess.id
-        WHERE sess."userId" = ${OWNER_USER_ID}
-          AND ws.weight IS NOT NULL
-          AND ws.weight > 0
-          AND ws.weight = (
-            SELECT MAX(ws2.weight)
-            FROM workout_sets ws2
-            INNER JOIN workout_sessions sess2 ON ws2."sessionId" = sess2.id
-            WHERE sess2."userId" = ${OWNER_USER_ID}
-              AND ws2."exerciseName" = ws."exerciseName"
-              AND ws2.weight IS NOT NULL
-          )
-        ORDER BY ws.weight DESC, sess."startTime" DESC
+        WITH ranked_weights AS (
+          SELECT
+            ws."exerciseName",
+            ws.weight,
+            ws.reps,
+            sess."startTime" as achieved_at,
+            sess.name as session_name,
+            DENSE_RANK() OVER (PARTITION BY ws."exerciseName" ORDER BY ws.weight DESC) as weight_rank
+          FROM workout_sets ws
+          INNER JOIN workout_sessions sess ON ws."sessionId" = sess.id
+          WHERE sess."userId" = ${OWNER_USER_ID}
+            AND ws.weight IS NOT NULL
+            AND ws.weight > 0
+        )
+        SELECT * FROM ranked_weights WHERE weight_rank <= 2
+        ORDER BY weight DESC, achieved_at DESC
       `);
       const resultRows = (rows as any).rows ?? rows;
-      // Deduplicate: one entry per exercise (keep highest weight, earliest date if tie)
-      const seen = new Set<string>();
-      const prs: Array<{
-        exerciseName: string;
-        prWeight: number;
-        prReps: number | null;
-        achievedAt: string | null;
-        sessionName: string | null;
-      }> = [];
+      // Build map: exerciseName -> { pr (rank 1), prevPr (rank 2) }
+      const prMap = new Map<string, { prWeight: number; prReps: number | null; achievedAt: string | null; sessionName: string | null; prevWeight: number | null }>();
       for (const row of resultRows) {
-        if (!seen.has(row.exerciseName)) {
-          seen.add(row.exerciseName);
-          prs.push({
-            exerciseName: row.exerciseName,
-            prWeight: Number(row.pr_weight),
-            prReps: row.pr_reps ? Number(row.pr_reps) : null,
+        const name = row.exerciseName;
+        const rank = Number(row.weight_rank);
+        if (rank === 1 && !prMap.has(name)) {
+          prMap.set(name, {
+            prWeight: Number(row.weight),
+            prReps: row.reps ? Number(row.reps) : null,
             achievedAt: row.achieved_at ? new Date(row.achieved_at).toISOString() : null,
             sessionName: row.session_name ?? null,
+            prevWeight: null,
           });
+        } else if (rank === 2 && prMap.has(name)) {
+          const entry = prMap.get(name)!;
+          entry.prevWeight = Number(row.weight);
         }
       }
-      return prs;
+      return Array.from(prMap.values()).map((v, i) => ({
+        exerciseName: Array.from(prMap.keys())[i],
+        ...v,
+      }));
     }),
 });
 
@@ -1385,9 +1435,12 @@ const dashboardRouter = router({
     // Fall back to stored BMR from body composition if profile not set
     const storedBmr = latestBody[0]?.bmr ? Number(latestBody[0].bmr) : null;
     const bmr = calculatedBmr ?? storedBmr;
-    // TDEE = BMR (sedentary baseline) + today's actual exercise calories
+    // Daily calorie target = BMR (sedentary baseline)
+    // Net calories = intake - exercise burned
+    // Remaining = BMR - net calories (i.e. how much more you can eat after accounting for exercise)
+    // Do NOT add exercise to target — exercise is already deducted from net calories
     const baseTdee = bmr ?? 2000;
-    const dailyCalorieTarget = baseTdee + totalCaloriesBurned;
+    const dailyCalorieTarget = baseTdee; // target is BMR only; exercise is already in net calc
     const activityFactor = 1; // not used with new formula, kept for compatibility
 
     return {

@@ -14,7 +14,7 @@ import ScreenshotImporter from "@/components/ScreenshotImporter";
 import { useTranslation } from "react-i18next";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend
+  Tooltip, ResponsiveContainer, Legend, ReferenceLine
 } from "recharts";
 
 const defaultForm = {
@@ -295,6 +295,8 @@ export default function Steps() {
                 <YAxis tick={{ fontSize: 10, fill: "oklch(0.60 0.010 240)" }} axisLine={false} tickLine={false} width={45} tickFormatter={v => v >= 1000 ? `${v / 1000}k` : v} />
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="steps" name={t('steps.steps')} fill="oklch(0.75 0.17 280)" radius={[3, 3, 0, 0]} />
+                <ReferenceLine y={stepGoal} stroke="oklch(0.68 0.22 25)" strokeDasharray="6 3" strokeWidth={1.5}
+                  label={{ value: `目標 ${stepGoal >= 1000 ? `${stepGoal / 1000}k` : stepGoal}`, position: 'insideTopRight', fontSize: 10, fill: 'oklch(0.68 0.22 25)' }} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -307,6 +309,8 @@ export default function Steps() {
                 <YAxis tick={{ fontSize: 10, fill: "oklch(0.60 0.010 240)" }} axisLine={false} tickLine={false} width={30} />
                 <Tooltip content={<CustomTooltip />} />
                 <Area dataKey="floors" name={t('steps.floors')} stroke="oklch(0.65 0.18 200)" fill="oklch(0.65 0.18 200 / 0.2)" strokeWidth={2} />
+                <ReferenceLine y={floorGoal} stroke="oklch(0.68 0.22 25)" strokeDasharray="6 3" strokeWidth={1.5}
+                  label={{ value: `目標 ${floorGoal}F`, position: 'insideTopRight', fontSize: 10, fill: 'oklch(0.68 0.22 25)' }} />
               </AreaChart>
             </ResponsiveContainer>
           </div>

@@ -267,9 +267,10 @@ function SleepWindowChart({ data }: { data: SleepWindowEntry[] }) {
   const valid = data.filter(d => d.bedtime != null && d.waketime != null);
   if (!valid.length) return <div className="h-[220px] flex items-center justify-center text-muted-foreground text-sm">No bedtime/waketime data</div>;
 
-  // Y domain: from -6 (22:00 prev day) to 12 (noon)
-  const Y_MIN = -6;
-  const Y_MAX = 12;
+  // Y domain: from -2 (22:00 prev day) to 10 (10:00 next morning)
+  // With reversed=true, Y_MIN (-2 = 22:00) appears at TOP, Y_MAX (10 = 10:00) at BOTTOM
+  const Y_MIN = -2;
+  const Y_MAX = 10;
 
   // Build bar data: base = bedtime, length = waketime - bedtime (handles midnight crossover)
   const barData = valid.map(d => {
@@ -327,7 +328,7 @@ function SleepWindowChart({ data }: { data: SleepWindowEntry[] }) {
           tick={{ fontSize: 10 }}
           stroke="hsl(var(--muted-foreground))"
           domain={[Y_MIN, Y_MAX]}
-          ticks={[-4, -2, 0, 2, 4, 6, 8, 10]}
+          ticks={[-2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
           tickFormatter={yTickFmt}
           width={42}
           reversed

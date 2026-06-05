@@ -323,3 +323,14 @@
 - [x] Steps: achievement stats banner showing 7-day and 30-day goal hit rate
 - [x] Steps: goal ring and log table row highlighting use dynamic stepGoal/floorGoal
 - [x] Update version to v3.9.3
+
+## v3.10.0 (2026-06-05)
+- [x] Fix: Sleep chart Y-axis — 22:00 bedtime at top, 10:00 waketime at bottom (reversed domain + corrected ticks)
+- [x] Fix: Nutrition fiber input — resetForm and edit mode now include fiber field correctly
+- [x] Fix: Calorie formula — dailyCalorieTarget now uses BMR only (not BMR+exercise), prevents double-counting
+- [x] Feature: PR improvement delta — prevWeight shown on PR card, +X kg delta shown as green badge
+- [x] Feature: Steps chart — orange dashed reference line at stepGoal, teal dashed line at floorGoal
+- [x] Feature: AI food nutrition lookup — input restaurant + food name in Nutrition add dialog, AI returns kcal/protein/fat/carbs/fiber and auto-fills form
+- [x] Verified: All DB connections use Supabase PostgreSQL (drizzle-orm/node-postgres), no MySQL
+- [x] Column audit completed; user decided to keep all columns
+- [x] Update version to v3.10.0

@@ -1089,6 +1089,9 @@ export default function Workout() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {filtered.map((pr, i) => {
                     const displayWeight = prUnit === 'lbs' ? Math.round(pr.prWeight * 2.20462) : pr.prWeight;
+                    const displayPrevWeight = pr.prevWeight != null ? (prUnit === 'lbs' ? Math.round(pr.prevWeight * 2.20462) : pr.prevWeight) : null;
+                    const delta = pr.prevWeight != null ? pr.prWeight - pr.prevWeight : null;
+                    const displayDelta = delta != null ? (prUnit === 'lbs' ? Math.round(delta * 2.20462) : Math.round(delta * 10) / 10) : null;
                     const achievedDate = pr.achievedAt ? new Date(pr.achievedAt).toLocaleDateString('zh-HK', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit' }) : '—';
                     const ex = allExercises.find(e => e.name === pr.exerciseName || (e as any).nameZh === pr.exerciseName);
                     return (
@@ -1107,6 +1110,15 @@ export default function Workout() {
                           <span className="text-sm text-muted-foreground mb-0.5">{prUnit}</span>
                           {pr.prReps && <span className="text-xs text-muted-foreground mb-0.5 ml-1">× {pr.prReps} reps</span>}
                         </div>
+                        {/* PR delta: prev PR → current PR */}
+                        {displayPrevWeight != null && displayDelta != null && (
+                          <div className="flex items-center gap-1.5 text-xs mb-2">
+                            <span className="text-muted-foreground">{displayPrevWeight} {prUnit}</span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className="text-amber-500 font-semibold">{displayWeight} {prUnit}</span>
+                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-bold">+{displayDelta} {prUnit}</span>
+                          </div>
+                        )}
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <Timer className="w-3 h-3" />
                           <span>{achievedDate}</span>
