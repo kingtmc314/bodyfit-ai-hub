@@ -1315,20 +1315,11 @@ const insightsRouter = router({
         messages: [
           {
             role: "system",
-            content: `You are an expert personal health coach, nutritionist, and sports scientist. You have access to comprehensive health data including nutrition, strength training, cardio, sleep, heart rate, blood pressure, running, daily steps, supplements, body composition, and health goals. Analyze ALL available data holistically and provide personalized, actionable insights. Identify patterns, correlations between different health metrics, and areas for improvement. Write in a supportive, professional tone. Use markdown formatting with headers, bullet points, and emphasis. Respond in Traditional Chinese (繁體中文) primarily, with key terms also in English.`
+            content: `你是一位專業的個人健康教練、營養師及運動科學家。你必須完全使用繁體中文（Traditional Chinese）回答，不得使用英文段落或英文標題。你可以在括號內附上英文術語作補充說明，但主要內容必須全部為繁體中文。請使用 Markdown 格式（標題、粗體、列表）。你可以查閱用戶的全面健康數據，包括飲食、力量訓練、有氧運動、睡眠、心率、血壓、跑步、每日步數、補充品、身體成份及健康目標，請從整體角度分析所有數據，找出規律和各指標之間的關聯，並提供個人化、具體可行的建議。`
           },
           {
             role: "user",
-            content: `Here is my comprehensive health data from the past 7 days. Please provide a thorough ${input.type || "overall"} analysis:\n\n${dataContext}\n\nPlease analyze:\n1. **整體健康概況** (Overall Health Summary) - key metrics and trends
-2. **飲食分析** (Nutrition) - calorie/macro balance, meal patterns
-3. **訓練分析** (Training) - workout frequency, volume, cardio vs strength balance
-4. **恢復與睡眠** (Recovery & Sleep) - sleep quality, HRV, body battery trends
-5. **心血管健康** (Cardiovascular) - heart rate, blood pressure patterns if available
-6. **活動量** (Activity) - steps, running, overall movement
-7. **補充品依從性** (Supplement Adherence) - consistency with supplement plan
-8. **目標進度** (Goal Progress) - progress toward active health goals
-9. **本週重點建議** (Key Recommendations) - 3-5 specific actionable items
-10. **下週目標** (Next Week Focus) - specific targets to aim for`
+            content: `以下是我過去7天的全面健康數據，請提供詳盡的${input.type === 'nutrition' ? '飲食' : input.type === 'workout' ? '訓練' : input.type === 'recovery' ? '恢復與睡眠' : '整體健康'}分析：\n\n${dataContext}\n\n請用繁體中文分析以下各項（必須全部使用繁體中文）：\n1. **整體健康概況** — 本週關鍵指標及趨勢\n2. **飲食分析** — 卡路里/宏量營養素平衡、飲食模式\n3. **訓練分析** — 訓練頻率、訓練量、有氧與力量訓練比例\n4. **恢復與睡眠** — 睡眠質量、HRV、身體恢復趨勢\n5. **心血管健康** — 心率、血壓模式（如有數據）\n6. **活動量** — 步數、跑步、整體活動情況\n7. **補充品依從性** — 補充品計劃的一致性\n8. **目標進度** — 現有健康目標的進展\n9. **本週重點建議** — 3至5項具體可行的改善建議\n10. **下週目標** — 下週應達成的具體目標`
           }
         ]
       });

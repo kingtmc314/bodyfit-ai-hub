@@ -66,6 +66,18 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       }
 
       if (existingOwner) {
+        // If the incoming openId is already bound to this owner row, just update other fields.
+        // If it's bound to a DIFFERENT row, we need to handle the conflict first.
+        if (existingOwner.openId !== user.openId) {
+          // Check if another row already has this openId (would cause unique constraint violation)
+          const conflictRow = await db.select().from(users)
+            .where(eq(users.openId, user.openId)).limit(1).then(r => r[0] ?? null);
+          if (conflictRow && conflictRow.id !== existingOwner.id) {
+            // Nullify the openId on the conflicting row so we can take it for the owner row
+            await db.update(users).set({ openId: sql`NULL` }).where(eq(users.id, conflictRow.id));
+            console.log(`[Auth] Cleared conflicting openId=${user.openId} from user.id=${conflictRow.id}`);
+          }
+        }
         // Update the existing owner row: update openId to the current login's openId
         // so that session token lookup (by openId) resolves to the owner row.
         await db.update(users).set({

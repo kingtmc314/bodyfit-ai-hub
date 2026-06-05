@@ -347,3 +347,9 @@
 - [x] Nutrition: starred foods show ⭐ filled yellow icon; clicking again removes from history with toast confirmation
 - [x] Nutrition: 常用食物 panel shows both AI-queried and manually starred foods (same localStorage bf-food-history)
 - [x] Update version to v3.10.2
+
+## v3.10.3 (2026-06-05)
+- [x] Fix: AI insights system prompt strengthened to enforce strict Traditional Chinese (繁體中文) output — no English paragraphs or headings allowed
+- [x] Fix: User prompt rewritten in Traditional Chinese with explicit instruction to use 繁體中文 for all sections
+- [x] Fix: Login upsert DB conflict — handle duplicate openId constraint by checking for conflicting row and clearing it before owner account merge (prevents "duplicate key value violates unique constraint users_open_id_key")
+- [x] Update version to v3.10.3
