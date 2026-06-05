@@ -288,3 +288,16 @@
 - [x] Edit button in All Sessions history list (opens edit dialog for any past session)
 - [x] updateSession procedure expanded to accept startTime, endTime, caloriesBurned
 - [x] Update version to v3.8.0
+
+## v3.9.0 (2026-06-05)
+- [x] DB schema: create physio_sessions table (id, userId, date, therapist, bodyPart, durationMin, notes, createdAt)
+- [x] DB schema: create physio_exercises table (id, sessionId, name, sets, reps, durationSec, equipment, notes)
+- [x] Migration: applied physio tables to Supabase via node pg
+- [x] tRPC: physioRouter with getSessions, addSession, updateSession, deleteSession, addExercise, deleteExercise
+- [x] Frontend: PhysioTherapy.tsx page with session list, add/edit dialog, exercise log per session, pain scale, stats summary
+- [x] AppLayout.tsx: add 物理治療 nav item linking to /physio (icon-badge-teal)
+- [x] App.tsx: add /physio route
+- [x] i18n: added physio nav key to en.json and zh.json
+- [x] Workout: allow adding exercises to completed sessions (補錄動作 button shown for completed sessions)
+- [x] Nutrition: cross-day copy — dropdown with 複製到今天 / 複製到當前日期
+- [x] Update version to v3.9.0

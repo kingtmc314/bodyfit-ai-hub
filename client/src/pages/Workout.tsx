@@ -576,8 +576,11 @@ export default function Workout() {
                     </div>
                     <div className="flex gap-2 items-center">
                       {activeSession.endTime ? (
-                        // Completed session - edit button + badge
+                        // Completed session - edit + add exercise + badge
                         <>
+                          {isOwner && <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => { setSearchQuery(''); setShowExerciseDialog(true); }}>
+                            <Plus className="w-3.5 h-3.5" /> 補錄動作
+                          </Button>}
                           {isOwner && <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => handleOpenEditSession(activeSession)}>
                             <Edit2 className="w-3.5 h-3.5" /> 修改
                           </Button>}

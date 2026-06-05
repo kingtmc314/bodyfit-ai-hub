@@ -587,3 +587,34 @@ export const bloodPressureLogs = pgTable("blood_pressure_logs", {
 });
 export type BloodPressureLog = typeof bloodPressureLogs.$inferSelect;
 export type InsertBloodPressureLog = typeof bloodPressureLogs.$inferInsert;
+
+// ─── Physiotherapy ────────────────────────────────────────────────────────────
+export const physioSessions = pgTable("physio_sessions", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull(),
+  sessionDate: date("session_date").notNull(),          // YYYY-MM-DD HK date
+  therapist: varchar("therapist", { length: 200 }),     // therapist name / clinic
+  bodyPart: varchar("body_part", { length: 200 }),      // e.g. "Left Knee, Lower Back"
+  durationMin: integer("duration_min"),                 // session length in minutes
+  notes: text("notes"),                                 // progress notes
+  painBefore: integer("pain_before"),                   // 0-10 VAS pain scale
+  painAfter: integer("pain_after"),                     // 0-10 VAS pain scale
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type PhysioSession = typeof physioSessions.$inferSelect;
+export type InsertPhysioSession = typeof physioSessions.$inferInsert;
+
+export const physioExercises = pgTable("physio_exercises", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("session_id").notNull().references(() => physioSessions.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 200 }).notNull(),     // exercise / treatment name
+  sets: integer("sets"),
+  reps: integer("reps"),
+  durationSec: integer("duration_sec"),                 // for timed exercises
+  equipment: varchar("equipment", { length: 100 }),     // e.g. TENS Machine
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type PhysioExercise = typeof physioExercises.$inferSelect;
+export type InsertPhysioExercise = typeof physioExercises.$inferInsert;

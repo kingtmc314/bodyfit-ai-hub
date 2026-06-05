@@ -10,7 +10,8 @@ import {
   healthGoals, runningLogs, runningShoes, races, favouriteExercises,
   dailySteps, medicalConditions, medicalVisits, medicalAttachments,
   supplements, supplementLogs, supplementPurchases, supplementStockAdjustments,
-  runningLogPhotos, stepLogPhotos, customExercises, userProfile, bloodPressureLogs
+  runningLogPhotos, stepLogPhotos, customExercises, userProfile, bloodPressureLogs,
+  physioSessions, physioExercises
 } from "../drizzle/schema";
 import { eq, and, desc, gte, lte, like, or, sql, inArray } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -3988,6 +3989,116 @@ const bloodPressureRouter = router({
     }),
 });
 
+const physioRouter = router({
+  getSessions: publicProcedure
+    .input(z.object({ days: z.number().int().min(1).max(730).default(180) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const sinceStr = daysAgoHK(input.days);
+      const sessions = await db.select().from(physioSessions)
+        .where(and(
+          eq(physioSessions.userId, OWNER_USER_ID),
+          sql`${physioSessions.sessionDate} >= ${sinceStr}`
+        ))
+        .orderBy(desc(physioSessions.sessionDate));
+      // Attach exercises to each session
+      const sessionIds = sessions.map(s => s.id);
+      const exs = sessionIds.length > 0
+        ? await db.select().from(physioExercises).where(inArray(physioExercises.sessionId, sessionIds))
+        : [];
+      return sessions.map(s => ({ ...s, exercises: exs.filter(e => e.sessionId === s.id) }));
+    }),
+
+  addSession: ownerProcedure
+    .input(z.object({
+      sessionDate: z.string(),
+      therapist: z.string().max(200).optional(),
+      bodyPart: z.string().max(200).optional(),
+      durationMin: z.number().int().min(1).max(480).optional(),
+      notes: z.string().max(2000).optional(),
+      painBefore: z.number().int().min(0).max(10).optional(),
+      painAfter: z.number().int().min(0).max(10).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const rows = await db.insert(physioSessions).values({
+        userId: OWNER_USER_ID,
+        sessionDate: input.sessionDate,
+        therapist: input.therapist ?? null,
+        bodyPart: input.bodyPart ?? null,
+        durationMin: input.durationMin ?? null,
+        notes: input.notes ?? null,
+        painBefore: input.painBefore ?? null,
+        painAfter: input.painAfter ?? null,
+      }).returning({ id: physioSessions.id });
+      return rows[0];
+    }),
+
+  updateSession: ownerProcedure
+    .input(z.object({
+      id: z.number().int(),
+      sessionDate: z.string().optional(),
+      therapist: z.string().max(200).nullable().optional(),
+      bodyPart: z.string().max(200).nullable().optional(),
+      durationMin: z.number().int().min(1).max(480).nullable().optional(),
+      notes: z.string().max(2000).nullable().optional(),
+      painBefore: z.number().int().min(0).max(10).nullable().optional(),
+      painAfter: z.number().int().min(0).max(10).nullable().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { id, ...rest } = input;
+      await db.update(physioSessions).set({ ...rest, updatedAt: new Date() }).where(eq(physioSessions.id, id));
+      return { success: true };
+    }),
+
+  deleteSession: ownerProcedure
+    .input(z.object({ id: z.number().int() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.delete(physioSessions).where(eq(physioSessions.id, input.id));
+      return { success: true };
+    }),
+
+  addExercise: ownerProcedure
+    .input(z.object({
+      sessionId: z.number().int(),
+      name: z.string().max(200),
+      sets: z.number().int().min(1).max(100).optional(),
+      reps: z.number().int().min(1).max(1000).optional(),
+      durationSec: z.number().int().min(1).max(7200).optional(),
+      equipment: z.string().max(100).optional(),
+      notes: z.string().max(500).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const rows = await db.insert(physioExercises).values({
+        sessionId: input.sessionId,
+        name: input.name,
+        sets: input.sets ?? null,
+        reps: input.reps ?? null,
+        durationSec: input.durationSec ?? null,
+        equipment: input.equipment ?? null,
+        notes: input.notes ?? null,
+      }).returning({ id: physioExercises.id });
+      return rows[0];
+    }),
+
+  deleteExercise: ownerProcedure
+    .input(z.object({ id: z.number().int() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.delete(physioExercises).where(eq(physioExercises.id, input.id));
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -4016,6 +4127,7 @@ export const appRouter = router({
   supplements: supplementsRouter,
   profile: profileRouter,
   bloodPressure: bloodPressureRouter,
+  physio: physioRouter,
 });
 export type AppRouter = typeof appRouter;
 

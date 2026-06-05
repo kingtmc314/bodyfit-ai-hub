@@ -67,6 +67,7 @@ export default function Nutrition() {
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [aiResult, setAiResult] = useState<any>(null);
+  const [copyMenuId, setCopyMenuId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -336,11 +337,23 @@ export default function Nutrition() {
                       <span className="text-sm font-semibold text-foreground shrink-0">{Math.round(m.calories ?? 0)} kcal</span>
                       {isOwner && (
                         <div className="flex gap-1 shrink-0">
-                          <Button variant="ghost" size="icon" className="w-7 h-7 text-blue-500 hover:text-blue-600" title="複製到今天" onClick={() => {
-                            addMutation.mutate({ date: selectedDate, mealType: m.mealType as MealType, foodName: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? undefined });
-                          }}>
-                            <Copy className="w-3.5 h-3.5" />
-                          </Button>
+                          <div className="relative">
+                            <Button variant="ghost" size="icon" className="w-7 h-7 text-blue-500 hover:text-blue-600" title="複製" onClick={() => setCopyMenuId(copyMenuId === m.id ? null : m.id)}>
+                              <Copy className="w-3.5 h-3.5" />
+                            </Button>
+                            {copyMenuId === m.id && (
+                              <div className="absolute right-0 top-8 z-50 bg-popover border border-border rounded-xl shadow-xl py-1 min-w-[140px]" onClick={() => setCopyMenuId(null)}>
+                                <button className="w-full text-left px-3 py-2 text-xs hover:bg-accent rounded-lg"
+                                  onClick={() => { addMutation.mutate({ date: todayHKString(), mealType: m.mealType as MealType, foodName: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? undefined }); toast.success('已複製到今天'); }}>
+                                  複製到今天
+                                </button>
+                                <button className="w-full text-left px-3 py-2 text-xs hover:bg-accent rounded-lg"
+                                  onClick={() => { addMutation.mutate({ date: selectedDate, mealType: m.mealType as MealType, foodName: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? undefined }); toast.success(`已複製到 ${selectedDate}`); }}>
+                                  複製到當前日期
+                                </button>
+                              </div>
+                            )}
+                          </div>
                           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditEntry(m); setDialogDate(m.logDate ?? selectedDate); setForm({ name: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? undefined }); setMealType(m.mealType as MealType); setShowAddDialog(true); }}>
                             <Edit2 className="w-3.5 h-3.5" />
                           </Button>

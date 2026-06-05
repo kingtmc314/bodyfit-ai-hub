@@ -65,6 +65,7 @@ const navGroups: NavGroup[] = [
     groupKey: "group_records",
     items: [
       { path: "/medical",  key: "medical",  icon: Stethoscope, badgeClass: "icon-badge-red"    },
+      { path: "/physio",   key: "physio",   icon: Activity,    badgeClass: "icon-badge-teal"   },
       { path: "/photos",   key: "photos",   icon: Camera,      badgeClass: "icon-badge-blue"   },
       { path: "/import",   key: "import",   icon: Upload,      badgeClass: "icon-badge-green"  },
     ],
@@ -164,7 +165,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </Button>
           </div>
         </div>
-        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v3.8.0</p>
+        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v3.9.0</p>
       </div>
     </div>
   );
