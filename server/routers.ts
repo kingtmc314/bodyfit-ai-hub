@@ -529,8 +529,17 @@ const workoutRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const { id, ...data } = input;
-      await db.update(workoutSets).set(data).where(eq(workoutSets.id, id));
+      const { id, reps, weight, duration, distance, avgHr, calories, notes } = input;
+      // Use explicit Drizzle column mapping to avoid quoted-identifier SQL errors on Supabase
+      await db.update(workoutSets).set({
+        ...(reps !== undefined ? { reps } : {}),
+        ...(weight !== undefined ? { weight } : {}),
+        ...(duration !== undefined ? { duration } : {}),
+        ...(distance !== undefined ? { distance } : {}),
+        ...(avgHr !== undefined ? { avgHr } : {}),
+        ...(calories !== undefined ? { calories } : {}),
+        ...(notes !== undefined ? { notes } : {}),
+      }).where(eq(workoutSets.id, id));
       return { success: true };
     }),
 
@@ -4408,6 +4417,22 @@ const foodFavoritesRouter = router({
     if (!db || !ctx.user) throw new Error('DB not available');
     await db.delete(foodFavorites)
       .where(and(eq(foodFavorites.foodName, input.foodName), eq(foodFavorites.userId, ctx.user.id)));
+    return { success: true };
+  }),
+  rename: ownerProcedure.input(z.object({ id: z.number(), newName: z.string().min(1) })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) throw new Error('DB not available');
+    await db.update(foodFavorites)
+      .set({ foodName: input.newName })
+      .where(and(eq(foodFavorites.id, input.id), eq(foodFavorites.userId, ctx.user.id)));
+    return { success: true };
+  }),
+  bulkRemove: ownerProcedure.input(z.object({ ids: z.array(z.number()) })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) throw new Error('DB not available');
+    if (input.ids.length === 0) return { success: true };
+    await db.delete(foodFavorites)
+      .where(and(inArray(foodFavorites.id, input.ids), eq(foodFavorites.userId, ctx.user.id)));
     return { success: true };
   }),
 });

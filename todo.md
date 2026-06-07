@@ -379,3 +379,12 @@
 - [x] Nutrition.tsx: Analysis history tab — shows last 20 AI analyses from DB, quick re-add food items
 - [x] Nutrition.tsx: After successful AI analysis, auto-saves to food_analysis_history DB table
 - [x] Bump version to v3.12.0
+
+## v3.12.1 Bug Fix + Favorites Management (2026-06-07)
+- [x] Fix updateSet: use explicit Drizzle column mapping instead of spread {...data} to avoid quoted-identifier SQL errors on Supabase PostgreSQL
+- [x] Add foodFavorites.rename procedure: update foodName by id
+- [x] Add foodFavorites.bulkRemove procedure: delete multiple favorites by id array
+- [x] Nutrition.tsx: add showManageFavs, selectedFavIds, renamingFav state
+- [x] Nutrition.tsx: add 管理 button in favorites section header
+- [x] Nutrition.tsx: add 管理常用食物 dialog with inline rename, single delete, bulk select/delete
+- [x] Bump version to v3.12.1

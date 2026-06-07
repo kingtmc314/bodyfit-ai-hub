@@ -77,6 +77,10 @@ export default function Nutrition() {
   const [aiLookupQty, setAILookupQty] = useState(100);
   const [aiLookupResult, setAILookupResult] = useState<any>(null);
   const [showFavorites, setShowFavorites] = useState(false);
+  const [showManageFavs, setShowManageFavs] = useState(false);
+  const [selectedFavIds, setSelectedFavIds] = useState<Set<number>>(new Set());
+  const [renamingFav, setRenamingFav] = useState<{ id: number; name: string } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   // AI Photo dialog state
   const [photoDialogTab, setPhotoDialogTab] = useState<'single' | 'batch' | 'history'>('single');
@@ -104,6 +108,18 @@ export default function Nutrition() {
   const removeFavoriteByNameMutation = trpc.foodFavorites.removeByName.useMutation({
     onSuccess: () => utils.foodFavorites.list.invalidate(),
     onError: (e) => toast.error('移除失敗: ' + e.message),
+  });
+  const removeFavoriteMutation = trpc.foodFavorites.remove.useMutation({
+    onSuccess: () => { utils.foodFavorites.list.invalidate(); toast.success('已刪除'); },
+    onError: (e) => toast.error('刪除失敗: ' + e.message),
+  });
+  const renameFavoriteMutation = trpc.foodFavorites.rename.useMutation({
+    onSuccess: () => { utils.foodFavorites.list.invalidate(); setRenamingFav(null); toast.success('已重命名'); },
+    onError: (e) => toast.error('重命名失敗: ' + e.message),
+  });
+  const bulkRemoveFavoriteMutation = trpc.foodFavorites.bulkRemove.useMutation({
+    onSuccess: () => { utils.foodFavorites.list.invalidate(); setSelectedFavIds(new Set()); toast.success('已批量刪除'); },
+    onError: (e) => toast.error('批量刪除失敗: ' + e.message),
   });
 
   // ─── AI photo analysis history ───────────────────────────────────────────────
@@ -592,9 +608,14 @@ export default function Nutrition() {
                     <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
                     常用食物
                   </div>
-                  <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowFavorites(v => !v)}>
-                    {showFavorites ? '收起' : `展開 (${favoriteFoods.length})`}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button className="text-xs text-primary hover:text-primary/80 font-medium" onClick={() => { setShowManageFavs(true); setSelectedFavIds(new Set()); setRenamingFav(null); }}>
+                      管理
+                    </button>
+                    <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowFavorites(v => !v)}>
+                      {showFavorites ? '收起' : `展開 (${favoriteFoods.length})`}
+                    </button>
+                  </div>
                 </div>
                 {showFavorites && (
                   <div className="space-y-1.5 max-h-48 overflow-y-auto">
@@ -986,6 +1007,106 @@ export default function Nutrition() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+      {/* ─── Manage Favorites Dialog ─────────────────────────────────────────── */}
+      <Dialog open={showManageFavs} onOpenChange={(open) => { setShowManageFavs(open); if (!open) { setSelectedFavIds(new Set()); setRenamingFav(null); } }}>
+        <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+              管理常用食物
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-1 pr-1">
+            {favoriteFoods.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">尚無常用食物</p>
+            ) : (
+              favoriteFoods.map((food: any) => (
+                <div key={food.id} className={`flex items-center gap-2 rounded-xl border px-3 py-2 transition-colors ${
+                  selectedFavIds.has(food.id) ? 'border-primary/50 bg-primary/5' : 'border-border bg-card'
+                }`}>
+                  {/* Checkbox */}
+                  <button
+                    className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                      selectedFavIds.has(food.id) ? 'bg-primary border-primary' : 'border-muted-foreground/40'
+                    }`}
+                    onClick={() => setSelectedFavIds(prev => {
+                      const next = new Set(prev);
+                      next.has(food.id) ? next.delete(food.id) : next.add(food.id);
+                      return next;
+                    })}
+                  >
+                    {selectedFavIds.has(food.id) && <CheckCircle2 className="w-3 h-3 text-white" />}
+                  </button>
+                  {/* Name / rename inline */}
+                  {renamingFav?.id === food.id ? (
+                    <div className="flex-1 flex items-center gap-1.5">
+                      <Input
+                        className="h-7 text-xs flex-1"
+                        value={renameValue}
+                        onChange={e => setRenameValue(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && renameValue.trim()) renameFavoriteMutation.mutate({ id: food.id, newName: renameValue.trim() });
+                          if (e.key === 'Escape') setRenamingFav(null);
+                        }}
+                        autoFocus
+                      />
+                      <Button size="sm" className="h-7 text-xs px-2" disabled={!renameValue.trim() || renameFavoriteMutation.isPending}
+                        onClick={() => renameValue.trim() && renameFavoriteMutation.mutate({ id: food.id, newName: renameValue.trim() })}>
+                        {renameFavoriteMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : '確認'}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => setRenamingFav(null)}>取消</Button>
+                    </div>
+                  ) : (
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{food.foodName}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {Math.round(food.calories ?? 0)} kcal · {food.servingSize ?? 100}{food.servingUnit || 'g'}
+                        {food.protein != null && ` · 蛋白 ${Math.round(food.protein)}g`}
+                      </p>
+                    </div>
+                  )}
+                  {/* Action buttons */}
+                  {renamingFav?.id !== food.id && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                        onClick={() => { setRenamingFav({ id: food.id, name: food.foodName }); setRenameValue(food.foodName); }}
+                        title="重命名">
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500"
+                        onClick={() => removeFavoriteMutation.mutate({ id: food.id })}
+                        disabled={removeFavoriteMutation.isPending}
+                        title="刪除">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+          {/* Footer actions */}
+          <div className="border-t border-border pt-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => {
+                if (selectedFavIds.size === favoriteFoods.length) setSelectedFavIds(new Set());
+                else setSelectedFavIds(new Set(favoriteFoods.map((f: any) => f.id)));
+              }}>
+                {selectedFavIds.size === favoriteFoods.length ? '取消全選' : '全選'}
+              </Button>
+              {selectedFavIds.size > 0 && (
+                <Button size="sm" variant="destructive" className="text-xs h-8 gap-1"
+                  disabled={bulkRemoveFavoriteMutation.isPending}
+                  onClick={() => bulkRemoveFavoriteMutation.mutate({ ids: Array.from(selectedFavIds) })}>
+                  {bulkRemoveFavoriteMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                  刪除已選 ({selectedFavIds.size})
+                </Button>
+              )}
+            </div>
+            <Button size="sm" variant="ghost" className="text-xs h-8" onClick={() => setShowManageFavs(false)}>關閉</Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
