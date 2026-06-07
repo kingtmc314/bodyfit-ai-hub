@@ -635,3 +635,31 @@ export const fastingLogs = pgTable("fasting_logs", {
 });
 export type FastingLog = typeof fastingLogs.$inferSelect;
 export type InsertFastingLog = typeof fastingLogs.$inferInsert;
+
+// ─── Food Favorites ───────────────────────────────────────────────────────────
+export const foodFavorites = pgTable("food_favorites", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  foodName: varchar("foodName", { length: 255 }).notNull(),
+  calories: real("calories"),
+  protein: real("protein"),
+  carbs: real("carbs"),
+  fat: real("fat"),
+  servingSize: real("servingSize"),
+  servingUnit: varchar("servingUnit", { length: 50 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type FoodFavorite = typeof foodFavorites.$inferSelect;
+export type InsertFoodFavorite = typeof foodFavorites.$inferInsert;
+
+// ─── Food Analysis History ────────────────────────────────────────────────────
+export const foodAnalysisHistory = pgTable("food_analysis_history", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  photoUrl: text("photoUrl"),
+  analysisResult: text("analysisResult").notNull(), // JSON string of detected foods
+  totalCalories: real("totalCalories"),
+  analyzedAt: timestamp("analyzedAt").defaultNow().notNull(),
+});
+export type FoodAnalysisHistory = typeof foodAnalysisHistory.$inferSelect;
+export type InsertFoodAnalysisHistory = typeof foodAnalysisHistory.$inferInsert;

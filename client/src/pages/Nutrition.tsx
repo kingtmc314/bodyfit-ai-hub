@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Camera, Search, Trash2, Edit2, X, Loader2, Utensils, Copy,
   Flame, Beef, Wheat, Droplets, ChevronDown, Upload, Sparkles,
-  ChevronLeft, ChevronRight, Star
+  ChevronLeft, ChevronRight, Star, History, Images, CheckCircle2
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -36,6 +36,13 @@ type MealType = typeof MEAL_TYPES[number];
 interface FoodEntry {
   name: string; nameZh?: string; quantity: number; calories: number;
   protein: number; carbs: number; fat: number; fiber?: number;
+}
+
+interface BatchPhoto {
+  preview: string;
+  base64: string;
+  status: 'pending' | 'analyzing' | 'done' | 'error';
+  result?: any;
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -63,56 +70,47 @@ export default function Nutrition() {
   const [mealType, setMealType] = useState<MealType>("breakfast");
   const [searchQuery, setSearchQuery] = useState("");
   const [form, setForm] = useState<FoodEntry>({ name: "", quantity: 100, calories: 0, protein: 0, carbs: 0, fat: 0, fiber: undefined });
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [aiResult, setAiResult] = useState<any>(null);
   const [copyMenuId, setCopyMenuId] = useState<number | null>(null);
   const [showAILookup, setShowAILookup] = useState(false);
   const [aiLookupRestaurant, setAILookupRestaurant] = useState("");
   const [aiLookupFood, setAILookupFood] = useState("");
   const [aiLookupQty, setAILookupQty] = useState(100);
   const [aiLookupResult, setAILookupResult] = useState<any>(null);
-  const [showRecentFoods, setShowRecentFoods] = useState(false);
-  const [foodHistory, setFoodHistory] = useState<any[]>(() => {
-    try { return JSON.parse(localStorage.getItem('bf-food-history') || '[]'); } catch { return []; }
-  });
+  const [showFavorites, setShowFavorites] = useState(false);
+
+  // AI Photo dialog state
+  const [photoDialogTab, setPhotoDialogTab] = useState<'single' | 'batch' | 'history'>('single');
+  // Single photo
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [aiResult, setAiResult] = useState<any>(null);
+  // Batch photos
+  const [batchPhotos, setBatchPhotos] = useState<BatchPhoto[]>([]);
+  const [batchAnalyzing, setBatchAnalyzing] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-
-  const saveFoodToHistory = (food: any) => {
-    const key = `${(food.nameZh || food.name).toLowerCase()}|${(food.restaurantName || '').toLowerCase()}`;
-    const entry = { ...food, key, savedAt: Date.now() };
-    setFoodHistory(prev => {
-      const filtered = prev.filter((f: any) => f.key !== key);
-      const updated = [entry, ...filtered].slice(0, 30);
-      localStorage.setItem('bf-food-history', JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  const applyFoodFromHistory = (food: any) => {
-    setForm({
-      name: food.nameZh || food.name,
-      quantity: food.quantity,
-      calories: food.calories,
-      protein: food.protein,
-      carbs: food.carbs,
-      fat: food.fat,
-      fiber: food.fiber,
-    });
-    setShowRecentFoods(false);
-  };
-
-  const clearFoodHistory = () => {
-    setFoodHistory([]);
-    localStorage.removeItem('bf-food-history');
-    toast.success('已清除查詢記錄');
-  };
+  const batchFileInputRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
+
+  // ─── DB-backed food favorites ────────────────────────────────────────────────
+  const { data: favoriteFoods = [] } = trpc.foodFavorites.list.useQuery(undefined, { enabled: isOwner });
+  const addFavoriteMutation = trpc.foodFavorites.add.useMutation({
+    onSuccess: () => utils.foodFavorites.list.invalidate(),
+    onError: (e) => toast.error('加入常用食物失敗: ' + e.message),
+  });
+  const removeFavoriteByNameMutation = trpc.foodFavorites.removeByName.useMutation({
+    onSuccess: () => utils.foodFavorites.list.invalidate(),
+    onError: (e) => toast.error('移除失敗: ' + e.message),
+  });
+
+  // ─── AI photo analysis history ───────────────────────────────────────────────
+  const { data: analysisHistory = [] } = trpc.foodAnalysisHistory.list.useQuery(undefined, { enabled: isOwner });
+  const saveAnalysisHistoryMutation = trpc.foodAnalysisHistory.save.useMutation();
+
   const { data: meals = [], isLoading } = trpc.nutrition.getMealLogs.useQuery({ date: selectedDate });
-  // Calculate 6 days ago in HK timezone: use HK midnight offset to avoid UTC date boundary issues
   const [weekStartDate] = useState(() => {
     const hkNow = new Date(Date.now() + 8 * 3600 * 1000);
     hkNow.setUTCDate(hkNow.getUTCDate() - 6);
@@ -127,38 +125,44 @@ export default function Nutrition() {
   );
 
   const addMutation = trpc.nutrition.addMealLog.useMutation({
-    onSuccess: () => { utils.nutrition.getMealLogs.invalidate(); utils.nutrition.getMealLogsRange.invalidate(); toast.success("Meal logged!"); setShowAddDialog(false); resetForm(); },
+    onSuccess: () => { utils.nutrition.getMealLogs.invalidate(); utils.nutrition.getMealLogsRange.invalidate(); toast.success("已記錄餐食！"); setShowAddDialog(false); resetForm(); },
     onError: (e) => toast.error(e.message),
   });
   const updateMutation = trpc.nutrition.updateMealLog.useMutation({
     onSuccess: () => {
       utils.nutrition.getMealLogs.invalidate();
       utils.nutrition.getMealLogsRange.invalidate();
-      toast.success("Updated!");
+      toast.success("已更新！");
       setEditEntry(null);
       setShowAddDialog(false);
     },
   });
   const deleteMutation = trpc.nutrition.deleteMealLog.useMutation({
-    onSuccess: () => { utils.nutrition.getMealLogs.invalidate(); utils.nutrition.getMealLogsRange.invalidate(); toast.success("Deleted"); },
+    onSuccess: () => { utils.nutrition.getMealLogs.invalidate(); utils.nutrition.getMealLogsRange.invalidate(); toast.success("已刪除"); },
   });
-  const uploadPhotoMutation = trpc.nutrition.uploadFoodPhoto.useMutation();
   const analyzePhotoMutation = trpc.nutrition.analyzeFoodPhoto.useMutation({
-    onSuccess: (data) => { setAiResult(data); setAnalyzing(false); },
-    onError: () => { setAnalyzing(false); toast.error("Analysis failed"); },
+    onSuccess: (data) => {
+      setAiResult(data);
+      setAnalyzing(false);
+      // Save to analysis history
+      saveAnalysisHistoryMutation.mutate({
+        analysisResult: JSON.stringify(data.foods || []),
+        totalCalories: data.totalCalories,
+      }, {
+        onSuccess: () => utils.foodAnalysisHistory.list.invalidate(),
+      });
+    },
+    onError: () => { setAnalyzing(false); toast.error("分析失敗，請重試"); },
   });
 
   const resetForm = () => setForm({ name: "", quantity: 100, calories: 0, protein: 0, carbs: 0, fat: 0, fiber: undefined });
 
-  // Fetch all exercise calories burned for the selected date (workout + running + steps)
   const { data: workoutCalData } = trpc.workout.getDailyCaloriesBurned.useQuery({ date: selectedDate });
   const workoutCaloriesBurned = workoutCalData?.caloriesBurned ?? 0;
   const runningCaloriesBurned = workoutCalData?.runningBurned ?? 0;
   const stepsCaloriesBurned = workoutCalData?.stepsBurned ?? 0;
   const totalCaloriesBurned = workoutCalData?.totalBurned ?? workoutCaloriesBurned;
-  const workoutSessions = workoutCalData?.sessions ?? [];
 
-  // Fetch TDEE-based dynamic calorie target (uses BMR from latest body composition)
   const { data: dashSummary } = trpc.dashboard.getSummary.useQuery();
   const dynamicCalorieGoal = dashSummary?.tdee?.dailyCalorieTarget ?? GOALS.calories;
   const hasBmr = dashSummary?.tdee?.hasBmr ?? false;
@@ -186,7 +190,6 @@ export default function Nutrition() {
       map[dateKey].fat += (m.fat ?? 0);
     });
     return Array.from({ length: 7 }, (_, i) => {
-      // Compute HK date string for (6-i) days ago using HK midnight offset
       const hkTs = new Date(Date.now() + 8 * 3600 * 1000);
       hkTs.setUTCDate(hkTs.getUTCDate() - (6 - i));
       const d = hkTs.toISOString().slice(0, 10);
@@ -211,20 +214,76 @@ export default function Nutrition() {
       setPhotoBase64(result.split(",")[1]);
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleAnalyze = () => {
     if (!photoBase64) return;
     setAnalyzing(true);
-    // Pass base64 directly to avoid S3 upload (works on all hosting environments)
     analyzePhotoMutation.mutate({ imageBase64: photoBase64, mimeType: "image/jpeg" });
+  };
+
+  // Batch photo handling
+  const handleBatchFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const newPhotos: BatchPhoto[] = [];
+    let loaded = 0;
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        newPhotos.push({
+          preview: dataUrl,
+          base64: dataUrl.split(',')[1],
+          status: 'pending',
+        });
+        loaded++;
+        if (loaded === files.length) {
+          setBatchPhotos(prev => [...prev, ...newPhotos]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const handleBatchAnalyze = async () => {
+    if (batchPhotos.length === 0 || batchAnalyzing) return;
+    setBatchAnalyzing(true);
+    for (let i = 0; i < batchPhotos.length; i++) {
+      if (batchPhotos[i].status === 'done') continue;
+      setBatchPhotos(prev => prev.map((p, idx) => idx === i ? { ...p, status: 'analyzing' } : p));
+      try {
+        const result = await analyzePhotoMutation.mutateAsync({ imageBase64: batchPhotos[i].base64, mimeType: "image/jpeg" });
+        setBatchPhotos(prev => prev.map((p, idx) => idx === i ? { ...p, status: 'done', result } : p));
+        // Save to history
+        saveAnalysisHistoryMutation.mutate({
+          analysisResult: JSON.stringify(result.foods || []),
+          totalCalories: result.totalCalories,
+        }, { onSuccess: () => utils.foodAnalysisHistory.list.invalidate() });
+      } catch {
+        setBatchPhotos(prev => prev.map((p, idx) => idx === i ? { ...p, status: 'error' } : p));
+      }
+    }
+    setBatchAnalyzing(false);
   };
 
   const lookupFoodMutation = trpc.nutrition.lookupFoodNutrition.useMutation({
     onSuccess: (data) => {
       setAILookupResult(data);
-      // Save to history with restaurant name for context
-      saveFoodToHistory({ ...data, restaurantName: aiLookupRestaurant || '' });
+      // Also save to DB favorites automatically
+      if (isOwner) {
+        addFavoriteMutation.mutate({
+          foodName: data.nameZh || data.name,
+          calories: data.calories,
+          protein: data.protein,
+          carbs: data.carbs,
+          fat: data.fat,
+          servingSize: data.quantity,
+          servingUnit: data.unit || 'g',
+        });
+      }
     },
     onError: (e) => { toast.error('AI 查詢失敗: ' + e.message); },
   });
@@ -247,19 +306,40 @@ export default function Nutrition() {
   };
 
   const handleAddFromAI = (food: any) => {
-    setForm({ name: food.name, nameZh: food.nameZh, quantity: food.quantity, calories: food.calories, protein: food.protein, carbs: food.carbs, fat: food.fat, fiber: food.fiber });
+    setForm({ name: food.nameZh || food.name, quantity: food.quantity, calories: food.calories, protein: food.protein, carbs: food.carbs, fat: food.fat, fiber: food.fiber });
     setDialogDate(selectedDate);
     setShowPhotoDialog(false);
     setShowAddDialog(true);
   };
 
+  const applyFavorite = (fav: any) => {
+    setForm({
+      name: fav.foodName,
+      quantity: fav.servingSize ?? 100,
+      calories: fav.calories ?? 0,
+      protein: fav.protein ?? 0,
+      carbs: fav.carbs ?? 0,
+      fat: fav.fat ?? 0,
+    });
+    setShowFavorites(false);
+  };
+
   const handleSubmit = () => {
-    if (!form.name) return toast.error("Food name required");
+    if (!form.name) return toast.error("請輸入食物名稱");
     if (editEntry) {
       updateMutation.mutate({ id: editEntry.id, date: dialogDate, mealType, foodName: form.name, quantity: form.quantity, calories: form.calories, protein: form.protein, carbs: form.carbs, fat: form.fat, fiber: form.fiber });
     } else {
       addMutation.mutate({ date: dialogDate, mealType, foodName: form.name, quantity: form.quantity, calories: form.calories, protein: form.protein, carbs: form.carbs, fat: form.fat, fiber: form.fiber });
     }
+  };
+
+  const openPhotoDialog = () => {
+    setPhotoPreview(null);
+    setPhotoBase64(null);
+    setAiResult(null);
+    setBatchPhotos([]);
+    setPhotoDialogTab('single');
+    setShowPhotoDialog(true);
   };
 
   return (
@@ -289,7 +369,7 @@ export default function Nutrition() {
             <Button variant="ghost" size="sm" className="text-xs h-8 px-2 text-primary" onClick={() => setSelectedDate(todayHKString())}>Today</Button>
           )}
           {isOwner && (
-            <Button onClick={() => setShowPhotoDialog(true)} variant="outline" size="sm" className="gap-2">
+            <Button onClick={openPhotoDialog} variant="outline" size="sm" className="gap-2">
               <Camera className="w-4 h-4" /> AI Photo
             </Button>
           )}
@@ -387,68 +467,59 @@ export default function Nutrition() {
                 <p className="text-muted-foreground text-sm px-5 py-4 text-center">No entries yet</p>
               ) : (
                 <div className="divide-y divide-border">
-                  {mealGroups[type].map(m => (
-                    <div key={m.id} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{m.foodName}</p>
-                        <p className="text-xs text-muted-foreground">{m.servings * 100}g · P:{Math.round(m.protein ?? 0)}g C:{Math.round(m.carbs ?? 0)}g F:{Math.round(m.fat ?? 0)}g</p>
-                      </div>
-
-                      <span className="text-sm font-semibold text-foreground shrink-0">{Math.round(m.calories ?? 0)} kcal</span>
-                      {isOwner && (
-                        <div className="flex gap-1 shrink-0">
-                          <div className="relative">
-                            <Button variant="ghost" size="icon" className="w-7 h-7 text-blue-500 hover:text-blue-600" title="複製" onClick={() => setCopyMenuId(copyMenuId === m.id ? null : m.id)}>
-                              <Copy className="w-3.5 h-3.5" />
-                            </Button>
-                            {copyMenuId === m.id && (
-                              <div className="absolute right-0 top-8 z-50 bg-popover border border-border rounded-xl shadow-xl py-1 min-w-[140px]" onClick={() => setCopyMenuId(null)}>
-                                <button className="w-full text-left px-3 py-2 text-xs hover:bg-accent rounded-lg"
-                                  onClick={() => { addMutation.mutate({ date: todayHKString(), mealType: m.mealType as MealType, foodName: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? undefined }); toast.success('已複製到今天'); }}>
-                                  複製到今天
-                                </button>
-                                <button className="w-full text-left px-3 py-2 text-xs hover:bg-accent rounded-lg"
-                                  onClick={() => { addMutation.mutate({ date: selectedDate, mealType: m.mealType as MealType, foodName: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? undefined }); toast.success(`已複製到 ${selectedDate}`); }}>
-                                  複製到當前日期
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditEntry(m); setDialogDate(m.logDate ?? selectedDate); setForm({ name: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? undefined }); setMealType(m.mealType as MealType); setShowAddDialog(true); }}>
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </Button>
-                          {(() => {
-                            const histKey = `${m.foodName.toLowerCase()}|`;
-                            const altKey = `${m.foodName.toLowerCase()}|${''}`;
-                            const isStarred = foodHistory.some((f: any) => (f.nameZh || f.name).toLowerCase() === m.foodName.toLowerCase());
-                            return (
-                              <Button variant="ghost" size="icon"
-                                className={`w-7 h-7 ${isStarred ? 'text-yellow-500 hover:text-yellow-600' : 'text-muted-foreground hover:text-yellow-500'}`}
-                                title={isStarred ? '已在常用食物（點擊移除）' : '加入常用食物'}
-                                onClick={() => {
-                                  if (isStarred) {
-                                    setFoodHistory(prev => {
-                                      const updated = prev.filter((f: any) => (f.nameZh || f.name).toLowerCase() !== m.foodName.toLowerCase());
-                                      localStorage.setItem('bf-food-history', JSON.stringify(updated));
-                                      return updated;
-                                    });
-                                    toast.success(`已從常用食物移除 ${m.foodName}`);
-                                  } else {
-                                    saveFoodToHistory({ name: m.foodName, nameZh: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? 0, unit: 'g', restaurantName: '' });
-                                    toast.success(`已將 ${m.foodName} 加入常用食物`);
-                                  }
-                                }}>
-                                <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-yellow-500' : ''}`} />
-                              </Button>
-                            );
-                          })()}
-                          <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: m.id })}>
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
+                  {mealGroups[type].map(m => {
+                    const isStarred = favoriteFoods.some((f: any) => f.foodName.toLowerCase() === m.foodName.toLowerCase());
+                    return (
+                      <div key={m.id} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{m.foodName}</p>
+                          <p className="text-xs text-muted-foreground">{m.servings * 100}g · P:{Math.round(m.protein ?? 0)}g C:{Math.round(m.carbs ?? 0)}g F:{Math.round(m.fat ?? 0)}g</p>
                         </div>
-                      )}
-                    </div>
-                  ))}
+                        <span className="text-sm font-semibold text-foreground shrink-0">{Math.round(m.calories ?? 0)} kcal</span>
+                        {isOwner && (
+                          <div className="flex gap-1 shrink-0">
+                            <div className="relative">
+                              <Button variant="ghost" size="icon" className="w-7 h-7 text-blue-500 hover:text-blue-600" title="複製" onClick={() => setCopyMenuId(copyMenuId === m.id ? null : m.id)}>
+                                <Copy className="w-3.5 h-3.5" />
+                              </Button>
+                              {copyMenuId === m.id && (
+                                <div className="absolute right-0 top-8 z-50 bg-popover border border-border rounded-xl shadow-xl py-1 min-w-[140px]" onClick={() => setCopyMenuId(null)}>
+                                  <button className="w-full text-left px-3 py-2 text-xs hover:bg-accent rounded-lg"
+                                    onClick={() => { addMutation.mutate({ date: todayHKString(), mealType: m.mealType as MealType, foodName: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? undefined }); toast.success('已複製到今天'); }}>
+                                    複製到今天
+                                  </button>
+                                  <button className="w-full text-left px-3 py-2 text-xs hover:bg-accent rounded-lg"
+                                    onClick={() => { addMutation.mutate({ date: selectedDate, mealType: m.mealType as MealType, foodName: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? undefined }); toast.success(`已複製到 ${selectedDate}`); }}>
+                                    複製到當前日期
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditEntry(m); setDialogDate(m.logDate ?? selectedDate); setForm({ name: m.foodName, quantity: m.servings * 100, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, fiber: m.fiber ?? undefined }); setMealType(m.mealType as MealType); setShowAddDialog(true); }}>
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon"
+                              className={`w-7 h-7 ${isStarred ? 'text-yellow-500 hover:text-yellow-600' : 'text-muted-foreground hover:text-yellow-500'}`}
+                              title={isStarred ? '已在常用食物（點擊移除）' : '加入常用食物'}
+                              onClick={() => {
+                                if (isStarred) {
+                                  removeFavoriteByNameMutation.mutate({ foodName: m.foodName });
+                                  toast.success(`已從常用食物移除 ${m.foodName}`);
+                                } else {
+                                  addFavoriteMutation.mutate({ foodName: m.foodName, calories: m.calories ?? 0, protein: m.protein ?? 0, carbs: m.carbs ?? 0, fat: m.fat ?? 0, servingSize: m.servings * 100, servingUnit: 'g' });
+                                  toast.success(`已將 ${m.foodName} 加入常用食物`);
+                                }
+                              }}>
+                              <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-yellow-500' : ''}`} />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: m.id })}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -457,7 +528,6 @@ export default function Nutrition() {
 
         <TabsContent value="charts" className="space-y-4 mt-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Weekly Calories */}
             <div className="bg-card border border-border rounded-2xl p-5">
               <h3 className="font-semibold text-foreground mb-4">Weekly Calorie Intake</h3>
               <ResponsiveContainer width="100%" height={200}>
@@ -470,8 +540,6 @@ export default function Nutrition() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-
-            {/* Today's Macro Distribution */}
             <div className="bg-card border border-border rounded-2xl p-5">
               <h3 className="font-semibold text-foreground mb-4">Today's Macro Distribution (kcal)</h3>
               {totals.calories > 0 ? (
@@ -490,8 +558,6 @@ export default function Nutrition() {
                 <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">Log meals to see distribution</div>
               )}
             </div>
-
-            {/* Weekly Macros Stacked */}
             <div className="bg-card border border-border rounded-2xl p-5 lg:col-span-2">
               <h3 className="font-semibold text-foreground mb-4">Weekly Macro Breakdown</h3>
               <ResponsiveContainer width="100%" height={200}>
@@ -511,50 +577,43 @@ export default function Nutrition() {
         </TabsContent>
       </Tabs>
 
-      {/* Add/Edit Meal Dialog */}
+      {/* ─── Add/Edit Meal Dialog ─────────────────────────────────────────────── */}
       <Dialog open={showAddDialog} onOpenChange={(open) => { setShowAddDialog(open); if (!open) setEditEntry(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{editEntry ? "Edit Meal Entry" : "Log Meal"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            {/* Recent Foods History */}
-            {isOwner && foodHistory.length > 0 && (
+            {/* DB-backed Favourite Foods */}
+            {isOwner && favoriteFoods.length > 0 && (
               <div className="border border-border rounded-xl p-3 bg-muted/20">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground/70">
-                    <span>🕒</span>
+                    <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
                     常用食物
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowRecentFoods(v => !v)}>
-                      {showRecentFoods ? '收起' : `展開 (${foodHistory.length})`}
-                    </button>
-                    {showRecentFoods && (
-                      <button className="text-xs text-destructive hover:text-destructive/80" onClick={clearFoodHistory}>清除</button>
-                    )}
-                  </div>
+                  <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowFavorites(v => !v)}>
+                    {showFavorites ? '收起' : `展開 (${favoriteFoods.length})`}
+                  </button>
                 </div>
-                {showRecentFoods && (
+                {showFavorites && (
                   <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                    {foodHistory.map((food: any, idx: number) => (
-                      <button key={idx} className="w-full text-left bg-card hover:bg-accent border border-border rounded-lg px-3 py-2 transition-colors"
-                        onClick={() => applyFoodFromHistory(food)}>
+                    {favoriteFoods.map((food: any) => (
+                      <button key={food.id} className="w-full text-left bg-card hover:bg-accent border border-border rounded-lg px-3 py-2 transition-colors"
+                        onClick={() => applyFavorite(food)}>
                         <div className="flex items-center justify-between">
                           <div className="min-w-0">
-                            <div className="text-xs font-semibold text-foreground truncate">{food.nameZh || food.name}</div>
-                            {food.restaurantName && <div className="text-[10px] text-muted-foreground truncate">{food.restaurantName}</div>}
+                            <div className="text-xs font-semibold text-foreground truncate">{food.foodName}</div>
                           </div>
                           <div className="text-right shrink-0 ml-2">
-                            <div className="text-xs font-bold text-orange-500">{food.calories} kcal</div>
-                            <div className="text-[10px] text-muted-foreground">{food.quantity}{food.unit || 'g'}</div>
+                            <div className="text-xs font-bold text-orange-500">{Math.round(food.calories ?? 0)} kcal</div>
+                            <div className="text-[10px] text-muted-foreground">{food.servingSize ?? 100}{food.servingUnit || 'g'}</div>
                           </div>
                         </div>
                         <div className="flex gap-2 mt-1 text-[10px] text-muted-foreground">
-                          <span>🥩 {food.protein}g</span>
-                          <span>🍞 {food.carbs}g</span>
-                          <span>🧈 {food.fat}g</span>
-                          {food.fiber > 0 && <span>🌿 {food.fiber}g</span>}
+                          <span>🥩 {Math.round(food.protein ?? 0)}g</span>
+                          <span>🍞 {Math.round(food.carbs ?? 0)}g</span>
+                          <span>🧈 {Math.round(food.fat ?? 0)}g</span>
                         </div>
                       </button>
                     ))}
@@ -687,88 +746,246 @@ export default function Nutrition() {
         </DialogContent>
       </Dialog>
 
-      {/* AI Photo Analysis Dialog */}
+      {/* ─── AI Photo Analysis Dialog ─────────────────────────────────────────── */}
       <Dialog open={showPhotoDialog} onOpenChange={setShowPhotoDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Sparkles className="w-4 h-4 text-primary" /> AI Food Photo Analysis</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Sparkles className="w-4 h-4 text-primary" /> AI 食物相片分析</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            {!photoPreview ? (
-              <div className="border-2 border-dashed border-border rounded-xl p-8 text-center space-y-3">
-                <Camera className="w-10 h-10 text-muted-foreground mx-auto" />
-                <p className="text-sm text-muted-foreground">Upload or capture a food photo</p>
-                <div className="flex gap-2 justify-center">
-                  <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-                    <Upload className="w-4 h-4 mr-2" /> Upload Photo
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => cameraInputRef.current?.click()}>
-                    <Camera className="w-4 h-4 mr-2" /> Take Photo
-                  </Button>
+
+          {/* Tab selector */}
+          <div className="flex gap-1 bg-muted/50 rounded-xl p-1">
+            <button
+              className={`flex-1 text-xs py-1.5 rounded-lg font-medium transition-colors ${photoDialogTab === 'single' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => setPhotoDialogTab('single')}>
+              <Camera className="w-3.5 h-3.5 inline mr-1" />單張分析
+            </button>
+            <button
+              className={`flex-1 text-xs py-1.5 rounded-lg font-medium transition-colors ${photoDialogTab === 'batch' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => setPhotoDialogTab('batch')}>
+              <Images className="w-3.5 h-3.5 inline mr-1" />批量分析
+            </button>
+            <button
+              className={`flex-1 text-xs py-1.5 rounded-lg font-medium transition-colors ${photoDialogTab === 'history' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => setPhotoDialogTab('history')}>
+              <History className="w-3.5 h-3.5 inline mr-1" />分析記錄
+              {analysisHistory.length > 0 && <span className="ml-1 bg-primary text-primary-foreground text-[10px] rounded-full px-1">{analysisHistory.length}</span>}
+            </button>
+          </div>
+
+          {/* Single Photo Tab */}
+          {photoDialogTab === 'single' && (
+            <div className="space-y-4">
+              {!photoPreview ? (
+                <div className="border-2 border-dashed border-border rounded-xl p-8 text-center space-y-3">
+                  <Camera className="w-10 h-10 text-muted-foreground mx-auto" />
+                  <p className="text-sm text-muted-foreground">上傳或拍攝食物相片</p>
+                  <div className="flex gap-2 justify-center">
+                    <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                      <Upload className="w-4 h-4 mr-2" /> 上傳相片
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => cameraInputRef.current?.click()}>
+                      <Camera className="w-4 h-4 mr-2" /> 拍照
+                    </Button>
+                  </div>
+                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
+                  <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoSelect} />
                 </div>
-                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
-                <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoSelect} />
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="relative">
-                  <img src={photoPreview} alt="Food" className="w-full h-48 object-cover rounded-xl" />
-                  <Button variant="ghost" size="icon" className="absolute top-2 right-2 w-7 h-7 bg-black/50 hover:bg-black/70"
-                    onClick={() => { setPhotoPreview(null); setPhotoBase64(null); setAiResult(null); }}>
-                    <X className="w-3.5 h-3.5 text-white" />
-                  </Button>
-                </div>
-                {!aiResult ? (
-                  <Button className="w-full gap-2" onClick={handleAnalyze} disabled={analyzing}>
-                    {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                    {analyzing ? "Analyzing…" : "Analyze with AI"}
-                  </Button>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="bg-muted/50 rounded-xl p-3">
-                      <p className="text-xs text-muted-foreground mb-1">AI Analysis Result</p>
-                      <p className="text-sm font-medium text-foreground">{aiResult.notes}</p>
-                      <div className="grid grid-cols-4 gap-2 mt-2">
-                        {[
-                          { label: "Calories", value: Math.round(aiResult.totalCalories), unit: "kcal" },
-                          { label: "Protein", value: Math.round(aiResult.totalProtein), unit: "g" },
-                          { label: "Carbs", value: Math.round(aiResult.totalCarbs), unit: "g" },
-                          { label: "Fat", value: Math.round(aiResult.totalFat), unit: "g" },
-                        ].map(m => (
-                          <div key={m.label} className="text-center">
-                            <p className="text-xs text-muted-foreground">{m.label}</p>
-                            <p className="text-sm font-bold text-foreground">{m.value}<span className="text-xs font-normal">{m.unit}</span></p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="relative">
+                    <img src={photoPreview} alt="Food" className="w-full h-48 object-cover rounded-xl" />
+                    <Button variant="ghost" size="icon" className="absolute top-2 right-2 w-7 h-7 bg-black/50 hover:bg-black/70"
+                      onClick={() => { setPhotoPreview(null); setPhotoBase64(null); setAiResult(null); }}>
+                      <X className="w-3.5 h-3.5 text-white" />
+                    </Button>
+                  </div>
+                  {!aiResult ? (
+                    <Button className="w-full gap-2" onClick={handleAnalyze} disabled={analyzing}>
+                      {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                      {analyzing ? "分析中…" : "AI 分析"}
+                    </Button>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="bg-muted/50 rounded-xl p-3">
+                        <p className="text-xs text-muted-foreground mb-1">AI 分析結果</p>
+                        <p className="text-sm font-medium text-foreground">{aiResult.notes}</p>
+                        <div className="grid grid-cols-4 gap-2 mt-2">
+                          {[
+                            { label: "卡路里", value: Math.round(aiResult.totalCalories), unit: "kcal" },
+                            { label: "蛋白質", value: Math.round(aiResult.totalProtein), unit: "g" },
+                            { label: "碳水", value: Math.round(aiResult.totalCarbs), unit: "g" },
+                            { label: "脂肪", value: Math.round(aiResult.totalFat), unit: "g" },
+                          ].map(m => (
+                            <div key={m.label} className="text-center">
+                              <p className="text-xs text-muted-foreground">{m.label}</p>
+                              <p className="text-sm font-bold text-foreground">{m.value}<span className="text-xs font-normal">{m.unit}</span></p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {aiResult.foods?.map((food: any, i: number) => (
+                          <div key={i} className="flex items-center justify-between bg-muted/30 rounded-lg px-3 py-2">
+                            <div>
+                              <p className="text-sm font-medium">{food.nameZh || food.name}</p>
+                              <p className="text-xs text-muted-foreground">{food.quantity}{food.unit}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-foreground">{Math.round(food.calories)} kcal</span>
+                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAddFromAI(food)}>加入</Button>
+                            </div>
                           </div>
                         ))}
                       </div>
+                      <Button className="w-full" onClick={() => {
+                        if (aiResult.foods?.[0]) {
+                          setForm({ name: aiResult.foods[0].nameZh || aiResult.foods[0].name, quantity: aiResult.foods[0].quantity, calories: aiResult.totalCalories, protein: aiResult.totalProtein, carbs: aiResult.totalCarbs, fat: aiResult.totalFat });
+                          setDialogDate(selectedDate);
+                          setShowPhotoDialog(false);
+                          setShowAddDialog(true);
+                        }
+                      }}>全部加入為一筆記錄</Button>
                     </div>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {aiResult.foods?.map((food: any, i: number) => (
-                        <div key={i} className="flex items-center justify-between bg-muted/30 rounded-lg px-3 py-2">
-                          <div>
-                            <p className="text-sm font-medium">{food.name} <span className="text-muted-foreground text-xs">({food.nameZh})</span></p>
-                            <p className="text-xs text-muted-foreground">{food.quantity}{food.unit}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Batch Photo Tab */}
+          {photoDialogTab === 'batch' && (
+            <div className="space-y-4">
+              <div className="border-2 border-dashed border-border rounded-xl p-6 text-center space-y-3">
+                <Images className="w-10 h-10 text-muted-foreground mx-auto" />
+                <p className="text-sm text-muted-foreground">選擇多張食物相片一次分析</p>
+                <Button variant="outline" size="sm" onClick={() => batchFileInputRef.current?.click()}>
+                  <Upload className="w-4 h-4 mr-2" /> 選擇相片（可多選）
+                </Button>
+                <input ref={batchFileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleBatchFileSelect} />
+              </div>
+
+              {batchPhotos.length > 0 && (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    {batchPhotos.map((photo, i) => (
+                      <div key={i} className="relative rounded-lg overflow-hidden aspect-square">
+                        <img src={photo.preview} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                        <div className={`absolute inset-0 flex items-center justify-center ${
+                          photo.status === 'analyzing' ? 'bg-black/50' :
+                          photo.status === 'done' ? 'bg-green-500/30' :
+                          photo.status === 'error' ? 'bg-red-500/30' : ''
+                        }`}>
+                          {photo.status === 'analyzing' && <Loader2 className="w-6 h-6 text-white animate-spin" />}
+                          {photo.status === 'done' && <CheckCircle2 className="w-6 h-6 text-green-400" />}
+                          {photo.status === 'error' && <X className="w-6 h-6 text-red-400" />}
+                        </div>
+                        <button className="absolute top-1 right-1 w-5 h-5 bg-black/60 rounded-full flex items-center justify-center"
+                          onClick={() => setBatchPhotos(prev => prev.filter((_, idx) => idx !== i))}>
+                          <X className="w-3 h-3 text-white" />
+                        </button>
+                        {photo.result && (
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-1.5 py-1 text-[10px] text-white text-center">
+                            {Math.round(photo.result.totalCalories)} kcal
                           </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <Button className="w-full gap-2" onClick={handleBatchAnalyze}
+                    disabled={batchAnalyzing || batchPhotos.every(p => p.status === 'done')}>
+                    {batchAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    {batchAnalyzing ? `分析中 (${batchPhotos.filter(p => p.status === 'done').length}/${batchPhotos.length})…` :
+                     batchPhotos.every(p => p.status === 'done') ? '全部分析完成' : `分析全部 ${batchPhotos.length} 張相片`}
+                  </Button>
+
+                  {/* Batch results */}
+                  {batchPhotos.some(p => p.status === 'done') && (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold text-foreground/70">分析結果</p>
+                      {batchPhotos.filter(p => p.status === 'done' && p.result).map((photo, i) => (
+                        <div key={i} className="bg-muted/30 rounded-xl p-3 space-y-2">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-foreground">{Math.round(food.calories)} kcal</span>
-                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAddFromAI(food)}>Add</Button>
+                            <img src={photo.preview} alt="" className="w-12 h-12 rounded-lg object-cover" />
+                            <div>
+                              <p className="text-xs font-semibold text-foreground">{photo.result.notes}</p>
+                              <div className="flex gap-2 text-[10px] text-muted-foreground mt-0.5">
+                                <span className="text-orange-500 font-bold">{Math.round(photo.result.totalCalories)} kcal</span>
+                                <span>P:{Math.round(photo.result.totalProtein)}g</span>
+                                <span>C:{Math.round(photo.result.totalCarbs)}g</span>
+                                <span>F:{Math.round(photo.result.totalFat)}g</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            {photo.result.foods?.map((food: any, fi: number) => (
+                              <div key={fi} className="flex items-center justify-between text-xs">
+                                <span className="text-foreground">{food.nameZh || food.name} ({food.quantity}{food.unit})</span>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-muted-foreground">{Math.round(food.calories)} kcal</span>
+                                  <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => handleAddFromAI(food)}>加入</Button>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       ))}
                     </div>
-                    <Button className="w-full" onClick={() => {
-                      if (aiResult.foods?.[0]) {
-                        setForm({ name: aiResult.foods[0].name, quantity: aiResult.foods[0].quantity, calories: aiResult.totalCalories, protein: aiResult.totalProtein, carbs: aiResult.totalCarbs, fat: aiResult.totalFat });
-                        setDialogDate(selectedDate);
-                        setShowPhotoDialog(false);
-                        setShowAddDialog(true);
-                      }
-                    }}>Add All as One Entry</Button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Analysis History Tab */}
+          {photoDialogTab === 'history' && (
+            <div className="space-y-3">
+              {analysisHistory.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  <History className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                  尚無分析記錄
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">最近 {analysisHistory.length} 次分析記錄（點擊食物可快速加入）</p>
+                  <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+                    {analysisHistory.map((record: any) => {
+                      const foods = record.foods || [];
+                      const analyzedAt = new Date(record.analyzedAt).toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                      return (
+                        <div key={record.id} className="bg-muted/30 border border-border rounded-xl p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-muted-foreground">{analyzedAt}</span>
+                            {record.totalCalories && (
+                              <span className="text-xs font-bold text-orange-500">{Math.round(record.totalCalories)} kcal</span>
+                            )}
+                          </div>
+                          {foods.length > 0 ? (
+                            <div className="space-y-1">
+                              {foods.map((food: any, fi: number) => (
+                                <div key={fi} className="flex items-center justify-between text-xs">
+                                  <span className="text-foreground">{food.nameZh || food.name}
+                                    <span className="text-muted-foreground ml-1">({food.quantity}{food.unit})</span>
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-muted-foreground">{Math.round(food.calories)} kcal</span>
+                                    <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => handleAddFromAI(food)}>加入</Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">無食物資料</p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
-            )}
-          </div>
+                </>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

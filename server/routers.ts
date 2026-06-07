@@ -11,7 +11,8 @@ import {
   dailySteps, medicalConditions, medicalVisits, medicalAttachments,
   supplements, supplementLogs, supplementPurchases, supplementStockAdjustments,
   runningLogPhotos, stepLogPhotos, customExercises, userProfile, bloodPressureLogs,
-  physioSessions, physioExercises, fastingLogs
+  physioSessions, physioExercises, fastingLogs,
+  foodFavorites, foodAnalysisHistory
 } from "../drizzle/schema";
 import { eq, and, desc, gte, lte, like, or, sql, inArray } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -4358,6 +4359,90 @@ const fastingRouter = router({
     }),
 });
 
+// ─── Food Favorites Router ───────────────────────────────────────────────────
+const foodFavoritesRouter = router({
+  list: ownerProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) return [];
+    return db.select().from(foodFavorites)
+      .where(eq(foodFavorites.userId, ctx.user.id))
+      .orderBy(desc(foodFavorites.createdAt));
+  }),
+  add: ownerProcedure.input(z.object({
+    foodName: z.string(),
+    calories: z.number().optional(),
+    protein: z.number().optional(),
+    carbs: z.number().optional(),
+    fat: z.number().optional(),
+    servingSize: z.number().optional(),
+    servingUnit: z.string().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) throw new Error('DB not available');
+    // Check if already exists
+    const existing = await db.select().from(foodFavorites)
+      .where(and(eq(foodFavorites.userId, ctx.user.id), eq(foodFavorites.foodName, input.foodName)))
+      .limit(1);
+    if (existing.length > 0) return existing[0];
+    const [row] = await db.insert(foodFavorites).values({
+      userId: ctx.user.id,
+      foodName: input.foodName,
+      calories: input.calories,
+      protein: input.protein,
+      carbs: input.carbs,
+      fat: input.fat,
+      servingSize: input.servingSize,
+      servingUnit: input.servingUnit,
+    }).returning();
+    return row;
+  }),
+  remove: ownerProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) throw new Error('DB not available');
+    await db.delete(foodFavorites)
+      .where(and(eq(foodFavorites.id, input.id), eq(foodFavorites.userId, ctx.user.id)));
+    return { success: true };
+  }),
+  removeByName: ownerProcedure.input(z.object({ foodName: z.string() })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) throw new Error('DB not available');
+    await db.delete(foodFavorites)
+      .where(and(eq(foodFavorites.foodName, input.foodName), eq(foodFavorites.userId, ctx.user.id)));
+    return { success: true };
+  }),
+});
+
+// ─── Food Analysis History Router ─────────────────────────────────────────────
+const foodAnalysisHistoryRouter = router({
+  list: ownerProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) return [];
+    const rows = await db.select().from(foodAnalysisHistory)
+      .where(eq(foodAnalysisHistory.userId, ctx.user.id))
+      .orderBy(desc(foodAnalysisHistory.analyzedAt))
+      .limit(20);
+    return rows.map((r: typeof foodAnalysisHistory.$inferSelect) => ({
+      ...r,
+      foods: (() => { try { return JSON.parse(r.analysisResult); } catch { return []; } })()
+    }));
+  }),
+  save: ownerProcedure.input(z.object({
+    photoUrl: z.string().optional(),
+    analysisResult: z.string(), // JSON string
+    totalCalories: z.number().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) throw new Error('DB not available');
+    const [row] = await db.insert(foodAnalysisHistory).values({
+      userId: ctx.user.id,
+      photoUrl: input.photoUrl,
+      analysisResult: input.analysisResult,
+      totalCalories: input.totalCalories,
+    }).returning();
+    return row;
+  }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -4388,6 +4473,8 @@ export const appRouter = router({
   bloodPressure: bloodPressureRouter,
   physio: physioRouter,
   fasting: fastingRouter,
+  foodFavorites: foodFavoritesRouter,
+  foodAnalysisHistory: foodAnalysisHistoryRouter,
 });
 export type AppRouter = typeof appRouter;
 

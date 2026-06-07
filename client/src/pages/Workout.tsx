@@ -216,8 +216,10 @@ export default function Workout() {
       utils.workout.getSessionWithSets.invalidate();
       utils.workout.getSessions.invalidate();
       setEditSet(null);
+      setShowAddSetDialog(false);
       toast.success("Updated!");
     },
+    onError: (e) => toast.error('Update failed: ' + e.message),
   });
   const deleteSet = trpc.workout.deleteSet.useMutation({
     onSuccess: () => {
@@ -432,12 +434,15 @@ export default function Workout() {
   // Live calories estimate for active session (before finishing)
   const liveCaloriesEstimate = useMemo(() => {
     if (!sessionDetail?.sets?.length) return 0;
+    // Cardio calories: sum up calories field directly from cardio sets
+    const cardioCalories = sessionDetail.sets.reduce((sum, s) => sum + ((s as any).calories || 0), 0);
+    // Strength calories: estimate from volume
     const totalVol = sessionDetail.sets.reduce((sum, s) => sum + (s.reps || 0) * (s.weight || 0), 0);
     const met = totalVol > 5000 ? 6 : totalVol > 2000 ? 5.5 : 5;
-    // Estimate duration from session start time
     const startTime = activeSession?.startTime ? new Date(activeSession.startTime) : null;
     const durationMin = startTime ? Math.max(1, Math.round((Date.now() - startTime.getTime()) / 60000)) : 30;
-    return Math.round(met * 70 * (durationMin / 60));
+    const strengthCalories = Math.round(met * 70 * (durationMin / 60));
+    return cardioCalories + strengthCalories;
   }, [sessionDetail, activeSession]);
 
   const weeklyVolume = useMemo(() => {
@@ -617,7 +622,8 @@ export default function Workout() {
                     </div>
                   ) : (
                     Object.entries(exerciseGroups).map(([exerciseName, sets]) => {
-                      const ex = allExercises.find(e => e.name === exerciseName || (e as any).nameZh === exerciseName);
+                      const ex = allExercises.find(e => e.name === exerciseName || (e as any).nameZh === exerciseName)
+                        || BUILT_IN_EXERCISES.find(e => e.name === exerciseName || e.nameZh === exerciseName);
                       const totalVol = sets.reduce((sum, s) => sum + Math.round((s.reps || 0) * (s.weight || 0)), 0);
                       return (
                         <div key={exerciseName} className="bg-card border border-border rounded-2xl overflow-hidden">

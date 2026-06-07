@@ -366,3 +366,16 @@
 ## v3.11.1 (2026-06-07)
 - [x] Fix: Add Exercise dialog now shows Strength/Cardio/Physio tabs so cardio exercises (Treadmill etc.) are accessible
 - [x] Fix: Cardio Log Set dialog opens correctly and saves successfully after selecting a cardio exercise
+
+## v3.12.0 Multi-Fix Release (2026-06-07)
+- [x] Fix TypeScript errors in foodFavoritesRouter: add await getDb(), null guards for db and ctx.user
+- [x] Fix TypeScript errors in foodAnalysisHistoryRouter: add await getDb(), null guards, explicit type annotation for .map() callback
+- [x] Register foodFavoritesRouter and foodAnalysisHistoryRouter in appRouter
+- [x] Nutrition.tsx: Replace localStorage food favorites (bf-food-history) with DB-backed trpc.foodFavorites.* calls
+- [x] Nutrition.tsx: Star button on meal rows now calls trpc.foodFavorites.add/removeByName instead of localStorage
+- [x] Nutrition.tsx: AI Food Lookup now auto-saves result to DB favorites
+- [x] Nutrition.tsx: AI Photo dialog redesigned with 3 tabs: 單張分析, 批量分析, 分析記錄
+- [x] Nutrition.tsx: Batch analysis tab — select multiple photos, analyze each sequentially, show results per photo
+- [x] Nutrition.tsx: Analysis history tab — shows last 20 AI analyses from DB, quick re-add food items
+- [x] Nutrition.tsx: After successful AI analysis, auto-saves to food_analysis_history DB table
+- [x] Bump version to v3.12.0
