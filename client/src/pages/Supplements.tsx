@@ -777,6 +777,8 @@ export default function Supplements() {
                       </div>
                       {s.takenToday ? (
                         <span className="text-green-400 text-xs font-medium flex items-center gap-1">✓ {t('supplements.taken')}</span>
+                      ) : (s.currentStock != null && s.currentStock <= 0) ? (
+                        <span className="text-rose-400 text-xs font-medium flex items-center gap-1">⚠ 庫存不足</span>
                       ) : (
                         <Button size="sm" className="h-7 text-xs px-3" onClick={() => {
                           addLog.mutate({ supplementId: s.id, date: todayHKString(), quantity: s.dailyDose ?? 1, timeOfDay: key === 'other' ? 'morning' : key as any, notes: '' });
@@ -801,7 +803,7 @@ export default function Supplements() {
                 onClick={() => {
                   const unlogged = Object.entries(todaySchedule.groups)
                     .flatMap(([timeKey, items]: [string, any]) =>
-                      (items as any[]).filter((s: any) => !s.takenToday).map((s: any) => ({
+                      (items as any[]).filter((s: any) => !s.takenToday && !(s.currentStock != null && s.currentStock <= 0)).map((s: any) => ({
                         supplementId: s.id,
                         quantity: s.dailyDose ?? 1,
                         timeOfDay: timeKey === 'other' ? 'morning' : timeKey,
