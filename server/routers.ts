@@ -3,7 +3,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router, ownerProcedure } from "./_core/trpc";
 import { z } from "zod";
-import { getDb } from "./db";
+import { getDb, getPool } from "./db";
 import {
   mealLogs, foodItems, workoutSessions, workoutSets, exercises,
   bodyComposition, heartRateLogs, sleepLogs, progressPhotos, aiInsights,
@@ -453,7 +453,26 @@ const workoutRouter = router({
         }
       }
 
-      await db.update(workoutSessions).set(data).where(and(eq(workoutSessions.id, id), eq(workoutSessions.userId, OWNER_USER_ID)));
+      // Use pool.query() to avoid Drizzle quoted-identifier issues with camelCase columns
+      const pool2 = getPool();
+      if (!pool2) throw new Error('DB unavailable');
+      const setClauses2: string[] = [];
+      const params2: any[] = [];
+      const colMap: Record<string, string> = {
+        name: 'name', duration: 'duration', notes: 'notes',
+        totalVolume: '"totalVolume"', caloriesBurned: '"caloriesBurned"',
+        startTime: '"startTime"', endTime: '"endTime"',
+      };
+      for (const [k, v] of Object.entries(data)) {
+        if (v !== undefined && colMap[k]) {
+          params2.push(v);
+          setClauses2.push(`${colMap[k]} = $${params2.length}`);
+        }
+      }
+      if (setClauses2.length > 0) {
+        params2.push(id);
+        await pool2.query(`UPDATE workout_sessions SET ${setClauses2.join(', ')} WHERE id = $${params2.length} AND "userId" = ${OWNER_USER_ID}`, params2);
+      }
       return { success: true };
     }),
 
@@ -527,19 +546,24 @@ const workoutRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
+      // Must use pool.query() directly — Drizzle ORM generates quoted identifiers
+      // ("duration" = $1) which Supabase PostgreSQL rejects with "Failed query".
+      await getDb(); // ensure pool is initialised
+      const pool = getPool();
+      if (!pool) throw new Error("DB unavailable");
       const { id, reps, weight, duration, distance, avgHr, calories, notes } = input;
-      // Use explicit Drizzle column mapping to avoid quoted-identifier SQL errors on Supabase
-      await db.update(workoutSets).set({
-        ...(reps !== undefined ? { reps } : {}),
-        ...(weight !== undefined ? { weight } : {}),
-        ...(duration !== undefined ? { duration } : {}),
-        ...(distance !== undefined ? { distance } : {}),
-        ...(avgHr !== undefined ? { avgHr } : {}),
-        ...(calories !== undefined ? { calories } : {}),
-        ...(notes !== undefined ? { notes } : {}),
-      }).where(eq(workoutSets.id, id));
+      const setClauses: string[] = [];
+      const params: (number | string | null)[] = [];
+      if (reps !== undefined)     { params.push(reps);     setClauses.push(`reps = $${params.length}`); }
+      if (weight !== undefined)   { params.push(weight);   setClauses.push(`weight = $${params.length}`); }
+      if (duration !== undefined) { params.push(duration); setClauses.push(`duration = $${params.length}`); }
+      if (distance !== undefined) { params.push(distance); setClauses.push(`distance = $${params.length}`); }
+      if (avgHr !== undefined)    { params.push(avgHr);    setClauses.push(`"avgHr" = $${params.length}`); }
+      if (calories !== undefined) { params.push(calories); setClauses.push(`calories = $${params.length}`); }
+      if (notes !== undefined)    { params.push(notes);    setClauses.push(`notes = $${params.length}`); }
+      if (setClauses.length === 0) return { success: true };
+      params.push(id);
+      await pool.query(`UPDATE workout_sets SET ${setClauses.join(', ')} WHERE id = $${params.length}`, params);
       return { success: true };
     }),
 
@@ -671,8 +695,14 @@ const workoutRouter = router({
       // MET 5 = moderate resistance training; scale up slightly for high volume
       const met = totalVolume > 5000 ? 6 : totalVolume > 2000 ? 5.5 : 5;
       const caloriesBurned = Math.round(met * 70 * (durationMin / 60));
-      await db.update(workoutSessions).set({ endTime, duration: durationMin, caloriesBurned, totalVolume })
-        .where(eq(workoutSessions.id, input.id));
+      // Use pool.query() directly — Drizzle generates quoted identifiers for camelCase columns
+      await getDb(); // ensure pool initialised
+      const pool = getPool();
+      if (!pool) throw new Error('DB unavailable');
+      await pool.query(
+        `UPDATE workout_sessions SET "endTime" = $1, duration = $2, "caloriesBurned" = $3, "totalVolume" = $4, "updatedAt" = $5 WHERE id = $6`,
+        [endTime, durationMin, caloriesBurned, totalVolume, new Date(), input.id]
+      );
       // Count distinct exercises in this session
       const exerciseCountResult = await db.execute(sql`
         SELECT COUNT(DISTINCT "exerciseId") as cnt

@@ -388,3 +388,12 @@
 - [x] Nutrition.tsx: add 管理 button in favorites section header
 - [x] Nutrition.tsx: add 管理常用食物 dialog with inline rename, single delete, bulk select/delete
 - [x] Bump version to v3.12.1
+
+## v3.12.2 Root Fix for Drizzle Quoted-Identifier SQL Error (2026-06-07)
+- [x] Export getPool() from server/db.ts to allow direct pg.Pool.query() calls
+- [x] Import getPool in server/routers.ts
+- [x] Fix updateSet: use pool.query() with parameterised raw SQL instead of Drizzle .update().set()
+- [x] Fix finishSession: use pool.query() for UPDATE workout_sessions with camelCase columns
+- [x] Fix updateSession: use pool.query() with colMap for camelCase column name quoting
+- [x] Root cause: Drizzle ORM generates "column" = $1 (double-quoted identifiers) which Supabase PostgreSQL rejects
+- [x] Bump version to v3.12.2

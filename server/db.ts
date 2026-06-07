@@ -12,6 +12,8 @@ let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: InstanceType<typeof Pool> | null = null;
 
 // Lazily create the drizzle instance — prefer Supabase over built-in MySQL.
+export function getPool() { return _pool; }
+
 export async function getDb() {
   if (_db) return _db;
 
