@@ -213,16 +213,11 @@ export default function Nutrition() {
     reader.readAsDataURL(file);
   };
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = () => {
     if (!photoBase64) return;
     setAnalyzing(true);
-    try {
-      const { url } = await uploadPhotoMutation.mutateAsync({ base64: photoBase64, mimeType: "image/jpeg" });
-      analyzePhotoMutation.mutate({ imageUrl: url });
-    } catch {
-      setAnalyzing(false);
-      toast.error("Upload failed");
-    }
+    // Pass base64 directly to avoid S3 upload (works on all hosting environments)
+    analyzePhotoMutation.mutate({ imageBase64: photoBase64, mimeType: "image/jpeg" });
   };
 
   const lookupFoodMutation = trpc.nutrition.lookupFoodNutrition.useMutation({

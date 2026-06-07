@@ -136,20 +136,30 @@ const nutritionRouter = router({
 
   // AI food photo analysis
   analyzeFoodPhoto: ownerProcedure
-    .input(z.object({ imageUrl: z.string(), imageBase64: z.string().optional() }))
+    .input(z.object({
+      imageUrl: z.string().optional(),
+      imageBase64: z.string().optional(),
+      mimeType: z.string().optional(),
+    }))
     .mutation(async ({ input }) => {
-      // If imageUrl is a relative /manus-storage/ path, resolve to a real signed S3 URL
-      // so the LLM can actually fetch the image
-      let resolvedImageUrl = input.imageUrl;
-      if (input.imageUrl.startsWith('/manus-storage/')) {
+      // Build the image URL for LLM:
+      // Priority 1: base64 data URL (works everywhere, no S3 needed)
+      // Priority 2: signed S3 URL from /manus-storage/ path
+      // Priority 3: raw imageUrl
+      let resolvedImageUrl: string;
+      if (input.imageBase64) {
+        const mime = input.mimeType || 'image/jpeg';
+        resolvedImageUrl = `data:${mime};base64,${input.imageBase64}`;
+      } else if (input.imageUrl?.startsWith('/manus-storage/')) {
         const key = input.imageUrl.replace('/manus-storage/', '');
         try {
           resolvedImageUrl = await storageGetSignedUrl(key);
         } catch (e) {
           console.error('[analyzeFoodPhoto] Failed to get signed URL:', e);
-          // Fall back to original URL
           resolvedImageUrl = input.imageUrl;
         }
+      } else {
+        resolvedImageUrl = input.imageUrl ?? '';
       }
       const response = await invokeLLM({
         messages: [
