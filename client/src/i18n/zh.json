@@ -107,6 +107,7 @@
     "kcal": "千卡",
     "goal": "目標",
     "remaining": "剩餘",
+    "over_budget": "超標",
     "save": "儲存",
     "cancel": "取消",
     "delete_confirm": "確定要刪除此餐食記錄？",

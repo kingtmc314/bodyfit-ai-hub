@@ -298,8 +298,12 @@ export default function Dashboard() {
               )}
               <div className="flex items-center gap-1.5">
                 <div className={`w-2 h-2 rounded-full ${netRemaining >= 0 ? "bg-primary" : "bg-rose-500"}`} />
-                <span className="text-xs text-muted-foreground">{t('dashboard.calories_remaining')}</span>
-                <span className={`text-xs font-bold ${netRemaining >= 0 ? "text-primary" : "text-rose-500"}`}>{Math.round(netRemaining)}</span>
+                <span className="text-xs text-muted-foreground">
+                  {netRemaining >= 0 ? t('dashboard.calories_remaining') : t('nutrition.over_budget')}
+                </span>
+                <span className={`text-xs font-bold ${netRemaining >= 0 ? "text-primary" : "text-rose-500"}`}>
+                  {netRemaining >= 0 ? Math.round(netRemaining) : `+${Math.round(Math.abs(netRemaining))}`}
+                </span>
               </div>
             </div>
           </div>
@@ -310,7 +314,12 @@ export default function Dashboard() {
         <Progress value={netPct} className="h-2.5 rounded-full" />
         <div className="flex justify-between text-xs text-muted-foreground mt-1.5 font-medium">
           <span>{Math.round(netPct)}% {t('nutrition.goal')}</span>
-          <span>{Math.round(netRemaining)} {t('nutrition.kcal')} {t('nutrition.remaining')}</span>
+          <span>
+            {netRemaining >= 0
+              ? `${Math.round(netRemaining)} ${t('nutrition.kcal')} ${t('nutrition.remaining')}`
+              : `+${Math.round(Math.abs(netRemaining))} ${t('nutrition.kcal')} ${t('nutrition.over_budget')}`
+            }
+          </span>
         </div>
       </div>
 
