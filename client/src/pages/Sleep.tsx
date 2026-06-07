@@ -319,7 +319,7 @@ export default function Sleep() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.24 0.018 240)" opacity={0.4} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="oklch(0.60 0.010 240)" />
-                    <YAxis tick={{ fontSize: 10 }} stroke="oklch(0.60 0.010 240)" domain={[Y_MIN, Y_MAX]} ticks={[-4, -2, 0, 2, 4, 6, 8, 10]} tickFormatter={yTickFmt} width={42} />
+                    <YAxis tick={{ fontSize: 10 }} stroke="oklch(0.60 0.010 240)" domain={[Y_MAX, Y_MIN]} ticks={[10, 8, 6, 4, 2, 0, -2, -4]} tickFormatter={yTickFmt} width={42} reversed={true} />
                     <Tooltip content={<SleepTooltip />} />
                     <Bar dataKey="base" stackId="s" fill="transparent" isAnimationActive={false} />
                     <Bar dataKey="len" stackId="s" fill="url(#sleepWinGrad)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
