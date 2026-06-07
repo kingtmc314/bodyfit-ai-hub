@@ -594,7 +594,7 @@ export default function Workout() {
                       ) : (
                         // Active session - show edit controls
                         <>
-                          {isOwner && <Button size="sm" variant="outline" className="gap-2" onClick={() => { setSearchQuery(''); setShowExerciseDialog(true); }}>
+                          {isOwner && <Button size="sm" variant="outline" className="gap-2" onClick={() => { setSearchQuery(''); setExerciseLibMode('strength'); setShowExerciseDialog(true); }}>
                             <Plus className="w-3.5 h-3.5" /> Add Exercise
                           </Button>}
                           {isOwner && <Button size="sm" className="gap-2 bg-green-500 hover:bg-green-600 text-white"
@@ -1174,11 +1174,16 @@ export default function Workout() {
         <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
           <DialogHeader><DialogTitle>選擇動作</DialogTitle></DialogHeader>
           <div className="space-y-3 flex-1 flex flex-col min-h-0">
+            <div className="flex gap-1.5">
+              <Button size="sm" variant={exerciseLibMode === 'strength' ? 'default' : 'outline'} className="flex-1 text-xs" onClick={() => setExerciseLibMode('strength')}>力量訓練</Button>
+              <Button size="sm" variant={exerciseLibMode === 'cardio' ? 'default' : 'outline'} className="flex-1 text-xs" onClick={() => setExerciseLibMode('cardio')}>有氧</Button>
+              <Button size="sm" variant={exerciseLibMode === 'physio' ? 'default' : 'outline'} className="flex-1 text-xs" onClick={() => setExerciseLibMode('physio')}>物理治療</Button>
+            </div>
             <Input placeholder="搜尋動作…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
             <div className="space-y-1 flex-1 overflow-y-auto">
               {filteredExercises.map((ex: any, i: number) => (
                 <button key={i} className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-muted/50 transition-colors"
-                  onClick={() => { setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: "" }); setEditSet(null); setShowExerciseDialog(false); setShowAddSetDialog(true); }}>
+                  onClick={() => { const isCardioEx = ex.muscleGroup === 'cardio'; setSelectedExercise(ex); setSetForm(isCardioEx ? { reps: 0, weight: 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: "" } : { reps: 10, weight: 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: "" }); setEditSet(null); setShowExerciseDialog(false); setShowAddSetDialog(true); }}>
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-foreground">{ex.name}{(ex as any).isCustom && <Badge variant="secondary" className="ml-1.5 text-[10px] py-0">自訂</Badge>}</p>

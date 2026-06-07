@@ -362,3 +362,7 @@
 - [x] App.tsx: add /fasting route
 - [x] i18n: add "fasting" key to zh.json and en.json
 - [x] Update version to v3.11.0
+
+## v3.11.1 (2026-06-07)
+- [x] Fix: Add Exercise dialog now shows Strength/Cardio/Physio tabs so cardio exercises (Treadmill etc.) are accessible
+- [x] Fix: Cardio Log Set dialog opens correctly and saves successfully after selecting a cardio exercise
