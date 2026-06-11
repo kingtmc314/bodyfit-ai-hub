@@ -167,7 +167,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </Button>
           </div>
         </div>
-        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v3.12.5</p>
+        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v3.12.6</p>
       </div>
     </div>
   );

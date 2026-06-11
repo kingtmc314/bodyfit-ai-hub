@@ -443,7 +443,7 @@ const workoutRouter = router({
             // Recalculate calories using volume-adjusted MET formula
             const volumeResult = await db.execute(sql`
               SELECT COALESCE(SUM(reps * weight), 0) as total
-              FROM workout_sets WHERE "sessionId" = ${id}
+              FROM workout_sets WHERE session_id = ${id}
               AND reps IS NOT NULL AND weight IS NOT NULL
             `);
             const totalVolume = Number(((volumeResult as any).rows?.[0] ?? (volumeResult as any)[0])?.total ?? 0);
@@ -453,25 +453,18 @@ const workoutRouter = router({
         }
       }
 
-      // Use pool.query() to avoid Drizzle quoted-identifier issues with camelCase columns
-      const pool2 = getPool();
-      if (!pool2) throw new Error('DB unavailable');
-      const setClauses2: string[] = [];
-      const params2: any[] = [];
-      const colMap: Record<string, string> = {
-        name: 'name', duration: 'duration', notes: 'notes',
-        totalVolume: '"totalVolume"', caloriesBurned: '"caloriesBurned"',
-        startTime: '"startTime"', endTime: '"endTime"',
-      };
-      for (const [k, v] of Object.entries(data)) {
-        if (v !== undefined && colMap[k]) {
-          params2.push(v);
-          setClauses2.push(`${colMap[k]} = $${params2.length}`);
-        }
-      }
-      if (setClauses2.length > 0) {
-        params2.push(id);
-        await pool2.query(`UPDATE workout_sessions SET ${setClauses2.join(', ')} WHERE id = $${params2.length} AND "userId" = ${OWNER_USER_ID}`, params2);
+      // Use Drizzle ORM — schema now uses snake_case DB column names, no quoted-identifier issues
+      const updateData: any = {};
+      if (data.name !== undefined) updateData.name = data.name;
+      if (data.duration !== undefined) updateData.duration = data.duration;
+      if (data.notes !== undefined) updateData.notes = data.notes;
+      if (data.totalVolume !== undefined) updateData.totalVolume = data.totalVolume;
+      if (data.caloriesBurned !== undefined) updateData.caloriesBurned = data.caloriesBurned;
+      if (data.startTime !== undefined) updateData.startTime = data.startTime;
+      if (data.endTime !== undefined) updateData.endTime = data.endTime;
+      updateData.updatedAt = new Date();
+      if (Object.keys(updateData).length > 1) {
+        await db.update(workoutSessions).set(updateData).where(and(eq(workoutSessions.id, id), eq(workoutSessions.userId, OWNER_USER_ID)));
       }
       return { success: true };
     }),
@@ -524,7 +517,7 @@ const workoutRouter = router({
       const volumeResult = await db.execute(sql`
         SELECT COALESCE(SUM(reps * weight), 0) as total
         FROM workout_sets
-        WHERE "sessionId" = ${rest.sessionId} AND reps IS NOT NULL AND weight IS NOT NULL
+        WHERE session_id = ${rest.sessionId} AND reps IS NOT NULL AND weight IS NOT NULL
       `);
       const newVolume = Number(((volumeResult as any).rows?.[0] ?? (volumeResult as any)[0])?.total ?? 0);
       await db.update(workoutSessions)
@@ -546,24 +539,20 @@ const workoutRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      // Must use pool.query() directly — Drizzle ORM generates quoted identifiers
-      // ("duration" = $1) which Supabase PostgreSQL rejects with "Failed query".
-      await getDb(); // ensure pool is initialised
-      const pool = getPool();
-      if (!pool) throw new Error("DB unavailable");
+      // Use Drizzle ORM — schema now uses snake_case DB column names (avg_hr, etc.)
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
       const { id, reps, weight, duration, distance, avgHr, calories, notes } = input;
-      const setClauses: string[] = [];
-      const params: (number | string | null)[] = [];
-      if (reps !== undefined)     { params.push(reps);     setClauses.push(`reps = $${params.length}`); }
-      if (weight !== undefined)   { params.push(weight);   setClauses.push(`weight = $${params.length}`); }
-      if (duration !== undefined) { params.push(duration); setClauses.push(`duration = $${params.length}`); }
-      if (distance !== undefined) { params.push(distance); setClauses.push(`distance = $${params.length}`); }
-      if (avgHr !== undefined)    { params.push(avgHr);    setClauses.push(`"avgHr" = $${params.length}`); }
-      if (calories !== undefined) { params.push(calories); setClauses.push(`calories = $${params.length}`); }
-      if (notes !== undefined)    { params.push(notes);    setClauses.push(`notes = $${params.length}`); }
-      if (setClauses.length === 0) return { success: true };
-      params.push(id);
-      await pool.query(`UPDATE workout_sets SET ${setClauses.join(', ')} WHERE id = $${params.length}`, params);
+      const updateData: any = {};
+      if (reps !== undefined)     updateData.reps = reps;
+      if (weight !== undefined)   updateData.weight = weight;
+      if (duration !== undefined) updateData.duration = duration;
+      if (distance !== undefined) updateData.distance = distance;
+      if (avgHr !== undefined)    updateData.avgHr = avgHr;
+      if (calories !== undefined) updateData.calories = calories;
+      if (notes !== undefined)    updateData.notes = notes;
+      if (Object.keys(updateData).length === 0) return { success: true };
+      await db.update(workoutSets).set(updateData).where(eq(workoutSets.id, id));
       return { success: true };
     }),
 
@@ -584,8 +573,8 @@ const workoutRouter = router({
       if (!db) return [];
       const rows = await db.execute(sql`
         SELECT exercise_name FROM favourite_exercises
-        WHERE "userId" = ${OWNER_USER_ID}
-        ORDER BY "createdAt" DESC
+        WHERE user_id = ${OWNER_USER_ID}
+        ORDER BY created_at DESC
       `);
       return ((rows as any).rows ?? rows).map((r: any) => r.exercise_name as string);
     }),
@@ -597,18 +586,18 @@ const workoutRouter = router({
       if (!db) throw new Error('DB unavailable');
       const existing = await db.execute(sql`
         SELECT id FROM favourite_exercises
-        WHERE "userId" = ${OWNER_USER_ID} AND exercise_name = ${input.exerciseName}
+        WHERE user_id = ${OWNER_USER_ID} AND exercise_name = ${input.exerciseName}
       `);
       const rows = (existing as any).rows ?? existing;
       if (rows.length > 0) {
         await db.execute(sql`
           DELETE FROM favourite_exercises
-          WHERE "userId" = ${OWNER_USER_ID} AND exercise_name = ${input.exerciseName}
+          WHERE user_id = ${OWNER_USER_ID} AND exercise_name = ${input.exerciseName}
         `);
         return { isFavourite: false };
       } else {
         await db.execute(sql`
-          INSERT INTO favourite_exercises ("userId", exercise_name)
+          INSERT INTO favourite_exercises (user_id, exercise_name)
           VALUES (${OWNER_USER_ID}, ${input.exerciseName})
         `);
         return { isFavourite: true };
@@ -688,25 +677,25 @@ const workoutRouter = router({
       // We use volume-adjusted formula: base 5 MET + bonus for high volume
       const volumeResult = await db.execute(sql`
         SELECT COALESCE(SUM(reps * weight), 0) as total
-        FROM workout_sets WHERE "sessionId" = ${input.id}
+        FROM workout_sets WHERE session_id = ${input.id}
         AND reps IS NOT NULL AND weight IS NOT NULL
       `);
       const totalVolume = Number(((volumeResult as any).rows?.[0] ?? (volumeResult as any)[0])?.total ?? 0);
       // MET 5 = moderate resistance training; scale up slightly for high volume
       const met = totalVolume > 5000 ? 6 : totalVolume > 2000 ? 5.5 : 5;
       const caloriesBurned = Math.round(met * 70 * (durationMin / 60));
-      // Use pool.query() directly — Drizzle generates quoted identifiers for camelCase columns
-      await getDb(); // ensure pool initialised
-      const pool = getPool();
-      if (!pool) throw new Error('DB unavailable');
-      await pool.query(
-        `UPDATE workout_sessions SET "endTime" = $1, duration = $2, "caloriesBurned" = $3, "totalVolume" = $4, "updatedAt" = $5 WHERE id = $6`,
-        [endTime, durationMin, caloriesBurned, totalVolume, new Date(), input.id]
-      );
+      // Use Drizzle ORM — schema now uses snake_case DB column names
+      await db.update(workoutSessions).set({
+        endTime,
+        duration: durationMin,
+        caloriesBurned,
+        totalVolume,
+        updatedAt: new Date(),
+      }).where(eq(workoutSessions.id, input.id));
       // Count distinct exercises in this session
       const exerciseCountResult = await db.execute(sql`
-        SELECT COUNT(DISTINCT "exerciseId") as cnt
-        FROM workout_sets WHERE "sessionId" = ${input.id}
+        SELECT COUNT(DISTINCT exercise_id) as cnt
+        FROM workout_sets WHERE session_id = ${input.id}
       `);
       const exerciseCount = Number(((exerciseCountResult as any).rows?.[0] ?? (exerciseCountResult as any)[0])?.cnt ?? 0);
       return { success: true, duration: durationMin, caloriesBurned, totalVolume, exerciseCount };
@@ -832,18 +821,18 @@ const workoutRouter = router({
       if (!db) return {};
       // Get max weight per exercise name across all sessions for this user
       const rows = await db.execute(sql`
-        SELECT ws."exerciseName", MAX(ws.weight) as max_weight
+        SELECT ws.exercise_name, MAX(ws.weight) as max_weight
         FROM workout_sets ws
-        INNER JOIN workout_sessions sess ON ws."sessionId" = sess.id
-        WHERE sess."userId" = ${OWNER_USER_ID}
+        INNER JOIN workout_sessions sess ON ws.session_id = sess.id
+        WHERE sess.user_id = ${OWNER_USER_ID}
           AND ws.weight IS NOT NULL
           AND ws.weight > 0
-        GROUP BY ws."exerciseName"
+        GROUP BY ws.exercise_name
       `);
       const prMap: Record<string, number> = {};
       const resultRows = (rows as any).rows ?? rows;
       for (const row of resultRows) {
-        prMap[row.exerciseName] = Number(row.max_weight);
+        prMap[row.exercise_name] = Number(row.max_weight);
       }
       return prMap;
     }),
@@ -857,15 +846,15 @@ const workoutRouter = router({
       const rows = await db.execute(sql`
         WITH ranked_weights AS (
           SELECT
-            ws."exerciseName",
+            ws.exercise_name,
             ws.weight,
             ws.reps,
-            sess."startTime" as achieved_at,
+            sess.start_time as achieved_at,
             sess.name as session_name,
-            DENSE_RANK() OVER (PARTITION BY ws."exerciseName" ORDER BY ws.weight DESC) as weight_rank
+            DENSE_RANK() OVER (PARTITION BY ws.exercise_name ORDER BY ws.weight DESC) as weight_rank
           FROM workout_sets ws
-          INNER JOIN workout_sessions sess ON ws."sessionId" = sess.id
-          WHERE sess."userId" = ${OWNER_USER_ID}
+          INNER JOIN workout_sessions sess ON ws.session_id = sess.id
+          WHERE sess.user_id = ${OWNER_USER_ID}
             AND ws.weight IS NOT NULL
             AND ws.weight > 0
         )
@@ -876,7 +865,7 @@ const workoutRouter = router({
       // Build map: exerciseName -> { pr (rank 1), prevPr (rank 2) }
       const prMap = new Map<string, { prWeight: number; prReps: number | null; achievedAt: string | null; sessionName: string | null; prevWeight: number | null }>();
       for (const row of resultRows) {
-        const name = row.exerciseName;
+        const name = row.exercise_name;
         const rank = Number(row.weight_rank);
         if (rank === 1 && !prMap.has(name)) {
           prMap.set(name, {
@@ -3704,7 +3693,7 @@ const supplementsRouter = router({
       // Deduct from stock
       const [suppBefore] = await db.select({ stock: supplements.currentStock }).from(supplements).where(and(eq(supplements.id, input.supplementId), eq(supplements.userId, OWNER_USER_ID)));
       const stockAfterDeduct = Math.max(0, (suppBefore?.stock ?? 0) - qty);
-      await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock - ${qty}), "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
+      await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock - ${qty}), updated_at = NOW() WHERE id = ${input.supplementId} AND user_id = ${OWNER_USER_ID}`);
       // Log stock adjustment
       await db.insert(supplementStockAdjustments).values({
         supplementId: input.supplementId,
@@ -3745,9 +3734,9 @@ const supplementsRouter = router({
         const [suppCur] = await db.select({ stock: supplements.currentStock }).from(supplements).where(and(eq(supplements.id, supplementId), eq(supplements.userId, OWNER_USER_ID)));
         const stockAfter = Math.max(0, (suppCur?.stock ?? 0) + diff);
         if (diff > 0) {
-          await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${diff}, "updatedAt" = NOW() WHERE id = ${supplementId} AND "userId" = ${OWNER_USER_ID}`);
+          await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${diff}, updated_at = NOW() WHERE id = ${supplementId} AND user_id = ${OWNER_USER_ID}`);
         } else {
-          await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock - ${Math.abs(diff)}), "updatedAt" = NOW() WHERE id = ${supplementId} AND "userId" = ${OWNER_USER_ID}`);
+          await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock - ${Math.abs(diff)}), updated_at = NOW() WHERE id = ${supplementId} AND user_id = ${OWNER_USER_ID}`);
         }
         await db.insert(supplementStockAdjustments).values({
           supplementId,
@@ -3772,7 +3761,7 @@ const supplementsRouter = router({
       // Restore stock
       const [suppBeforeRestore] = await db.select({ stock: supplements.currentStock }).from(supplements).where(and(eq(supplements.id, input.supplementId), eq(supplements.userId, OWNER_USER_ID)));
       const stockAfterRestore = (suppBeforeRestore?.stock ?? 0) + restoreQty;
-      await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${restoreQty}, "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
+      await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${restoreQty}, updated_at = NOW() WHERE id = ${input.supplementId} AND user_id = ${OWNER_USER_ID}`);
       // Log stock adjustment (reversal)
       await db.insert(supplementStockAdjustments).values({
         supplementId: input.supplementId,
@@ -3793,7 +3782,7 @@ const supplementsRouter = router({
       // Get current stock before update
       const [supp] = await db.select({ stock: supplements.currentStock }).from(supplements).where(and(eq(supplements.id, input.id), eq(supplements.userId, OWNER_USER_ID)));
       const stockAfter = (supp?.stock ?? 0) + input.quantity;
-      await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${input.quantity}, "updatedAt" = NOW() WHERE id = ${input.id} AND "userId" = ${OWNER_USER_ID}`);
+      await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${input.quantity}, updated_at = NOW() WHERE id = ${input.id} AND user_id = ${OWNER_USER_ID}`);
       // Log stock adjustment
       await db.insert(supplementStockAdjustments).values({
         supplementId: input.id,
@@ -3860,7 +3849,7 @@ const supplementsRouter = router({
       if (addToStock) {
         const [supp] = await db.select({ stock: supplements.currentStock }).from(supplements).where(eq(supplements.id, input.supplementId));
         const stockAfter = (supp?.stock ?? 0) + input.quantity;
-        await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${input.quantity}, "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
+        await db.execute(sql`UPDATE supplements SET current_stock = current_stock + ${input.quantity}, updated_at = NOW() WHERE id = ${input.supplementId} AND user_id = ${OWNER_USER_ID}`);
         await db.insert(supplementStockAdjustments).values({
           supplementId: input.supplementId,
           userId: OWNER_USER_ID,
@@ -3945,7 +3934,7 @@ const supplementsRouter = router({
       const [supp] = await db.select({ stock: supplements.currentStock }).from(supplements).where(and(eq(supplements.id, input.supplementId), eq(supplements.userId, OWNER_USER_ID)));
       const stockAfter = (supp?.stock ?? 0) + input.delta;
       // Update stock
-      await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock + ${input.delta}), "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
+      await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock + ${input.delta}), updated_at = NOW() WHERE id = ${input.supplementId} AND user_id = ${OWNER_USER_ID}`);
       const [row] = await db.insert(supplementStockAdjustments).values({
         ...input,
         userId: OWNER_USER_ID,
@@ -3991,7 +3980,7 @@ const supplementsRouter = router({
         const [suppCur] = await db.select({ stock: supplements.currentStock }).from(supplements)
           .where(and(eq(supplements.id, item.supplementId), eq(supplements.userId, OWNER_USER_ID)));
         const stockAfter = Math.max(0, (suppCur?.stock ?? 0) - qty);
-        await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock - ${qty}), "updatedAt" = NOW() WHERE id = ${item.supplementId} AND "userId" = ${OWNER_USER_ID}`);
+        await db.execute(sql`UPDATE supplements SET current_stock = GREATEST(0, current_stock - ${qty}), updated_at = NOW() WHERE id = ${item.supplementId} AND user_id = ${OWNER_USER_ID}`);
         await db.insert(supplementStockAdjustments).values({
           supplementId: item.supplementId,
           userId: OWNER_USER_ID,
@@ -4144,18 +4133,14 @@ const bloodPressureRouter = router({
       notes: z.string().max(500).optional(),
     }))
     .mutation(async ({ input }) => {
-      const db = await getDb();
-      if (!db) throw new Error('DB unavailable');
+      const pool = getPool();
+      if (!pool) throw new Error('DB unavailable');
       const measuredAt = new Date(input.measuredAt);
-      const rows = await db.insert(bloodPressureLogs).values({
-        userId: OWNER_USER_ID,
-        measuredAt,
-        systolic: input.systolic,
-        diastolic: input.diastolic,
-        pulse: input.pulse ?? null,
-        notes: input.notes ?? null,
-      }).returning({ id: bloodPressureLogs.id });
-      return rows[0];
+      const result = await pool.query(
+        `INSERT INTO blood_pressure_logs (user_id, measured_at, systolic, diastolic, pulse, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [OWNER_USER_ID, measuredAt, input.systolic, input.diastolic, input.pulse ?? null, input.notes ?? null]
+      );
+      return result.rows[0];
     }),
 
   update: ownerProcedure
@@ -4168,12 +4153,19 @@ const bloodPressureRouter = router({
       notes: z.string().max(500).nullable().optional(),
     }))
     .mutation(async ({ input }) => {
-      const db = await getDb();
-      if (!db) throw new Error('DB unavailable');
-      const { id, measuredAt, ...rest } = input;
-      const updates: Record<string, unknown> = { ...rest };
-      if (measuredAt) updates.measuredAt = new Date(measuredAt);
-      await db.update(bloodPressureLogs).set(updates).where(eq(bloodPressureLogs.id, id));
+      const pool = getPool();
+      if (!pool) throw new Error('DB unavailable');
+      const { id, measuredAt, systolic, diastolic, pulse, notes } = input;
+      const setClauses: string[] = [];
+      const params: unknown[] = [];
+      if (measuredAt !== undefined) { params.push(new Date(measuredAt)); setClauses.push(`measured_at = $${params.length}`); }
+      if (systolic !== undefined) { params.push(systolic); setClauses.push(`systolic = $${params.length}`); }
+      if (diastolic !== undefined) { params.push(diastolic); setClauses.push(`diastolic = $${params.length}`); }
+      if (pulse !== undefined) { params.push(pulse); setClauses.push(`pulse = $${params.length}`); }
+      if (notes !== undefined) { params.push(notes); setClauses.push(`notes = $${params.length}`); }
+      if (setClauses.length === 0) return { success: true };
+      params.push(id);
+      await pool.query(`UPDATE blood_pressure_logs SET ${setClauses.join(', ')} WHERE id = $${params.length}`, params);
       return { success: true };
     }),
 
