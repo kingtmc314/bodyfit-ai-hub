@@ -354,12 +354,18 @@ export default function Supplements() {
                 const isLow = (s.currentStock ?? 0) <= (s.lowStockThreshold ?? 30);
                 const stockPct = Math.min((s.currentStock ?? 0) / Math.max(s.lowStockThreshold * 3, 90), 1);
                 return (
-                  <div key={s.id} className={`bg-card border rounded-2xl p-4 ${isLow ? 'border-yellow-500/40' : 'border-border'}`}>
+                  <div key={s.id} className={`bg-card border rounded-2xl p-4 transition-opacity ${s.discontinuedAt ? 'border-border opacity-60' : isLow ? 'border-yellow-500/40' : 'border-border'}`}>
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-semibold text-foreground text-sm">{s.name}</h3>
                           {!s.isActive && <Badge variant="outline" className="text-xs">{t('supplements.inactive')}</Badge>}
+                          {s.discontinuedAt && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-[10px] font-medium border border-border">
+                              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 inline-block" />
+                              已停用
+                            </span>
+                          )}
                         </div>
                         {s.brand && <p className="text-xs text-muted-foreground">{s.brand}</p>}
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
