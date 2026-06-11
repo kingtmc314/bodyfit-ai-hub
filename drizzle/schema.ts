@@ -472,6 +472,7 @@ export const supplements = pgTable("supplements", {
   expiryDate: date("expiry_date"),
   notes: text("notes"),
   isActive: boolean("is_active").default(true),
+  discontinuedAt: date("discontinued_at"),
   reminderEnabled: boolean("reminder_enabled").default(false),
   reminderTime: varchar("reminder_time", { length: 5 }),
   description: text("description"),

@@ -3613,6 +3613,7 @@ const supplementsRouter = router({
       expiryDate: z.string().optional(),
       notes: z.string().optional(),
       isActive: z.boolean().optional(),
+      discontinuedAt: z.string().nullable().optional(),
       reminderEnabled: z.boolean().optional(),
       reminderTime: z.string().max(5).optional(),
       description: z.string().optional(),
@@ -3626,7 +3627,7 @@ const supplementsRouter = router({
       if (!db) throw new Error('DB unavailable');
       // Explicitly destructure to exclude id and userId from the set clause
       const { id, name, brand, category, servingSize, currentStock, lowStockThreshold,
-        purchaseDate, expiryDate, notes, isActive, reminderEnabled, reminderTime,
+        purchaseDate, expiryDate, notes, isActive, discontinuedAt, reminderEnabled, reminderTime,
         description, descriptionZh, iherbUrl, dailyDose, timeOfDay } = input;
       const updateData: Record<string, unknown> = { updatedAt: new Date() };
       if (name !== undefined) updateData.name = name;
@@ -3639,6 +3640,7 @@ const supplementsRouter = router({
       if (expiryDate !== undefined) updateData.expiryDate = expiryDate || null;
       if (notes !== undefined) updateData.notes = notes;
       if (isActive !== undefined) updateData.isActive = isActive;
+      if (discontinuedAt !== undefined) updateData.discontinuedAt = discontinuedAt || null;
       if (reminderEnabled !== undefined) updateData.reminderEnabled = reminderEnabled;
       if (reminderTime !== undefined) updateData.reminderTime = reminderTime;
       if (description !== undefined) updateData.description = description;

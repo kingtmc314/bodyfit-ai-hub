@@ -40,10 +40,10 @@ const CATEGORY_COLORS: Record<string, string> = {
   other: 'bg-muted text-muted-foreground',
 };
 
-const defaultSupplementForm = { name: '', brand: '', category: 'vitamin', servingSize: '', currentStock: '', lowStockThreshold: '30', purchaseDate: '', expiryDate: '', notes: '', isActive: true, reminderEnabled: false, reminderTime: '08:00', timeOfDay: 'morning', dailyDose: '' };
+const defaultSupplementForm = { name: '', brand: '', category: 'vitamin', servingSize: '', currentStock: '', lowStockThreshold: '30', purchaseDate: '', expiryDate: '', notes: '', isActive: true, discontinuedAt: '', reminderEnabled: false, reminderTime: '08:00', timeOfDay: 'morning', dailyDose: '' };
 const defaultLogForm = { supplementId: '', date: todayHKString(), quantity: '1', timeOfDay: 'morning', notes: '' };
 const defaultRestockForm = { supplementId: '', quantity: '' };
-const defaultPurchaseForm = { supplementId: '', purchaseDate: '', quantity: '', unitPrice: '', totalPrice: '', currency: 'USD', source: 'iHerb', orderNo: '', notes: '', addToStock: true };
+const defaultPurchaseForm = { supplementId: '', purchaseDate: '', quantity: '', unitPrice: '', totalPrice: '', currency: 'HKD', source: 'iHerb', orderNo: '', notes: '', addToStock: true };
 
 export default function Supplements() {
   const { t } = useTranslation();
@@ -151,7 +151,7 @@ export default function Supplements() {
   }, [stockHistory, stockFilter]);
 
   // Low stock alerts
-  const lowStock = supplements.filter((s: any) => s.isActive && (s.currentStock ?? 0) <= (s.lowStockThreshold ?? 30));
+  const lowStock = supplements.filter((s: any) => s.isActive && !s.discontinuedAt && (s.currentStock ?? 0) <= (s.lowStockThreshold ?? 30));
 
   // Sorted/filtered supplements
   const displaySupplements = useMemo(() => {
@@ -230,7 +230,7 @@ export default function Supplements() {
   const todaySchedule = useMemo(() => {
     const today = todayHKString();
     const takenToday = new Set(logs.filter((l: any) => l.date === today).map((l: any) => l.supplementId));
-    const active = supplements.filter((s: any) => s.isActive);
+    const active = supplements.filter((s: any) => s.isActive && !s.discontinuedAt);
     const groups: Record<string, any[]> = {};
     TIME_OF_DAY.forEach(t => { groups[t] = []; });
     groups['other'] = [];
@@ -241,6 +241,7 @@ export default function Supplements() {
     });
     const totalActive = active.length;
     const totalTaken = active.filter((s: any) => takenToday.has(s.id)).length;
+    // Note: discontinued supplements are excluded from active list above
     return { groups, totalActive, totalTaken };
   }, [supplements, logs]);
 
@@ -376,7 +377,7 @@ export default function Supplements() {
                         <div className="flex gap-1 shrink-0">
                           <Button variant="ghost" size="icon" className="w-6 h-6" onClick={() => {
                             setEditSupplement(s);
-                            setSupplementForm({ name: s.name, brand: s.brand || '', category: s.category || 'vitamin', servingSize: s.servingSize || '', currentStock: s.currentStock ?? '', lowStockThreshold: s.lowStockThreshold ?? 30, purchaseDate: s.purchaseDate || '', expiryDate: s.expiryDate || '', notes: s.notes || '', isActive: s.isActive ?? true, reminderEnabled: s.reminderEnabled ?? false, reminderTime: s.reminderTime || '08:00', timeOfDay: s.timeOfDay || 'morning', dailyDose: s.dailyDose ?? '' });
+                            setSupplementForm({ name: s.name, brand: s.brand || '', category: s.category || 'vitamin', servingSize: s.servingSize || '', currentStock: s.currentStock ?? '', lowStockThreshold: s.lowStockThreshold ?? 30, purchaseDate: s.purchaseDate || '', expiryDate: s.expiryDate || '', notes: s.notes || '', isActive: s.isActive ?? true, discontinuedAt: s.discontinuedAt || '', reminderEnabled: s.reminderEnabled ?? false, reminderTime: s.reminderTime || '08:00', timeOfDay: s.timeOfDay || 'morning', dailyDose: s.dailyDose ?? '' });
                             setShowSupplementDialog(true);
                           }}><Edit2 className="w-3 h-3" /></Button>
                           <Button variant="ghost" size="icon" className="w-6 h-6 text-destructive" onClick={() => deleteSupplement.mutate({ id: s.id })}><Trash2 className="w-3 h-3" /></Button>
@@ -526,15 +527,15 @@ export default function Supplements() {
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-card border border-border rounded-2xl p-4 text-center">
               <p className="text-xs text-muted-foreground mb-1">{t('supplements.spend_this_month')}</p>
-              <p className="text-xl font-bold text-primary">USD {purchaseAnalytics.thisMonth.toFixed(2)}</p>
+              <p className="text-xl font-bold text-primary">HKD {purchaseAnalytics.thisMonth.toFixed(2)}</p>
             </div>
             <div className="bg-card border border-border rounded-2xl p-4 text-center">
               <p className="text-xs text-muted-foreground mb-1">{t('supplements.spend_this_year')}</p>
-              <p className="text-xl font-bold text-foreground">USD {purchaseAnalytics.thisYear.toFixed(2)}</p>
+              <p className="text-xl font-bold text-foreground">HKD {purchaseAnalytics.thisYear.toFixed(2)}</p>
             </div>
             <div className="bg-card border border-border rounded-2xl p-4 text-center">
               <p className="text-xs text-muted-foreground mb-1">{t('supplements.spend_all_time')}</p>
-              <p className="text-xl font-bold text-foreground">USD {purchaseAnalytics.allTime.toFixed(2)}</p>
+              <p className="text-xl font-bold text-foreground">HKD {purchaseAnalytics.allTime.toFixed(2)}</p>
             </div>
           </div>
 
@@ -559,7 +560,7 @@ export default function Supplements() {
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="period" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
                   <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" tickFormatter={v => `$${v}`} />
-                  <Tooltip formatter={(v: any, name: string) => [`USD ${Number(v).toFixed(2)}`, name]} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8 }} />
+                  <Tooltip formatter={(v: any, name: string) => [`HKD ${Number(v).toFixed(2)}`, name]} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8 }} />
                   {purchaseAnalytics.allLabels.map((label, i) => (
                     <Bar key={label} dataKey={label} stackId="a" fill={`hsl(${(i * 47) % 360}, 60%, 55%)`} radius={i === purchaseAnalytics.allLabels.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
                   ))}
@@ -613,14 +614,14 @@ export default function Supplements() {
                         </div>
                       </td>
                       <td className="px-4 py-3">{p.quantity} {t('supplements.units')}</td>
-                      <td className="px-4 py-3">{p.unitPrice ? `${p.currency ?? 'USD'} ${p.unitPrice}` : '—'}</td>
-                      <td className="px-4 py-3">{p.totalPrice ? `${p.currency ?? 'USD'} ${p.totalPrice}` : '—'}</td>
+                      <td className="px-4 py-3">{p.unitPrice ? `${p.currency ?? 'HKD'} ${p.unitPrice}` : '—'}</td>
+                      <td className="px-4 py-3">{p.totalPrice ? `${p.currency ?? 'HKD'} ${p.totalPrice}` : '—'}</td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">{p.source ?? '—'}</td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">{p.orderNo ?? '—'}</td>
                       {isOwner && (
                       <td className="px-4 py-3">
                         <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditPurchase(p); setPurchaseForm({ supplementId: String(p.supplementId), purchaseDate: p.purchaseDate, quantity: String(p.quantity), unitPrice: p.unitPrice ?? '', totalPrice: p.totalPrice ?? '', currency: p.currency ?? 'USD', source: p.source ?? 'iHerb', orderNo: p.orderNo ?? '', notes: p.notes ?? '', addToStock: false }); setShowPurchaseDialog(true); }}><Edit2 className="w-3.5 h-3.5" /></Button>
+                          <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => { setEditPurchase(p); setPurchaseForm({ supplementId: String(p.supplementId), purchaseDate: p.purchaseDate, quantity: String(p.quantity), unitPrice: p.unitPrice ?? '', totalPrice: p.totalPrice ?? '', currency: p.currency ?? 'HKD', source: p.source ?? 'iHerb', orderNo: p.orderNo ?? '', notes: p.notes ?? '', addToStock: false }); setShowPurchaseDialog(true); }}><Edit2 className="w-3.5 h-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deletePurchase.mutate({ id: p.id })}><Trash2 className="w-3.5 h-3.5" /></Button>
                         </div>
                       </td>
@@ -891,6 +892,32 @@ export default function Supplements() {
               <label className="text-xs text-muted-foreground mb-1 block">{t('common.notes')}</label>
               <Textarea placeholder={t('common.optional_notes')} value={supplementForm.notes} onChange={e => setSupplementForm((f: any) => ({ ...f, notes: e.target.value }))} rows={2} />
             </div>
+            {/* Discontinued settings */}
+            <div className="border border-border rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">已停用</p>
+                  <p className="text-xs text-muted-foreground">停用後不會顯示在今日計劃中</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSupplementForm((f: any) => ({ ...f, discontinuedAt: f.discontinuedAt ? '' : new Date().toISOString().slice(0, 10) }))}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    supplementForm.discontinuedAt ? 'bg-rose-500' : 'bg-muted'
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    supplementForm.discontinuedAt ? 'translate-x-4' : 'translate-x-0.5'
+                  }`} />
+                </button>
+              </div>
+              {supplementForm.discontinuedAt && (
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">停用日期</label>
+                  <Input type="date" value={supplementForm.discontinuedAt} onChange={e => setSupplementForm((f: any) => ({ ...f, discontinuedAt: e.target.value }))} className="h-8 text-xs w-40" />
+                </div>
+              )}
+            </div>
             {/* Reminder settings */}
             <div className="border border-border rounded-xl p-3 space-y-2">
               <div className="flex items-center justify-between">
@@ -922,7 +949,7 @@ export default function Supplements() {
             <Button variant="outline" onClick={() => { setShowSupplementDialog(false); setEditSupplement(null); }}>{t('common.cancel')}</Button>
             <Button onClick={() => {
               if (!supplementForm.name.trim()) { toast.error(t('supplements.name_required')); return; }
-              const payload = { ...supplementForm, currentStock: supplementForm.currentStock ? Number(supplementForm.currentStock) : undefined, lowStockThreshold: supplementForm.lowStockThreshold ? Number(supplementForm.lowStockThreshold) : 30, purchaseDate: supplementForm.purchaseDate || undefined, expiryDate: supplementForm.expiryDate || undefined, dailyDose: supplementForm.dailyDose ? Number(supplementForm.dailyDose) : undefined };
+              const payload = { ...supplementForm, currentStock: supplementForm.currentStock ? Number(supplementForm.currentStock) : undefined, lowStockThreshold: supplementForm.lowStockThreshold ? Number(supplementForm.lowStockThreshold) : 30, purchaseDate: supplementForm.purchaseDate || undefined, expiryDate: supplementForm.expiryDate || undefined, dailyDose: supplementForm.dailyDose ? Number(supplementForm.dailyDose) : undefined, discontinuedAt: supplementForm.discontinuedAt || null };
               if (editSupplement) updateSupplement.mutate({ id: editSupplement.id, ...payload });
               else addSupplement.mutate(payload);
             }} disabled={addSupplement.isPending || updateSupplement.isPending}>
