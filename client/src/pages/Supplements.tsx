@@ -68,6 +68,7 @@ export default function Supplements() {
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
   const [analyticsView, setAnalyticsView] = useState<'monthly' | 'yearly'>('monthly');
   const [analyticsGroup, setAnalyticsGroup] = useState<'brand' | 'category'>('brand');
+  const [scheduleDate, setScheduleDate] = useState(() => todayHKString());
 
   const utils = trpc.useUtils();
   const { data: supplements = [], isLoading } = trpc.supplements.getAll.useQuery();
@@ -226,9 +227,9 @@ export default function Supplements() {
     return { chartData, allLabels, thisMonth, thisYear, allTime };
   }, [purchases, analyticsView, analyticsGroup, suppMap, t]);
 
-  // Today's schedule: active supplements grouped by time_of_day
+  // Schedule for selected date: active supplements grouped by time_of_day
   const todaySchedule = useMemo(() => {
-    const today = todayHKString();
+    const today = scheduleDate;
     const takenToday = new Set(logs.filter((l: any) => l.date === today).map((l: any) => l.supplementId));
     const active = supplements.filter((s: any) => s.isActive && !s.discontinuedAt);
     const groups: Record<string, any[]> = {};
@@ -243,7 +244,7 @@ export default function Supplements() {
     const totalTaken = active.filter((s: any) => takenToday.has(s.id)).length;
     // Note: discontinued supplements are excluded from active list above
     return { groups, totalActive, totalTaken };
-  }, [supplements, logs]);
+  }, [supplements, logs, scheduleDate]);
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto">
@@ -729,16 +730,54 @@ export default function Supplements() {
 
         {/* Today's Schedule Tab */}
         <TabsContent value="schedule" className="mt-4 space-y-4">
-          {/* Progress bar */}
+          {/* Date picker + progress bar */}
           <div className="bg-card border border-border rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold">{t('supplements.today_progress')}</h3>
+            <div className="flex items-center gap-3 mb-3 flex-wrap">
+              <h3 className="text-sm font-semibold flex-1">{t('supplements.today_progress')}</h3>
+              <div className="flex items-center gap-2">
+                <button
+                  className="w-7 h-7 flex items-center justify-center rounded-lg border border-border bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors text-sm"
+                  onClick={() => {
+                    const d = new Date(scheduleDate + 'T12:00:00+08:00');
+                    d.setDate(d.getDate() - 1);
+                    setScheduleDate(d.toISOString().slice(0, 10));
+                  }}
+                  title="前一天"
+                >&lt;</button>
+                <input
+                  type="date"
+                  value={scheduleDate}
+                  max={todayHKString()}
+                  onChange={e => setScheduleDate(e.target.value)}
+                  className="text-xs border border-border rounded-lg px-2 py-1 bg-muted/40 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <button
+                  className="w-7 h-7 flex items-center justify-center rounded-lg border border-border bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={() => {
+                    const d = new Date(scheduleDate + 'T12:00:00+08:00');
+                    d.setDate(d.getDate() + 1);
+                    const next = d.toISOString().slice(0, 10);
+                    if (next <= todayHKString()) setScheduleDate(next);
+                  }}
+                  disabled={scheduleDate >= todayHKString()}
+                  title="後一天"
+                >&gt;</button>
+                {scheduleDate !== todayHKString() && (
+                  <button
+                    className="text-xs px-2 py-1 rounded-lg border border-primary/40 text-primary hover:bg-primary/10 transition-colors"
+                    onClick={() => setScheduleDate(todayHKString())}
+                  >今天</button>
+                )}
+              </div>
               <span className="text-sm font-bold text-primary">{todaySchedule.totalTaken} / {todaySchedule.totalActive}</span>
             </div>
             <div className="w-full bg-muted rounded-full h-2">
               <div className="bg-primary h-2 rounded-full transition-all" style={{ width: todaySchedule.totalActive > 0 ? `${(todaySchedule.totalTaken / todaySchedule.totalActive) * 100}%` : '0%' }} />
             </div>
-            <p className="text-xs text-muted-foreground mt-1">{t('supplements.today_date')}: {todayHKString()}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {scheduleDate === todayHKString() ? '今天' : '過往日子'}: {scheduleDate}
+              {scheduleDate !== todayHKString() && <span className="ml-2 text-amber-400">（補錄模式）</span>}
+            </p>
           </div>
 
           {/* Groups by time of day */}
@@ -768,7 +807,7 @@ export default function Supplements() {
                       disabled={addLog.isPending}
                       onClick={() => {
                         slotUntaken.forEach((s: any) => {
-                          addLog.mutate({ supplementId: s.id, date: todayHKString(), quantity: s.dailyDose ?? 1, timeOfDay: key === 'other' ? 'morning' : key as any, notes: '' });
+                          addLog.mutate({ supplementId: s.id, date: scheduleDate, quantity: s.dailyDose ?? 1, timeOfDay: key === 'other' ? 'morning' : key as any, notes: '' });
                         });
                       }}>
                       <Check className="w-3 h-3" /> 全部記錄
@@ -788,7 +827,7 @@ export default function Supplements() {
                         <span className="text-rose-400 text-xs font-medium flex items-center gap-1">⚠ 庫存不足</span>
                       ) : (
                         <Button size="sm" className="h-7 text-xs px-3" onClick={() => {
-                          addLog.mutate({ supplementId: s.id, date: todayHKString(), quantity: s.dailyDose ?? 1, timeOfDay: key === 'other' ? 'morning' : key as any, notes: '' });
+                          addLog.mutate({ supplementId: s.id, date: scheduleDate, quantity: s.dailyDose ?? 1, timeOfDay: key === 'other' ? 'morning' : key as any, notes: '' });
                         }} disabled={addLog.isPending}>
                           {addLog.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : t('supplements.mark_taken')}
                         </Button>
@@ -817,7 +856,7 @@ export default function Supplements() {
                       }))
                     );
                   if (unlogged.length === 0) return;
-                  bulkLogToday.mutate({ date: todayHKString(), items: unlogged });
+                  bulkLogToday.mutate({ date: scheduleDate, items: unlogged });
                 }}
               >
                 {bulkLogToday.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}

@@ -397,3 +397,11 @@
 - [x] Fix updateSession: use pool.query() with colMap for camelCase column name quoting
 - [x] Root cause: Drizzle ORM generates "column" = $1 (double-quoted identifiers) which Supabase PostgreSQL rejects
 - [x] Bump version to v3.12.2
+
+## v3.12.9 — Supplement schedule date picker (補錄模式)
+- [x] Added `scheduleDate` state (default: today in HK timezone) to Supplements.tsx schedule tab
+- [x] Date picker with ← / → navigation buttons, date input, and "今天" reset button
+- [x] Shows "（補錄模式）" amber label when viewing a past date
+- [x] All `addLog.mutate()` and `bulkLogToday.mutate()` calls use `scheduleDate` instead of hardcoded `todayHKString()`
+- [x] `todaySchedule` useMemo depends on `scheduleDate` so it re-fetches logs for the selected date
+- [x] TypeScript 0 errors confirmed
