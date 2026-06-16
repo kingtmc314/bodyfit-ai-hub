@@ -405,3 +405,6 @@
 - [x] All `addLog.mutate()` and `bulkLogToday.mutate()` calls use `scheduleDate` instead of hardcoded `todayHKString()`
 - [x] `todaySchedule` useMemo depends on `scheduleDate` so it re-fetches logs for the selected date
 - [x] TypeScript 0 errors confirmed
+
+## v3.12.10 Body Composition UX Fix
+- [x] Body composition: replace Tabs with always-visible past records list (with edit/delete buttons) below charts

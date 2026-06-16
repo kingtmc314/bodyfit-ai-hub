@@ -185,13 +185,8 @@ export default function BodyComposition() {
         </div>
       )}
 
-      <Tabs defaultValue="charts">
-        <TabsList className="bg-muted/50">
-          <TabsTrigger value="charts">{t('body.trend')}</TabsTrigger>
-          <TabsTrigger value="log">{t('common.view_all')}</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="charts" className="mt-4 space-y-4">
+      {/* Charts section – always visible */}
+      <div className="space-y-4">
           {/* Weight & Muscle Trend */}
           <div className="bg-card border border-border rounded-2xl p-5">
             <h3 className="font-semibold text-foreground mb-4">Weight & Muscle Mass Trend</h3>
@@ -254,11 +249,12 @@ export default function BodyComposition() {
               ) : <div className="h-40 flex items-center justify-center text-muted-foreground text-sm">No data yet</div>}
             </div>
           </div>
-        </TabsContent>
+      </div>
 
-        <TabsContent value="log" className="mt-4 space-y-3">
-          {/* Sort/Filter bar */}
-          {(() => {
+      {/* Records list – always visible below charts */}
+      <div className="space-y-3">
+        <h2 className="text-base font-bold text-foreground">過往記錄</h2>
+        {(() => {
             const sortedBodyRecords = (() => {
               let list = [...records];
               if (bodySearch.trim()) {
@@ -343,8 +339,7 @@ export default function BodyComposition() {
               </>
             );
           })()}
-        </TabsContent>
-      </Tabs>
+      </div>
 
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent className="max-w-md">
