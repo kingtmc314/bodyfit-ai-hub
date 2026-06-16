@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Brain, Sparkles, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Trash2, Footprints } from "lucide-react";
-import { Streamdown } from "streamdown";
+import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -159,7 +159,7 @@ export default function Insights() {
                 <Badge variant="outline" className="text-xs capitalize">{latestInsight.type || "overall"}</Badge>
               </div>
               <div className="prose prose-sm prose-invert max-w-none">
-                <Streamdown>{latestInsight.content}</Streamdown>
+                <MarkdownRenderer>{latestInsight.content}</MarkdownRenderer>
               </div>
             </div>
           ) : (
@@ -361,7 +361,7 @@ export default function Insights() {
             </div>
             {runningAnalysis ? (
               <div className="prose prose-sm prose-invert max-w-none">
-                <Streamdown>{runningAnalysis}</Streamdown>
+                <MarkdownRenderer>{runningAnalysis}</MarkdownRenderer>
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground text-sm">
@@ -402,7 +402,7 @@ export default function Insights() {
                 {expandedId === insight.id && (
                   <div className="px-4 pb-4 border-t border-border pt-3">
                     <div className="prose prose-sm prose-invert max-w-none">
-                      <Streamdown>{insight.content}</Streamdown>
+                      <MarkdownRenderer>{insight.content}</MarkdownRenderer>
                     </div>
                   </div>
                 )}

@@ -16,7 +16,7 @@ import {
 import { format } from "date-fns";
 import { toHKDateString, formatHKChartDate } from "@/lib/hkTime";
 import { useTranslation } from "react-i18next";
-import { Streamdown } from "streamdown";
+import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
 const CALORIE_GOAL = 2000;
 const PROTEIN_GOAL = 150;
@@ -534,7 +534,7 @@ export default function Dashboard() {
           </Button>
         </div>
         {insightText
-          ? <div className="text-sm text-foreground/80 leading-relaxed"><Streamdown>{insightText}</Streamdown></div>
+          ? <div className="text-sm text-foreground/80 leading-relaxed"><MarkdownRenderer>{insightText}</MarkdownRenderer></div>
           : <p className="text-sm text-muted-foreground">{t('dashboard.no_insight')}</p>}
       </div>
 

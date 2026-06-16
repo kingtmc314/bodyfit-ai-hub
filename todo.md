@@ -408,3 +408,9 @@
 
 ## v3.12.10 Body Composition UX Fix
 - [x] Body composition: replace Tabs with always-visible past records list (with edit/delete buttons) below charts
+
+## v3.12.11 Deployment Bundle Fix
+- [x] Replace streamdown (12MB bundle) with react-markdown (lightweight) in Dashboard, Insights, Running, AIChatBox
+- [x] Add lazy imports for all heavy pages in App.tsx (code splitting)
+- [x] Add manualChunks in vite.config.ts (streamdown-vendor, charts-vendor, react-vendor, radix-vendor)
+- [x] Total frontend bundle reduced from ~16MB to ~3.7MB

@@ -17,7 +17,7 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart, Area
 } from "recharts";
-import { Streamdown } from "streamdown";
+import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const formatPace = (secPerKm: number | null | undefined): string => {
@@ -1431,7 +1431,7 @@ export default function Running() {
 
             {!aiMutation.isPending && aiAnalysis && (
               <div className="prose prose-sm dark:prose-invert max-w-none">
-                <Streamdown>{aiAnalysis}</Streamdown>
+                <MarkdownRenderer>{aiAnalysis}</MarkdownRenderer>
               </div>
             )}
 
@@ -1524,7 +1524,7 @@ export default function Running() {
 
             {!trainingPlanMutation.isPending && trainingPlan && (
               <div className="prose prose-sm dark:prose-invert max-w-none border-t border-border pt-4">
-                <Streamdown>{trainingPlan}</Streamdown>
+                <MarkdownRenderer>{trainingPlan}</MarkdownRenderer>
               </div>
             )}
 
