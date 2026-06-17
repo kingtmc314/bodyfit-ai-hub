@@ -167,25 +167,13 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
-    chunkSizeWarningLimit: 600,
+    chunkSizeWarningLimit: 1800,
     rollupOptions: {
       output: {
         manualChunks(id) {
-          // Streamdown + its heavy syntax highlighting / diagram deps
-          if (id.includes('streamdown') || id.includes('shiki') || id.includes('mermaid') || id.includes('cytoscape') || id.includes('highlight.js')) {
-            return 'streamdown-vendor';
-          }
-          // Recharts + d3
-          if (id.includes('recharts') || id.includes('d3-') || id.includes('victory')) {
+          // Only split recharts + d3 (heaviest, no circular dep risk)
+          if (id.includes('recharts') || id.includes('/d3-') || id.includes('/d3/')) {
             return 'charts-vendor';
-          }
-          // React core
-          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
-            return 'react-vendor';
-          }
-          // Radix UI
-          if (id.includes('@radix-ui')) {
-            return 'radix-vendor';
           }
         },
       },

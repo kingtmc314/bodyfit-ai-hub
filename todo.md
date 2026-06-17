@@ -414,3 +414,6 @@
 - [x] Add lazy imports for all heavy pages in App.tsx (code splitting)
 - [x] Add manualChunks in vite.config.ts (streamdown-vendor, charts-vendor, react-vendor, radix-vendor)
 - [x] Total frontend bundle reduced from ~16MB to ~3.7MB
+
+## v3.12.12 Vercel Blank Page Fix
+- [x] Fix Vercel blank page: manualChunks with react/radix splits caused circular dependency (Cannot access 'A' before initialization). Removed react/radix splits, kept only recharts/d3 split (safe). Raised chunkSizeWarningLimit to 1800.
