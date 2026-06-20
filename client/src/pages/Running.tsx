@@ -79,6 +79,7 @@ const defaultForm = {
   avgStrideLengthM: "",
   avgVerticalRatio: "",
   verticalOscillationCm: "",
+  avgGroundContactTimeMs: "",
   calories: "",
   notes: "",
 };
@@ -295,6 +296,7 @@ export default function Running() {
       avgStrideLengthM: row.avg_stride_length_m != null ? String(row.avg_stride_length_m) : "",
       avgVerticalRatio: row.avg_vertical_ratio != null ? String(row.avg_vertical_ratio) : "",
       verticalOscillationCm: row.vertical_oscillation_cm != null ? String(row.vertical_oscillation_cm) : "",
+      avgGroundContactTimeMs: row.avg_ground_contact_time_ms != null ? String(row.avg_ground_contact_time_ms) : "",
       calories: row.calories != null ? String(row.calories) : "",
       notes: row.notes ?? "",
     });
@@ -319,6 +321,7 @@ export default function Running() {
       avgStrideLengthM: form.avgStrideLengthM ? parseFloat(form.avgStrideLengthM) : undefined,
       avgVerticalRatio: form.avgVerticalRatio ? parseFloat(form.avgVerticalRatio) : undefined,
       verticalOscillationCm: form.verticalOscillationCm ? parseFloat(form.verticalOscillationCm) : undefined,
+      avgGroundContactTimeMs: form.avgGroundContactTimeMs ? parseFloat(form.avgGroundContactTimeMs) : undefined,
       calories: form.calories ? parseInt(form.calories) : undefined,
       notes: form.notes || undefined,
     };
@@ -820,7 +823,7 @@ export default function Running() {
                           {row.notes || "—"}
                         </td>
                         <td className="px-4 py-3">
-                          <LogPhotoUploader logId={row.id} type="running" compact />
+                          <LogPhotoUploader logId={Number(row.id)} type="running" compact />
                         </td>
                         {isOwner && (
                         <td className="px-4 py-3">
@@ -1628,6 +1631,10 @@ export default function Running() {
               <Input type="number" step="0.1" placeholder="例: 9.2" value={form.verticalOscillationCm} onChange={(e) => f("verticalOscillationCm", e.target.value)} />
             </div>
             <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">接觸地面時間 (ms)</label>
+              <Input type="number" step="1" placeholder="例: 245" value={form.avgGroundContactTimeMs} onChange={(e) => f("avgGroundContactTimeMs", e.target.value)} />
+            </div>
+            <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.calories")}</label>
               <Input type="number" placeholder="例: 450" value={form.calories} onChange={(e) => f("calories", e.target.value)} />
             </div>
@@ -1672,7 +1679,7 @@ export default function Running() {
             </div>
             <div className="col-span-2">
               <label className="text-xs font-medium text-muted-foreground mb-1 block">截圖上載</label>
-              <LogPhotoUploader ref={photoUploaderRef} logId={editEntry ? editEntry.id : null} type="running" />
+              <LogPhotoUploader ref={photoUploaderRef} logId={editEntry ? Number(editEntry.id) : null} type="running" />
             </div>
           </div>
           <DialogFooter>
