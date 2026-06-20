@@ -155,9 +155,9 @@ export default function Running() {
 
   // Shoe run history modal state
   const [shoeHistoryModal, setShoeHistoryModal] = useState<{ shoe: any; runs: any[] } | null>(null);
-  const [loadingShoeHistory, setLoadingShoeHistory] = useState<number | null>(null);
+  const [loadingShoeHistory, setLoadingShoeHistory] = useState<{ id: number; name: string } | null>(null);
   const shoeHistoryQuery = trpc.running.getShoeRunHistory.useQuery(
-    { shoeId: loadingShoeHistory ?? undefined },
+    { shoeId: loadingShoeHistory?.id ?? undefined, shoeName: loadingShoeHistory?.name ?? undefined },
     { enabled: loadingShoeHistory !== null }
   );
 
@@ -171,11 +171,11 @@ export default function Running() {
 
   // Open shoe history
   const openShoeHistory = (shoe: any) => {
-    setLoadingShoeHistory(Number(shoe.id));
+    setLoadingShoeHistory({ id: Number(shoe.id), name: shoe.shoes_name });
   };
   useEffect(() => {
     if (loadingShoeHistory !== null && !shoeHistoryQuery.isLoading && shoeHistoryQuery.data) {
-      const shoe = (allShoes as any[]).find((s: any) => Number(s.id) === loadingShoeHistory);
+      const shoe = (allShoes as any[]).find((s: any) => Number(s.id) === loadingShoeHistory.id);
       setShoeHistoryModal({ shoe, runs: shoeHistoryQuery.data as any[] });
       setLoadingShoeHistory(null);
     }
@@ -989,8 +989,8 @@ export default function Running() {
                         )}
                         <Button size="sm" variant="outline" className="flex-1 h-8 text-xs text-blue-600 hover:text-blue-700 border-blue-200 hover:border-blue-400"
                           onClick={() => openShoeHistory(shoe)}
-                          disabled={loadingShoeHistory === Number(shoe.id)}>
-                          {loadingShoeHistory === Number(shoe.id) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Activity className="w-3 h-3 mr-1" />}
+                          disabled={loadingShoeHistory?.id === Number(shoe.id)}>
+                          {loadingShoeHistory?.id === Number(shoe.id) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Activity className="w-3 h-3 mr-1" />}
                           {runCount} {t('running.view_runs')}
                         </Button>
                       </div>
