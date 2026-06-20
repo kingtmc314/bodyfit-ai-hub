@@ -380,7 +380,15 @@ export default function Running() {
   const sortedRacesList = useMemo(() => {
     const raceList = [...(races as any[])];
     switch (raceSort) {
-      case 'date': return raceList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      case 'date': {
+        // Upcoming: ASC (nearest first); completed: DESC (most recent first)
+        const nowTs = Date.now();
+        const upcoming = raceList.filter(r => new Date(r.date + 'T00:00:00+08:00').getTime() > nowTs)
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        const completed = raceList.filter(r => new Date(r.date + 'T00:00:00+08:00').getTime() <= nowTs)
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        return [...upcoming, ...completed];
+      }
       case 'distance': return raceList.sort((a, b) => parseFloat(b.distance_km || 0) - parseFloat(a.distance_km || 0));
       case 'name': return raceList.sort((a, b) => (a.race_name || '').localeCompare(b.race_name || ''));
       default: return raceList;
@@ -768,7 +776,7 @@ export default function Running() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/40">
-                      {["日期", "類型", "跑鞋", "距離", "時間", "配速", "心率", "步頻", "卡路里", "備注", ""].map((h) => (
+                      {["日期", "類型", "跑鞋", "距離", "時間", "配速", "心率", "步頻", "接觸", "卡路里", "備注", ""].map((h) => (
                         <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -801,6 +809,9 @@ export default function Running() {
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           {row.average_cadence ? `${parseFloat(row.average_cadence).toFixed(0)} spm` : "—"}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {row.avg_ground_contact_time_ms ? `${Math.round(Number(row.avg_ground_contact_time_ms))} ms` : "—"}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           {row.calories ? `${row.calories} kcal` : "—"}

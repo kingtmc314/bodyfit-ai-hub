@@ -417,3 +417,9 @@
 
 ## v3.12.12 Vercel Blank Page Fix
 - [x] Fix Vercel blank page: manualChunks with react/radix splits caused circular dependency (Cannot access 'A' before initialization). Removed react/radix splits, kept only recharts/d3 split (safe). Raised chunkSizeWarningLimit to 1800.
+
+## v3.12.13 Running & Sleep Fixes
+- [ ] Fix getActiveShoes: include firstusedate and retirement_date in SELECT so shoe status badge is correct
+- [ ] Fix race sorting: upcoming races should sort by date ASC (nearest first), completed races by date DESC
+- [ ] Add 接觸地面時間 (ground contact time) column to running log table
+- [ ] Sleep dialog: split Duration input into h (hours) and m (minutes) separate fields

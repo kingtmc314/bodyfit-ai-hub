@@ -73,7 +73,7 @@ const defaultForm = {
   date: todayHKString(),
   score: "", restingHr: "", bodyBattery: "", pulseOx: "",
   respiration: "", hrv: "", quality: "Good" as const,
-  duration: "", bedtime: "", waketime: "", notes: ""
+  durationH: "", durationM: "", bedtime: "", waketime: "", notes: ""
 };
 
 export default function Sleep() {
@@ -169,7 +169,7 @@ export default function Sleep() {
       respiration: form.respiration ? Number(form.respiration) : undefined,
       hrv: form.hrv ? Number(form.hrv) : undefined,
       quality: form.quality as any,
-      duration: form.duration ? Number(form.duration) : undefined,
+      duration: (form.durationH || form.durationM) ? (Number(form.durationH || 0) + Number(form.durationM || 0) / 60) : undefined,
       bedtime: form.bedtime || undefined,
       waketime: form.waketime || undefined,
       notes: form.notes || undefined,
@@ -447,7 +447,8 @@ export default function Sleep() {
                               respiration: r.respiration ?? "",
                               hrv: r.hrv ?? "",
                               quality: r.sleepQuality ?? "Good",
-                              duration: r.sleepDuration != null ? (toHrs(r.sleepDuration) ?? "") : "",
+                              durationH: r.sleepDuration != null ? String(Math.floor(toHrs(r.sleepDuration) ?? 0)) : "",
+                              durationM: r.sleepDuration != null ? String(Math.round(((toHrs(r.sleepDuration) ?? 0) % 1) * 60)) : "",
                               bedtime: r.bedtime ? String(r.bedtime).slice(0, 5) : "",
                               waketime: r.waketime ? String(r.waketime).slice(0, 5) : "",
                               notes: r.notes ?? "",
@@ -498,7 +499,6 @@ export default function Sleep() {
             </div>
             {[
               { key: "score", label: "Sleep Score (0-100)" },
-              { key: "duration", label: "Duration (hrs)" },
               { key: "hrv", label: "HRV (ms)" },
               { key: "restingHr", label: "Resting HR (bpm)" },
               { key: "bodyBattery", label: "Body Battery (0-100)" },
@@ -510,6 +510,15 @@ export default function Sleep() {
                 <Input type="number" step="0.1" value={form[f.key]} onChange={e => setForm((prev: any) => ({ ...prev, [f.key]: e.target.value }))} />
               </div>
             ))}
+            {/* Duration split: h + m */}
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">睡眠時數 — h</label>
+              <Input type="number" min="0" max="24" step="1" placeholder="例: 7" value={form.durationH} onChange={e => setForm((prev: any) => ({ ...prev, durationH: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">睡眠時數 — min</label>
+              <Input type="number" min="0" max="59" step="1" placeholder="例: 30" value={form.durationM} onChange={e => setForm((prev: any) => ({ ...prev, durationM: e.target.value }))} />
+            </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">就寢時間 (HH:MM)</label>
               <Input type="time" value={form.bedtime} onChange={e => setForm((f: any) => ({ ...f, bedtime: e.target.value }))} />

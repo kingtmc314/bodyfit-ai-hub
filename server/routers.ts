@@ -2301,7 +2301,7 @@ const runningRouter = router({
       const db = await getDb();
       if (!db) return [];
       const rows = await db.execute(sql`
-        SELECT id, shoes_name, brand, status
+        SELECT id, shoes_name, brand, status, firstusedate, retirement_date
         FROM running_shoes
         WHERE status != 'Retired'
         ORDER BY status ASC, shoes_name ASC
