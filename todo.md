@@ -427,3 +427,12 @@
 ## v3.12.16 CSV Template Downloads
 - [x] Add CSV template download button to Import page for all 6 data types
 - [x] Add server endpoint /api/csv-template/:type to serve template CSV files with example rows
+
+## v3.12.17 CSV Template Column Fix
+- [x] Revised all 6 CSV templates to use exact Supabase table column names (snake_case)
+- [x] body_composition: weight, body_fat_pct, muscle_mass, fat_mass, visceral_fat, bmi, bmr
+- [x] sleep_logs: sleep_duration, sleep_score, sleep_quality, deep_sleep, rem_sleep, light_sleep, awake_duration, hrv, resting_hr, body_battery, pulse_ox, respiration, bedtime, waketime
+- [x] heart_rate_logs: resting_hr, high_hr, hrv, avg_hr, zone1-5, zone1_minutes-zone5_minutes
+- [x] workout (sessions+sets): date, session_name, duration, calories_burned, exercise_name, set_number, reps, weight
+- [x] meal_logs: log_date, meal_type, food_name, servings, serving_size, calories, protein, carbs, fat, fiber
+- [x] running_logs: all fields matching schema (running_type, distance_km, hour, minutes, second, average_pace, best_pace, average_heart_rate, maximum_heart_rate, average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio, vertical_oscillation_cm, avg_ground_contact_time_ms, calories, temperature, humidity)
