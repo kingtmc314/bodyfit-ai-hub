@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import {
   Upload, FileText, CheckCircle2, AlertCircle, Info,
   Activity, Moon, Heart, Scale, ChevronRight, Image, Utensils,
-  Loader2, Eye, Save, RefreshCw, Footprints, Camera, X
+  Loader2, Eye, Save, RefreshCw, Footprints, Camera, X, Download
 } from "lucide-react";
 
 type DataType = "body" | "sleep" | "heartrate" | "workout" | "nutrition" | "running";
@@ -256,6 +256,17 @@ function CsvImportTab() {
                 <SelectItem value="running">{t("import.data_types.running")}</SelectItem>
               </SelectContent>
             </Select>
+            {dataType !== "auto" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => window.open(`/api/csv-template/${dataType}`, '_blank')}
+              >
+                <Download className="w-3 h-3" />
+                下載範本
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={handlePreview}

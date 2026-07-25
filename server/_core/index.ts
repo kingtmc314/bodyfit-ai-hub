@@ -10,6 +10,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { dailyReminderHandler } from "../reminderHandler";
 import { exportRunningLogsHandler, exportBodyCompositionHandler, exportSupplementLogsHandler } from "../exportHandler";
+import { CSV_TEMPLATES } from "../csvTemplates";
 import { supplementReminderHandler } from "../supplementReminderHandler";
 import { weeklyHealthSummaryHandler } from "../weeklyHealthSummaryHandler";
 
@@ -60,6 +61,19 @@ async function startServer() {
     } catch (e) {
       res.status(500).end();
     }
+  });
+
+  // CSV template download endpoints
+  app.get("/api/csv-template/:type", (req, res) => {
+    const { type } = req.params;
+    const template = CSV_TEMPLATES[type];
+    if (!template) {
+      res.status(404).json({ error: "Template not found" });
+      return;
+    }
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${template.filename}"`);
+    res.send(template.content);
   });
 
   // Data export endpoints (CSV / HTML-PDF)

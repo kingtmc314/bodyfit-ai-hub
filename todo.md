@@ -423,3 +423,7 @@
 - [ ] Fix race sorting: upcoming races should sort by date ASC (nearest first), completed races by date DESC
 - [ ] Add 接觸地面時間 (ground contact time) column to running log table
 - [ ] Sleep dialog: split Duration input into h (hours) and m (minutes) separate fields
+
+## v3.12.16 CSV Template Downloads
+- [x] Add CSV template download button to Import page for all 6 data types
+- [x] Add server endpoint /api/csv-template/:type to serve template CSV files with example rows
