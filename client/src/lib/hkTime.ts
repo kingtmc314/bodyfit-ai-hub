@@ -9,6 +9,37 @@
 const HK_TIMEZONE = "Asia/Hong_Kong";
 
 /**
+ * Return the current hour at a specific instant in Hong Kong (UTC+8).
+ * Use this rather than the runtime machine's local `Date#getHours()` value.
+ */
+export function getHKHour(date: Date | string | number = new Date()): number {
+  const value = new Date(date);
+  if (Number.isNaN(value.getTime())) return 0;
+  const hour = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    hourCycle: "h23",
+    timeZone: HK_TIMEZONE,
+  }).formatToParts(value).find((part) => part.type === "hour")?.value;
+  return Number(hour ?? 0);
+}
+
+/** Format a full, locale-aware calendar label in Hong Kong time. */
+export function formatHKLongDate(
+  date: Date | string | number,
+  locale: string = "zh-HK"
+): string {
+  const value = new Date(date);
+  if (Number.isNaN(value.getTime())) return "";
+  return new Intl.DateTimeFormat(locale, {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: HK_TIMEZONE,
+  }).format(value);
+}
+
+/**
  * Format a plain "YYYY-MM-DD" date string for display as "DD/MM/YYYY".
  * The string is already the correct HK date — no timezone conversion is done.
  * Also accepts Date objects or timestamps, converting them to HK timezone first.

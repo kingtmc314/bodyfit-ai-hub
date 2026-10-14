@@ -419,10 +419,10 @@
 - [x] Fix Vercel blank page: manualChunks with react/radix splits caused circular dependency (Cannot access 'A' before initialization). Removed react/radix splits, kept only recharts/d3 split (safe). Raised chunkSizeWarningLimit to 1800.
 
 ## v3.12.13 Running & Sleep Fixes
-- [ ] Fix getActiveShoes: include firstusedate and retirement_date in SELECT so shoe status badge is correct
-- [ ] Fix race sorting: upcoming races should sort by date ASC (nearest first), completed races by date DESC
-- [ ] Add 接觸地面時間 (ground contact time) column to running log table
-- [ ] Sleep dialog: split Duration input into h (hours) and m (minutes) separate fields
+- [x] Fix getActiveShoes: include firstusedate and retirement_date in SELECT so shoe status badge is correct
+- [x] Fix race sorting: upcoming races should sort by date ASC (nearest first), completed races by date DESC
+- [x] Add 接觸地面時間 (ground contact time) column to running log table
+- [x] Sleep dialog: split Duration input into h (hours) and m (minutes) separate fields
 
 ## v3.12.16 CSV Template Downloads
 - [x] Add CSV template download button to Import page for all 6 data types
@@ -436,3 +436,9 @@
 - [x] workout (sessions+sets): date, session_name, duration, calories_burned, exercise_name, set_number, reps, weight
 - [x] meal_logs: log_date, meal_type, food_name, servings, serving_size, calories, protein, carbs, fat, fiber
 - [x] running_logs: all fields matching schema (running_type, distance_km, hour, minutes, second, average_pace, best_pace, average_heart_rate, maximum_heart_rate, average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio, vertical_oscillation_cm, avg_ground_contact_time_ms, calories, temperature, humidity)
+
+## v3.13.0 Premium Interface Refresh
+- [x] Establish a more refined, accessible global visual system for light and dark modes
+- [x] Redesign the application shell, navigation, responsive header, and version presentation
+- [x] Upgrade the dashboard hierarchy, cards, progress indicators, charts, and quick actions without changing feature behaviour
+- [x] Validate Hong Kong-time-based dashboard greeting, desktop/mobile layout, TypeScript, production build, and automated tests

@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
+import { APP_VERSION } from "@/lib/appMeta";
 import { useTranslation } from "react-i18next";
 
 type NavGroup = {
@@ -93,14 +94,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-sidebar-border">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl hero-gradient flex items-center justify-center shadow-md">
-            <Activity className="w-5 h-5 text-white" />
+      <div className="app-brand px-5 py-5 border-b border-sidebar-border">
+        <div className="flex items-center gap-3.5">
+          <div className="brand-mark w-10 h-10 rounded-2xl hero-gradient flex items-center justify-center shadow-md">
+            <Activity className="w-5 h-5 text-white" strokeWidth={2.5} />
           </div>
           <div>
-            <p className="text-sm font-extrabold text-foreground leading-none gradient-text">BodyFit AI</p>
-            <p className="text-xs text-muted-foreground mt-0.5 font-medium">{t('app.tagline').split(' ').slice(0,3).join(' ')}</p>
+            <p className="text-[15px] font-extrabold text-foreground leading-none tracking-tight gradient-text">BodyFit AI</p>
+            <p className="text-[11px] text-muted-foreground mt-1 font-semibold tracking-wide">{t('app.tagline').split(' ').slice(0,3).join(' ')}</p>
           </div>
         </div>
       </div>
@@ -109,7 +110,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       <nav className="flex-1 px-3 py-4 overflow-y-auto">
         {navGroups.map((group, gi) => (
           <div key={group.groupKey} className={gi > 0 ? "mt-3" : ""}>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 px-2 mb-1">
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-muted-foreground/55 px-2 mb-1.5">
               {t(`nav.${group.groupKey}`, { defaultValue: '' })}
             </p>
             <div className="space-y-0.5">
@@ -138,9 +139,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
       </nav>
 
       {/* Bottom controls */}
-      <div className="border-t border-sidebar-border p-3">
-        <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl bg-secondary/50">
-          <div className="w-8 h-8 rounded-full hero-gradient flex items-center justify-center shrink-0">
+      <div className="border-t border-sidebar-border p-3 app-sidebar-footer">
+        <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-2xl bg-secondary/55 border border-white/70 dark:border-white/5">
+          <div className="w-8 h-8 rounded-xl hero-gradient flex items-center justify-center shrink-0 shadow-sm">
             <Activity className="w-4 h-4 text-white" />
           </div>
           <div className="flex-1 min-w-0">
@@ -167,15 +168,15 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </Button>
           </div>
         </div>
-        <p className="text-[10px] text-muted-foreground/50 text-center mt-2 select-none">v3.12.17</p>
+        <p className="text-[10px] text-muted-foreground/60 text-center mt-2.5 select-none font-semibold tracking-wide">v{APP_VERSION}</p>
       </div>
     </div>
   );
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="app-frame flex h-screen bg-background overflow-hidden">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex w-64 shrink-0 flex-col bg-card border-r border-border shadow-sm">
+      <aside className="app-sidebar hidden lg:flex w-[17rem] shrink-0 flex-col bg-card border-r border-border shadow-sm">
         <SidebarContent />
       </aside>
 
@@ -183,7 +184,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
-          <aside className="absolute left-0 top-0 bottom-0 w-64 bg-card border-r border-border shadow-xl">
+          <aside className="app-sidebar absolute left-0 top-0 bottom-0 w-[17rem] bg-card border-r border-border shadow-xl">
             <SidebarContent />
           </aside>
         </div>
@@ -192,15 +193,18 @@ export default function AppLayout({ children }: AppLayoutProps) {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile header */}
-        <header className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-border bg-card shadow-sm">
-          <Button variant="ghost" size="icon" className="w-8 h-8" onClick={() => setSidebarOpen(true)}>
+        <header className="mobile-topbar lg:hidden flex items-center gap-3 px-4 py-3 border-b border-border bg-card shadow-sm">
+          <Button variant="ghost" size="icon" className="w-9 h-9 rounded-xl" onClick={() => setSidebarOpen(true)}>
             <Menu className="w-4 h-4" />
           </Button>
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl hero-gradient flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl hero-gradient flex items-center justify-center shadow-sm">
               <Activity className="w-4 h-4 text-white" />
             </div>
-            <span className="font-extrabold text-sm gradient-text">BodyFit AI</span>
+            <div>
+              <span className="block font-extrabold text-sm leading-none gradient-text">BodyFit AI</span>
+              <span className="block text-[9px] text-muted-foreground mt-0.5 font-semibold tracking-wide">v{APP_VERSION}</span>
+            </div>
           </div>
           <div className="ml-auto flex items-center gap-1">
             <Button variant="ghost" size="icon" className="w-8 h-8" onClick={toggleLanguage}>
@@ -213,7 +217,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
+        <main className="app-main flex-1 overflow-y-auto">
           {children}
         </main>
       </div>

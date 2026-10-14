@@ -13,8 +13,7 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer
 } from "recharts";
-import { format } from "date-fns";
-import { toHKDateString, formatHKChartDate } from "@/lib/hkTime";
+import { toHKDateString, formatHKChartDate, formatHKLongDate, getHKHour } from "@/lib/hkTime";
 import { useTranslation } from "react-i18next";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
@@ -61,7 +60,7 @@ function StatCard({ title, value, unit, subtitle, icon: Icon, badgeClass, trend,
   const trendColor = trend > 0 ? "text-emerald-500" : trend < 0 ? "text-rose-500" : "text-muted-foreground";
   return (
     <Link href={href || "#"}>
-      <div className="stat-card rounded-2xl p-4 cursor-pointer group">
+      <div className="stat-card dashboard-stat rounded-[1.35rem] p-4 cursor-pointer group h-full">
         <div className="flex items-start justify-between mb-3">
           <div className={`icon-badge ${badgeClass}`}><Icon className="w-4.5 h-4.5" /></div>
           <ChevronRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-primary transition-colors" />
@@ -105,7 +104,7 @@ function MacroRing({ label, value, goal, color }: any) {
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload?.length) {
     return (
-      <div className="bg-white border border-border rounded-xl p-3 shadow-lg text-xs">
+      <div className="bg-card text-card-foreground border border-border rounded-xl p-3 shadow-xl text-xs">
         <p className="text-muted-foreground mb-1 font-medium">{label}</p>
         {payload.map((p: any) => (
           <p key={p.name} style={{ color: p.color }} className="font-bold">{p.name}: {p.value}</p>
@@ -141,7 +140,7 @@ function FloatingFAB() {
         </div>
       ))}
       <button onClick={() => setOpen(v => !v)}
-        className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all duration-200 active:scale-95 ${open ? "bg-foreground text-background" : "hero-gradient text-white"}`}
+        className={`quick-add-main w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all duration-200 active:scale-95 ${open ? "bg-foreground text-background" : "hero-gradient text-white"}`}
         aria-label={t('dashboard.quick_add')}>
         {open ? <X className="w-6 h-6" /> : <Plus className="w-6 h-6" />}
       </button>
@@ -175,9 +174,9 @@ export default function Dashboard() {
   });
 
   const now = new Date();
-  const hour = now.getHours();
+  const hour = getHKHour(now);
   const greeting = hour < 12 ? t('dashboard.greeting_morning') : hour < 18 ? t('dashboard.greeting_afternoon') : t('dashboard.greeting_evening');
-  const today = i18n.language === 'zh' ? format(now, "yyyy年M月d日 EEEE") : format(now, "EEEE, d MMMM yyyy");
+  const today = formatHKLongDate(now, i18n.language === 'zh' ? 'zh-HK' : 'en-GB');
 
   const weightTrend = useMemo(() => {
     if (!bodyData) return [];
@@ -238,44 +237,44 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="p-4 sm:p-6 space-y-5 max-w-7xl mx-auto pb-24">
+    <div className="dashboard-shell p-4 sm:p-6 space-y-5 max-w-7xl mx-auto pb-24">
 
       {/* HERO */}
-      <div className="hero-gradient rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
+      <div className="dashboard-hero hero-gradient rounded-[2rem] p-5 sm:p-7 text-white relative overflow-hidden">
         <div className="absolute -top-8 -right-8 w-40 h-40 rounded-full bg-white/10" />
-        <div className="absolute -bottom-6 right-16 w-24 h-24 rounded-full bg-white/10" />
-        <div className="relative z-10 flex items-center justify-between">
+        <div className="absolute -bottom-10 left-1/3 w-40 h-40 rounded-full bg-white/[0.06]" />
+        <div className="relative z-10 flex items-start justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Sun className="w-5 h-5 text-yellow-200" />
-              <p className="text-white/80 text-sm font-semibold">{greeting},</p>
+            <div className="inline-flex items-center gap-2 mb-2 rounded-full bg-white/10 border border-white/10 px-2.5 py-1">
+              <Sun className="w-3.5 h-3.5 text-yellow-200" />
+              <p className="text-white/85 text-[11px] font-bold tracking-wide">{greeting}</p>
             </div>
-            <h1 className="text-2xl font-extrabold text-white leading-tight">{(summary as any)?.user?.name || "Champion"} 💪</h1>
-            <p className="text-white/70 text-xs mt-1">{today}</p>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white leading-tight tracking-tight">{(summary as any)?.user?.name || "Champion"}</h1>
+            <p className="text-white/70 text-xs sm:text-sm mt-1.5 font-medium">{today}</p>
           </div>
           <Link href="/insights">
-            <Button size="sm" className="bg-white/20 hover:bg-white/30 text-white border-0 gap-2 backdrop-blur-sm">
-              <Sparkles className="w-3.5 h-3.5" />{t('nav.insights')}
+            <Button size="sm" className="bg-white/15 hover:bg-white/25 text-white border border-white/15 gap-2 backdrop-blur-sm rounded-xl shadow-none shrink-0">
+              <Sparkles className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('nav.insights')}</span>
             </Button>
           </Link>
         </div>
-        <div className="relative z-10 grid grid-cols-3 gap-3 mt-5">
+        <div className="relative z-10 grid grid-cols-3 gap-2.5 sm:gap-3 mt-6">
           {[
             { label: t('dashboard.net_calories'), value: `${Math.round(netCalories)}`, unit: "kcal", icon: Flame },
             { label: t('dashboard.workout_streak'), value: `${workoutStreak || 0}`, unit: t('dashboard.days'), icon: Zap },
             { label: t('dashboard.heart_rate'), value: latestHr?.restingHr ? `${latestHr.restingHr}` : "—", unit: t('dashboard.bpm'), icon: Heart },
           ].map(s => (
-            <div key={s.label} className="bg-white/15 backdrop-blur-sm rounded-2xl p-3 text-center">
-              <s.icon className="w-4 h-4 text-white/80 mx-auto mb-1" />
-              <p className="text-xl font-extrabold text-white">{s.value}<span className="text-xs font-medium text-white/70 ml-0.5">{s.unit}</span></p>
-              <p className="text-white/60 text-xs mt-0.5 font-medium">{s.label}</p>
+            <div key={s.label} className="dashboard-hero-stat bg-white/15 backdrop-blur-sm rounded-2xl p-2.5 sm:p-3 text-center">
+              <s.icon className="w-4 h-4 text-white/85 mx-auto mb-1.5" />
+              <p className="text-lg sm:text-xl font-extrabold text-white tracking-tight">{s.value}<span className="text-[10px] sm:text-xs font-semibold text-white/70 ml-0.5">{s.unit}</span></p>
+              <p className="text-white/65 text-[10px] sm:text-xs mt-0.5 font-semibold truncate">{s.label}</p>
             </div>
           ))}
         </div>
       </div>
 
       {/* NET CALORIE CARD */}
-      <div className="bg-white rounded-2xl p-5 border border-border shadow-sm">
+      <div className="dashboard-section-card p-5 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
           <div className="flex-1">
             <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1">{t('dashboard.net_calories')}</p>
@@ -307,7 +306,7 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-5">
+          <div className="macro-ring-card flex items-center gap-4 sm:gap-5 rounded-2xl bg-muted/35 border border-border/50 px-3 py-2.5">
             {macroData.map(m => <MacroRing key={m.name} label={m.name} value={m.value} goal={m.goal} color={m.color} />)}
           </div>
         </div>
@@ -324,7 +323,7 @@ export default function Dashboard() {
       </div>
 
       {/* TODAY'S EXERCISE SUMMARY */}
-      <div className="bg-white rounded-2xl p-5 border border-border shadow-sm">
+      <div className="dashboard-section-card p-5 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <div className="icon-badge icon-badge-green"><Flame className="w-4 h-4" /></div>
@@ -336,7 +335,7 @@ export default function Dashboard() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Link href="/workout">
-              <div className={`rounded-xl p-3 border text-center cursor-pointer transition-all hover:shadow-md ${(exercise?.workoutBurned ?? 0) > 0 ? "bg-blue-50 border-blue-200" : "bg-muted/20 border-border"}`}>
+              <div className={`rounded-2xl p-3 border text-center cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md ${(exercise?.workoutBurned ?? 0) > 0 ? "bg-blue-50 border-blue-200 dark:bg-blue-950/30 dark:border-blue-900" : "bg-muted/20 border-border"}`}>
                 <div className="icon-badge icon-badge-blue mx-auto mb-2"><Dumbbell className="w-4 h-4" /></div>
                 <p className="text-xs text-muted-foreground font-medium">{t('dashboard.workout_burned')}</p>
                 <p className={`text-lg font-extrabold mt-0.5 ${(exercise?.workoutBurned ?? 0) > 0 ? "text-blue-600" : "text-muted-foreground/40"}`}>{Math.round(exercise?.workoutBurned ?? 0)}</p>
@@ -347,7 +346,7 @@ export default function Dashboard() {
               </div>
             </Link>
             <Link href="/workout">
-              <div className={`rounded-xl p-3 border text-center cursor-pointer transition-all hover:shadow-md ${(exercise?.cardioBurned ?? 0) > 0 ? "bg-orange-50 border-orange-200" : "bg-muted/20 border-border"}`}>
+              <div className={`rounded-2xl p-3 border text-center cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md ${(exercise?.cardioBurned ?? 0) > 0 ? "bg-orange-50 border-orange-200 dark:bg-orange-950/30 dark:border-orange-900" : "bg-muted/20 border-border"}`}>
                 <div className="icon-badge icon-badge-orange mx-auto mb-2"><Bike className="w-4 h-4" /></div>
                 <p className="text-xs text-muted-foreground font-medium">{t('dashboard.cardio_burned', { defaultValue: '有氧卡路里' })}</p>
                 <p className={`text-lg font-extrabold mt-0.5 ${(exercise?.cardioBurned ?? 0) > 0 ? "text-orange-600" : "text-muted-foreground/40"}`}>{Math.round(exercise?.cardioBurned ?? 0)}</p>
@@ -358,7 +357,7 @@ export default function Dashboard() {
               </div>
             </Link>
             <Link href="/running">
-              <div className={`rounded-xl p-3 border text-center cursor-pointer transition-all hover:shadow-md ${(exercise?.runningBurned ?? 0) > 0 ? "bg-red-50 border-red-200" : "bg-muted/20 border-border"}`}>
+              <div className={`rounded-2xl p-3 border text-center cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md ${(exercise?.runningBurned ?? 0) > 0 ? "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-900" : "bg-muted/20 border-border"}`}>
                 <div className="icon-badge icon-badge-red mx-auto mb-2"><Footprints className="w-4 h-4" /></div>
                 <p className="text-xs text-muted-foreground font-medium">{t('dashboard.running_burned')}</p>
                 <p className={`text-lg font-extrabold mt-0.5 ${(exercise?.runningBurned ?? 0) > 0 ? "text-red-600" : "text-muted-foreground/40"}`}>{Math.round(exercise?.runningBurned ?? 0)}</p>
@@ -369,7 +368,7 @@ export default function Dashboard() {
               </div>
             </Link>
             <Link href="/steps">
-              <div className={`rounded-xl p-3 border text-center cursor-pointer transition-all hover:shadow-md ${(exercise?.stepsBurned ?? 0) > 0 ? "bg-green-50 border-green-200" : "bg-muted/20 border-border"}`}>
+              <div className={`rounded-2xl p-3 border text-center cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md ${(exercise?.stepsBurned ?? 0) > 0 ? "bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-900" : "bg-muted/20 border-border"}`}>
                 <div className="icon-badge icon-badge-green mx-auto mb-2"><Activity className="w-4 h-4" /></div>
                 <p className="text-xs text-muted-foreground font-medium">{t('dashboard.steps_burned')}</p>
                 <p className={`text-lg font-extrabold mt-0.5 ${(exercise?.stepsBurned ?? 0) > 0 ? "text-green-600" : "text-muted-foreground/40"}`}>{Math.round(exercise?.stepsBurned ?? 0)}</p>
@@ -408,7 +407,7 @@ export default function Dashboard() {
         ].filter(Boolean) as { label: string; current: number | null | undefined; target: number; unit: string; color: string; inverse: boolean }[];
         if (!rings.length) return null;
         return (
-          <div className="bg-white rounded-2xl p-5 border border-border shadow-sm">
+          <div className="dashboard-section-card p-5 sm:p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <div className="icon-badge icon-badge-orange"><Target className="w-4 h-4" /></div>
@@ -425,7 +424,7 @@ export default function Dashboard() {
 
       {/* CHARTS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-white rounded-2xl p-5 border border-border shadow-sm">
+        <div className="dashboard-section-card p-5 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-foreground">{t('dashboard.weekly_calories')}</h3>
             <span className="tag-pill tag-orange">7 {t('dashboard.days')}</span>
@@ -440,7 +439,7 @@ export default function Dashboard() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="bg-white rounded-2xl p-5 border border-border shadow-sm">
+        <div className="dashboard-section-card p-5 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-foreground">{t('nav.body')}</h3>
             <span className="tag-pill tag-green">Recent</span>
@@ -471,7 +470,7 @@ export default function Dashboard() {
 
       {/* SLEEP TREND */}
       {sleepTrend.length > 0 && (
-        <div className="bg-white rounded-2xl p-5 border border-border shadow-sm">
+        <div className="dashboard-section-card p-5 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-foreground">{t('sleep.title')} & {t('heartrate.resting_hr')}</h3>
             <span className="tag-pill tag-blue">7 nights</span>
@@ -497,7 +496,7 @@ export default function Dashboard() {
 
       {/* RECENT WORKOUTS */}
       {summary?.recentSessions && summary.recentSessions.length > 0 && (
-        <div className="bg-white rounded-2xl p-5 border border-border shadow-sm">
+        <div className="dashboard-section-card p-5 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-foreground">{t('dashboard.recent_workouts')}</h3>
             <Link href="/workout">
@@ -522,7 +521,7 @@ export default function Dashboard() {
       )}
 
       {/* AI INSIGHT */}
-      <div className="bg-gradient-to-br from-primary/8 via-accent/5 to-background rounded-2xl p-5 border border-primary/20">
+      <div className="bg-gradient-to-br from-primary/10 via-accent/6 to-background rounded-[1.35rem] p-5 sm:p-6 border border-primary/20 shadow-[0_12px_30px_-24px_oklch(0.58_0.17_45_/_0.45)]">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <div className="icon-badge icon-badge-orange"><Sparkles className="w-4 h-4" /></div>
