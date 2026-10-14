@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PremiumFeatureHero from "@/components/PremiumFeatureHero";
 import {
   Plus, Dumbbell, Trash2, Edit2, Search, ChevronRight, Loader2,
   Flame, Timer, Weight, BarChart2, X, Check, Trophy, Target, Star, ArrowUpDown,
@@ -456,6 +457,13 @@ export default function Workout() {
     });
   }, [sessions]);
 
+  const selectedDaySessions = useMemo(
+    () => sessions.filter((session: any) => toHKDateString(new Date(session.startTime)) === selectedDate),
+    [sessions, selectedDate]
+  );
+  const selectedDayVolume = selectedDaySessions.reduce((sum: number, session: any) => sum + (Number(session.totalVolume) || 0), 0);
+  const selectedDayCalories = selectedDaySessions.reduce((sum: number, session: any) => sum + (Number(session.caloriesBurned) || 0), 0);
+
   const handleStartSession = () => {
     if (!sessionName.trim()) return toast.error("Enter session name");
     createSession.mutate({ date: selectedDate, name: sessionName });
@@ -510,28 +518,33 @@ export default function Workout() {
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Sunny Page Header */}
-      <div className="hero-gradient rounded-2xl p-5 text-white">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-xl font-extrabold text-white">{t('workout.title')}</h1>
-            <p className="text-white/70 text-sm mt-0.5">{t('workout.subtitle')}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="w-40 text-sm bg-white/20 border-white/30 text-white placeholder:text-white/50" />
+      <PremiumFeatureHero
+        tone="workout"
+        icon={Dumbbell}
+        eyebrow={activeSession ? "訓練進行中" : selectedDate === todayHKString() ? "今日訓練節奏" : "歷史訓練記錄"}
+        title={t('workout.title')}
+        subtitle={t('workout.subtitle')}
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+            <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="h-9 w-[8.6rem] border-white/20 bg-white/10 text-center text-xs text-white [color-scheme:dark] placeholder:text-white/60" />
             {!activeSession ? (
-              <Button onClick={() => setShowSessionDialog(true)} size="sm" className="gap-2 bg-white text-primary hover:bg-white/90">
-                <Plus className="w-4 h-4" /> {t('workout.start_workout')}
+              <Button onClick={() => setShowSessionDialog(true)} size="sm" className="h-9 gap-1.5 rounded-xl bg-white text-primary hover:bg-white/90">
+                <Plus className="w-3.5 h-3.5" /> {t('workout.start_workout')}
               </Button>
             ) : (
-              <Badge variant="outline" className="gap-2 bg-white/20 text-white border-white/40">
+              <Badge variant="outline" className="h-9 gap-2 rounded-xl bg-white/12 px-3 text-white border-white/30">
                 <div className="w-2 h-2 rounded-full bg-white pulse-dot" />
-                {activeSession.name}
+                <span className="max-w-28 truncate">{activeSession.name}</span>
               </Badge>
             )}
           </div>
-        </div>
-      </div>
+        }
+        metrics={[
+          { label: "訓練次數", value: selectedDaySessions.length, unit: "次", detail: selectedDate === todayHKString() ? "今日完成" : selectedDate },
+          { label: "總訓練量", value: Math.round(selectedDayVolume).toLocaleString(), unit: "kg", detail: "選定日期累計" },
+          { label: "消耗熱量", value: Math.round(activeSession && !activeSession.endTime ? liveCaloriesEstimate : selectedDayCalories), unit: "kcal", detail: activeSession && !activeSession.endTime ? "即時估算" : "已完成記錄" },
+        ]}
+      />
 
       <Tabs value={activeTab} onValueChange={v => setActiveTab(v as any)}>
         <TabsList className="bg-muted/50">

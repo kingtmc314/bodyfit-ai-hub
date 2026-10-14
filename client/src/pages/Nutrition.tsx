@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PremiumFeatureHero from "@/components/PremiumFeatureHero";
 import {
   Plus, Camera, Search, Trash2, Edit2, X, Loader2, Utensils, Copy,
   Flame, Beef, Wheat, Droplets, ChevronDown, Upload, Sparkles,
@@ -360,62 +361,48 @@ export default function Nutrition() {
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Nutrition</h1>
-          <p className="text-muted-foreground text-sm">Track your daily food intake</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => {
+      <PremiumFeatureHero
+        tone="nutrition"
+        icon={Utensils}
+        eyebrow={selectedDate === todayHKString() ? "今日營養節奏" : "歷史營養記錄"}
+        title="Nutrition"
+        subtitle="Track your daily intake, macros, and energy balance."
+        actions={
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={() => {
               const d = new Date(selectedDate + 'T12:00:00+08:00');
               d.setDate(d.getDate() - 1);
               setSelectedDate(d.toISOString().slice(0, 10));
             }}><ChevronLeft className="w-4 h-4" /></Button>
             <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
-              className="w-36 text-sm text-center" />
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => {
+              className="h-9 w-[8.1rem] border-white/20 bg-white/10 text-center text-xs text-white [color-scheme:dark] placeholder:text-white/60" />
+            <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={() => {
               const d = new Date(selectedDate + 'T12:00:00+08:00');
               d.setDate(d.getDate() + 1);
               setSelectedDate(d.toISOString().slice(0, 10));
             }} disabled={selectedDate >= todayHKString()}><ChevronRight className="w-4 h-4" /></Button>
+            {selectedDate !== todayHKString() && (
+              <Button variant="ghost" size="sm" className="h-9 rounded-xl bg-white/10 px-3 text-xs text-white hover:bg-white/20 hover:text-white" onClick={() => setSelectedDate(todayHKString())}>Today</Button>
+            )}
+            {isOwner && (
+              <Button onClick={openPhotoDialog} variant="outline" size="sm" className="h-9 gap-1.5 rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white">
+                <Camera className="w-3.5 h-3.5" /> <span className="hidden sm:inline">AI Photo</span>
+              </Button>
+            )}
+            {isOwner && (
+              <Button onClick={() => { setEditEntry(null); setDialogDate(selectedDate); resetForm(); setShowAddDialog(true); }} size="sm" className="h-9 gap-1.5 rounded-xl bg-white text-primary hover:bg-white/90">
+                <Plus className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Log Meal</span>
+              </Button>
+            )}
           </div>
-          {selectedDate !== todayHKString() && (
-            <Button variant="ghost" size="sm" className="text-xs h-8 px-2 text-primary" onClick={() => setSelectedDate(todayHKString())}>Today</Button>
-          )}
-          {isOwner && (
-            <Button onClick={openPhotoDialog} variant="outline" size="sm" className="gap-2">
-              <Camera className="w-4 h-4" /> AI Photo
-            </Button>
-          )}
-          {isOwner && (
-            <Button onClick={() => { setEditEntry(null); setDialogDate(selectedDate); resetForm(); setShowAddDialog(true); }} size="sm" className="gap-2">
-              <Plus className="w-4 h-4" /> Log Meal
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Daily Summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: "Calories", value: Math.round(totals.calories), goal: dynamicCalorieGoal, unit: "kcal", color: "oklch(0.78 0.20 50)", icon: Flame },
-          { label: "Protein", value: Math.round(totals.protein), goal: GOALS.protein, unit: "g", color: "oklch(0.72 0.19 160)", icon: Beef },
-          { label: "Carbs", value: Math.round(totals.carbs), goal: GOALS.carbs, unit: "g", color: "oklch(0.75 0.17 280)", icon: Wheat },
-          { label: "Fat", value: Math.round(totals.fat), goal: GOALS.fat, unit: "g", color: "oklch(0.68 0.22 25)", icon: Droplets },
-        ].map(m => (
-          <div key={m.label} className="bg-card border border-border rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <m.icon className="w-4 h-4" style={{ color: m.color }} />
-              <span className="text-xs text-muted-foreground font-medium">{m.label}</span>
-            </div>
-            <p className="metric-value text-xl text-foreground">{m.value} <span className="text-sm font-normal text-muted-foreground">{m.unit}</span></p>
-            <Progress value={Math.min((m.value / m.goal) * 100, 100)} className="h-1.5 mt-2" style={{ "--progress-color": m.color } as any} />
-            <p className="text-xs text-muted-foreground mt-1">{m.goal - m.value > 0 ? `${m.goal - m.value} remaining` : "Goal reached ✓"}</p>
-          </div>
-        ))}
-      </div>
+        }
+        metrics={[
+          { label: "Calories", value: Math.round(totals.calories), unit: "kcal", detail: `${Math.max(0, dynamicCalorieGoal - Math.round(totals.calories))} remaining` },
+          { label: "Protein", value: Math.round(totals.protein), unit: "g", detail: `${Math.max(0, GOALS.protein - Math.round(totals.protein))}g to goal` },
+          { label: "Carbs", value: Math.round(totals.carbs), unit: "g", detail: `${Math.max(0, GOALS.carbs - Math.round(totals.carbs))}g to goal` },
+          { label: "Fat", value: Math.round(totals.fat), unit: "g", detail: `${Math.max(0, GOALS.fat - Math.round(totals.fat))}g to goal` },
+        ]}
+      />
 
       {/* Exercise Calories Burned + Net Balance */}
       {totalCaloriesBurned > 0 && (

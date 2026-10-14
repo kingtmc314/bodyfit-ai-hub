@@ -442,3 +442,10 @@
 - [x] Redesign the application shell, navigation, responsive header, and version presentation
 - [x] Upgrade the dashboard hierarchy, cards, progress indicators, charts, and quick actions without changing feature behaviour
 - [x] Validate Hong Kong-time-based dashboard greeting, desktop/mobile layout, TypeScript, production build, and automated tests
+
+## v3.13.1 Feature Page Visual Consistency
+- [x] Create a reusable premium feature-page hero with responsive action and metric slots
+- [x] Upgrade Nutrition with a date-aware hero and integrated macro summary cards
+- [x] Upgrade Workout with an activity-focused hero and session summary cards
+- [x] Upgrade Sleep with a recovery-focused hero and latest sleep data cards
+- [x] Verify desktop/mobile presentation, TypeScript, automated tests, and production build

@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PremiumFeatureHero from "@/components/PremiumFeatureHero";
 import { Plus, Moon, Trash2, Edit2, Loader2, Upload, ArrowUpDown } from "lucide-react";
 import QuickImportModal from "@/components/QuickImportModal";
 import ScreenshotImporter from "@/components/ScreenshotImporter";
@@ -186,49 +187,32 @@ export default function Sleep() {
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="rounded-2xl p-5 text-white" style={{ background: 'linear-gradient(135deg, oklch(0.62 0.18 270) 0%, oklch(0.62 0.18 230) 100%)' }}>
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-xl font-extrabold text-white">{t('sleep.title')}</h1>
-            <p className="text-white/70 text-sm mt-0.5">{t('sleep.subtitle')}</p>
+      <PremiumFeatureHero
+        tone="sleep"
+        icon={Moon}
+        eyebrow={latest ? "最新恢復狀態" : "睡眠恢復中心"}
+        title={t('sleep.title')}
+        subtitle={t('sleep.subtitle')}
+        actions={isOwner ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button size="sm" variant="outline" className="h-9 gap-1.5 rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={() => setShowImport(true)}>
+              <Upload className="w-3.5 h-3.5" /> 匯入
+            </Button>
+            <Button size="sm" className="h-9 gap-1.5 rounded-xl bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
+              <Plus className="w-3.5 h-3.5" /> {t('sleep.add_record')}
+            </Button>
           </div>
-          {isOwner && (
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" className="gap-2 bg-white/20 border-white/40 text-white hover:bg-white/30" onClick={() => setShowImport(true)}>
-                <Upload className="w-4 h-4" /> 匯入
-              </Button>
-              <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
-                <Plus className="w-4 h-4" /> {t('sleep.add_record')}
-              </Button>
-            </div>
-          )}
-        </div>
-      </div>
+        ) : undefined}
+        metrics={[
+          { label: "睡眠評分", value: latest?.sleepScore ?? "—", unit: latest?.sleepScore != null ? "/100" : undefined, detail: latest?.sleepQuality ?? "等待第一筆紀錄" },
+          { label: "睡眠時數", value: latest?.sleepDuration != null ? toHrs(latest.sleepDuration)?.toFixed(1) : "—", unit: latest?.sleepDuration != null ? "hrs" : undefined, detail: latest?.bedtime && latest?.waketime ? `${String(latest.bedtime).slice(0, 5)} → ${String(latest.waketime).slice(0, 5)}` : "暫無睡眠窗口" },
+          { label: "HRV", value: latest?.hrv ?? "—", unit: latest?.hrv != null ? "ms" : undefined, detail: "睡眠恢復指標" },
+          { label: "靜息心率", value: latest?.restingHr ?? "—", unit: latest?.restingHr != null ? "bpm" : undefined, detail: "最新量測" },
+          { label: "Body Battery", value: latest?.bodyBattery ?? "—", unit: latest?.bodyBattery != null ? "/100" : undefined, detail: "身體電量" },
+          { label: "血氧", value: latest?.pulseOx != null ? Number(latest.pulseOx).toFixed(1) : "—", unit: latest?.pulseOx != null ? "%" : undefined, detail: "睡眠期間飽和度" },
+        ]}
+      />
       <QuickImportModal open={showImport} onClose={() => setShowImport(false)} dataType="sleep" onSuccess={() => utils.sleep.getAll.invalidate()} />
-
-      {/* Latest Stats — 6 cards */}
-      {latest && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {[
-            { label: "睡眠評分", value: latest.sleepScore, unit: "/100", sub: getQualityBadge(latest.sleepQuality), color: "icon-badge-blue" },
-            { label: "睡眠時數", value: latest.sleepDuration != null ? `${toHrs(latest.sleepDuration)?.toFixed(1) ?? "—"}` : null, unit: "hrs", color: "icon-badge-purple" },
-            { label: "HRV", value: latest.hrv, unit: "ms", color: "icon-badge-orange" },
-            { label: "靜息心率", value: latest.restingHr, unit: "bpm", color: "icon-badge-red" },
-            { label: "Body Battery", value: latest.bodyBattery, unit: "/100", color: "icon-badge-green" },
-            { label: "血氧", value: latest.pulseOx != null ? Number(latest.pulseOx).toFixed(1) : null, unit: "%", color: "icon-badge-teal" },
-          ].map(m => (
-            <div key={m.label} className="stat-card rounded-2xl p-4">
-              <div className={`icon-badge ${m.color} mb-2`}><Moon className="w-4 h-4" /></div>
-              <p className="text-xs text-muted-foreground font-semibold">{m.label}</p>
-              <p className="metric-value text-2xl text-foreground mt-0.5">
-                {m.value ?? "—"} <span className="text-sm font-normal text-muted-foreground">{m.unit}</span>
-              </p>
-              {m.sub}
-            </div>
-          ))}
-        </div>
-      )}
 
       <Tabs defaultValue="charts">
         <TabsList className="bg-muted/50">
