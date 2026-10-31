@@ -7,12 +7,14 @@ const SHEET_TABS = {
   body: "Body Fitness",
   sleep: "Sleep",
   heartrate: "Heart Rate",
+  running: "Running",
 } as const;
 
 // Column mappings for Body Fitness sheet (kingsrunai naming convention)
 const BODY_COLUMNS = ["Date", "Weight (kg)", "BMI", "Body Fat %", "Fat Mass (kg)", "Muscle Mass (kg)", "BMR", "Visceral Fat", "Source", "Notes"];
 const SLEEP_COLUMNS = ["Date", "Sleep Score", "Resting HR", "Body Battery", "Pulse Ox (%)", "Respiration", "HRV", "Quality", "Duration (h)", "Source"];
 const HR_COLUMNS = ["Date", "Resting HR", "High HR", "HRV", "Source", "Notes"];
+const RUNNING_COLUMNS = ["Date", "Running Type", "Route Type", "Running Shoes", "Distance (km)", "Duration (h)", "Duration (min)", "Duration (sec)", "Avg Pace", "Best Pace", "Avg HR", "Max HR", "Avg Cadence", "Max Cadence", "Avg Stride Length (m)", "Avg Vertical Ratio", "Vertical Oscillation (cm)", "Avg Ground Contact Time (ms)", "Calories", "Temperature (°C)", "Humidity (%)", "Notes"];
 
 function getAuth() {
   const credJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -129,13 +131,38 @@ export async function writeRowToSheet(type: keyof typeof SHEET_TABS, rowData: Re
         rowData.duration !== undefined ? Number(rowData.duration) : "",
         String(rowData.source ?? "app"),
       ];
-    } else {
+    } else if (type === "heartrate") {
       values = [
         String(rowData.date ?? ""),
         rowData.restingHr !== undefined ? Number(rowData.restingHr) : "",
         rowData.highHr !== undefined ? Number(rowData.highHr) : "",
         rowData.hrv !== undefined ? Number(rowData.hrv) : "",
         String(rowData.source ?? "app"),
+        String(rowData.notes ?? ""),
+      ];
+    } else {
+      values = [
+        String(rowData.date ?? ""),
+        String(rowData.runningType ?? ""),
+        String(rowData.routeType ?? ""),
+        String(rowData.runningShoes ?? ""),
+        rowData.distanceKm !== undefined ? Number(rowData.distanceKm) : "",
+        rowData.hour !== undefined ? Number(rowData.hour) : "",
+        rowData.minutes !== undefined ? Number(rowData.minutes) : "",
+        rowData.second !== undefined ? Number(rowData.second) : "",
+        String(rowData.averagePace ?? ""),
+        String(rowData.bestPace ?? ""),
+        rowData.averageHeartRate !== undefined ? Number(rowData.averageHeartRate) : "",
+        rowData.maximumHeartRate !== undefined ? Number(rowData.maximumHeartRate) : "",
+        rowData.averageCadence !== undefined ? Number(rowData.averageCadence) : "",
+        rowData.maxCadence !== undefined ? Number(rowData.maxCadence) : "",
+        rowData.avgStrideLengthM !== undefined ? Number(rowData.avgStrideLengthM) : "",
+        rowData.avgVerticalRatio !== undefined ? Number(rowData.avgVerticalRatio) : "",
+        rowData.verticalOscillationCm !== undefined ? Number(rowData.verticalOscillationCm) : "",
+        rowData.avgGroundContactTimeMs !== undefined ? Number(rowData.avgGroundContactTimeMs) : "",
+        rowData.calories !== undefined ? Number(rowData.calories) : "",
+        rowData.temperature !== undefined ? Number(rowData.temperature) : "",
+        rowData.humidity !== undefined ? Number(rowData.humidity) : "",
         String(rowData.notes ?? ""),
       ];
     }
@@ -160,17 +187,24 @@ export async function ensureSheetHeaders(type: keyof typeof SHEET_TABS): Promise
     const sheets = google.sheets({ version: "v4", auth });
     const sheetName = SHEET_TABS[type];
 
-    // Check if sheet exists and has headers
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${sheetName}!A1:Z1`,
-    });
-
-    const firstRow = response.data.values?.[0];
-    if (firstRow && firstRow.length > 0) return; // Headers already exist
+    try {
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${sheetName}!A1:Z1`,
+      });
+      const firstRow = response.data.values?.[0];
+      if (firstRow && firstRow.length > 0) return;
+    } catch {
+      // The Running tab is created on demand, so a new app install can begin
+      // synchronizing full running metrics without manual Sheet preparation.
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: { requests: [{ addSheet: { properties: { title: sheetName } } }] },
+      }).catch(() => undefined);
+    }
 
     // Write headers
-    const headers = type === "body" ? BODY_COLUMNS : type === "sleep" ? SLEEP_COLUMNS : HR_COLUMNS;
+    const headers = type === "body" ? BODY_COLUMNS : type === "sleep" ? SLEEP_COLUMNS : type === "heartrate" ? HR_COLUMNS : RUNNING_COLUMNS;
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: `${sheetName}!A1`,

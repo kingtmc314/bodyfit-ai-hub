@@ -459,3 +459,10 @@
 - [x] Add a data-calibrated, interactive running energy-system lab for sprint, middle-distance and steady-running events
 - [x] Retain and improve the AI-powered running analysis tab alongside the simulation lab
 - [x] Validate migration result, removal coverage, desktop/mobile UX, automated tests, TypeScript, production build, checkpoint and Vercel release
+
+## v3.14.1 Performance Filters, Training Templates & Scenario Comparison
+- [x] Add distance-band and route-type filters to the running-shoe performance analysis, while retaining all historical running metrics
+- [x] Add guided workout templates that keep planned exercises distinct from completed workout sets
+- [x] Add deterministic progressive-overload recommendations based on existing completed workout sets
+- [x] Persist named running-weather simulation scenarios and show a Hong Kong-time comparison view
+- [ ] Verify schema migration, historical-record preservation, desktop/mobile UX, tests, production build, checkpoint and Vercel release

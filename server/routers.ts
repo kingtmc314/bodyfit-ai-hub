@@ -9,7 +9,7 @@ import {
   bodyComposition, heartRateLogs, sleepLogs, progressPhotos, aiInsights,
   healthGoals, runningLogs, runningShoes, races, favouriteExercises,
   dailySteps, runningLogPhotos, stepLogPhotos, customExercises, userProfile, bloodPressureLogs,
-  foodFavorites, foodAnalysisHistory
+  foodFavorites, foodAnalysisHistory, runningLabScenarios
 } from "../drizzle/schema";
 import { eq, and, desc, gte, lte, like, or, sql, inArray } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -17,6 +17,8 @@ import { storagePut, storageGetSignedUrl } from "./storage";
 import { nanoid } from "nanoid";
 import { todayHK, daysAgoHK, toHKDateString } from "./hkTime";
 import { parseRows, detectDataType, type ImportDataType } from "./csvImport";
+import { ensureSheetHeaders, writeRowToSheet } from "./sheetsService";
+import { buildProgressionSuggestion } from "@shared/progression";
 import Papa from "papaparse";
 // Fixed owner user ID - no login required
 const OWNER_USER_ID = 2;
@@ -397,11 +399,24 @@ const workoutRouter = router({
       name: z.string().optional(),
       duration: z.number().optional(),
       notes: z.string().optional(),
+      templateKey: z.string().optional(),
+      plannedExercises: z.array(z.object({
+        name: z.string(),
+        nameZh: z.string().optional(),
+        targetSets: z.number().int().min(1).max(12),
+        targetReps: z.string(),
+        equipment: z.string().optional(),
+      })).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const result = await db.insert(workoutSessions).values({ ...input, userId: OWNER_USER_ID }).returning({ id: workoutSessions.id });
+      const { date, ...sessionInput } = input;
+      const result = await db.insert(workoutSessions).values({
+        ...sessionInput,
+        userId: OWNER_USER_ID,
+        startTime: new Date(`${date}T12:00:00+08:00`),
+      }).returning({ id: workoutSessions.id });
       return { success: true, id: result[0]?.id ?? 0 };
     }),
 
@@ -881,6 +896,29 @@ const workoutRouter = router({
         exerciseName: Array.from(prMap.keys())[i],
         ...v,
       }));
+    }),
+
+  getProgressionSuggestion: publicProcedure
+    .input(z.object({ exerciseName: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return buildProgressionSuggestion([]);
+      const rows = await db.select({
+        reps: workoutSets.reps,
+        weight: workoutSets.weight,
+        createdAt: workoutSets.createdAt,
+      }).from(workoutSets)
+        .innerJoin(workoutSessions, eq(workoutSets.sessionId, workoutSessions.id))
+        .where(and(
+          eq(workoutSessions.userId, OWNER_USER_ID),
+          eq(workoutSets.exerciseName, input.exerciseName),
+          sql`${workoutSessions.endTime} IS NOT NULL`,
+          sql`${workoutSets.reps} IS NOT NULL`,
+          sql`${workoutSets.weight} IS NOT NULL`,
+        ))
+        .orderBy(desc(workoutSets.createdAt))
+        .limit(12);
+      return buildProgressionSuggestion(rows);
     }),
 });
 
@@ -1659,7 +1697,7 @@ const csvImportRouter = router({
           try {
             await db.execute(sql`
               INSERT INTO running_logs (
-                date, running_type, running_shoes, distance_km, hour, minutes, second,
+                date, running_type, route_type, running_shoes, distance_km, hour, minutes, second,
                 average_pace, best_pace, average_heart_rate, maximum_heart_rate,
                 average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
                 vertical_oscillation_cm, avg_ground_contact_time_ms, calories,
@@ -1667,6 +1705,7 @@ const csvImportRouter = router({
               ) VALUES (
                 ${r.date},
                 ${r.runningType ?? null},
+                ${r.routeType ?? null},
                 ${r.runningShoes ?? null},
                 ${r.distanceKm ?? null},
                 ${r.hour ?? null},
@@ -2310,6 +2349,40 @@ const runningRouter = router({
       return (rows as any).rows ?? rows;
     }),
 
+  getShoePerformance: publicProcedure
+    .input(z.object({
+      distanceBand: z.enum(["all", "short", "medium", "long", "ultra"]).default("all"),
+      routeType: z.string().default("all"),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const distanceWhere = input.distanceBand === "short" ? sql`distance_km < 5`
+        : input.distanceBand === "medium" ? sql`distance_km >= 5 AND distance_km < 10`
+        : input.distanceBand === "long" ? sql`distance_km >= 10 AND distance_km < 21.1`
+        : input.distanceBand === "ultra" ? sql`distance_km >= 21.1`
+        : sql`TRUE`;
+      const routeWhere = input.routeType === "all" ? sql`TRUE` : sql`route_type = ${input.routeType}`;
+      const rows = await db.execute(sql`
+        SELECT
+          running_shoes AS shoe,
+          COUNT(*)::int AS runs,
+          ROUND(COALESCE(SUM(distance_km), 0)::numeric, 1) AS distance,
+          AVG(CASE WHEN average_pace ~ '^[0-9]+(\\.[0-9]+)?$' THEN average_pace::numeric END) AS avg_pace,
+          ROUND(AVG(average_heart_rate)::numeric, 0) AS avg_hr,
+          ROUND(AVG(average_cadence)::numeric, 0) AS avg_cadence
+        FROM running_logs
+        WHERE running_shoes IS NOT NULL
+          AND running_shoes <> ''
+          AND distance_km IS NOT NULL
+          AND ${distanceWhere}
+          AND ${routeWhere}
+        GROUP BY running_shoes
+        ORDER BY SUM(distance_km) DESC, running_shoes ASC
+      `);
+      return (rows as any).rows ?? rows;
+    }),
+
   getStats: publicProcedure
     .query(async () => {
       const db = await getDb();
@@ -2358,6 +2431,7 @@ const runningRouter = router({
     .input(z.object({
       date: z.string(),
       runningType: z.string().optional(),
+      routeType: z.string().optional(),
       runningShoes: z.string().optional(),
       distanceKm: z.number().optional(),
       hour: z.number().optional(),
@@ -2390,7 +2464,7 @@ const runningRouter = router({
       }
       const result = await db.execute(sql`
         INSERT INTO running_logs (
-          date, running_type, running_shoes, shoes_id, distance_km, hour, minutes, second,
+          date, running_type, route_type, running_shoes, shoes_id, distance_km, hour, minutes, second,
           average_pace, best_pace, average_heart_rate, maximum_heart_rate,
           average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
           vertical_oscillation_cm, avg_ground_contact_time_ms,
@@ -2398,6 +2472,7 @@ const runningRouter = router({
         ) VALUES (
           ${input.date},
           ${input.runningType ?? null},
+          ${input.routeType ?? null},
           ${input.runningShoes ?? null},
           ${shoesId},
           ${input.distanceKm ?? null},
@@ -2422,6 +2497,12 @@ const runningRouter = router({
       `);
       const rows = (result as any).rows ?? result;
       const newId = rows[0]?.id ? Number(rows[0].id) : 0;
+      if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+        await ensureSheetHeaders("running");
+        await writeRowToSheet("running", input).catch((error) => {
+          console.warn("[Sheets] Running log saved locally but could not be appended:", error instanceof Error ? error.message : error);
+        });
+      }
       return { success: true, id: newId };
     }),
 
@@ -2430,6 +2511,7 @@ const runningRouter = router({
       id: z.number(),
       date: z.string().optional(),
       runningType: z.string().optional(),
+      routeType: z.string().optional(),
       runningShoes: z.string().optional(),
       distanceKm: z.number().optional(),
       hour: z.number().optional(),
@@ -2477,6 +2559,53 @@ const runningRouter = router({
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
       await db.execute(sql`DELETE FROM running_logs WHERE id = ${input.id}`);
+      return { success: true };
+    }),
+
+  getLabScenarios: publicProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(runningLabScenarios)
+        .where(eq(runningLabScenarios.userId, OWNER_USER_ID))
+        .orderBy(desc(runningLabScenarios.createdAt))
+        .limit(12);
+    }),
+
+  saveLabScenario: ownerProcedure
+    .input(z.object({
+      name: z.string().trim().min(1).max(80),
+      runningScenario: z.string().min(1),
+      easyRunDistance: z.string().optional(),
+      temperatureC: z.number().min(0).max(45),
+      humidityPct: z.number().int().min(10).max(100),
+      windKph: z.number().min(0).max(80),
+      baselinePaceSecPerKm: z.number().optional(),
+      baselineFinishSeconds: z.number().positive(),
+      weatherPaceSecPerKm: z.number().positive(),
+      weatherFinishSeconds: z.number().positive(),
+      weatherLoadPercent: z.number().min(0).max(100),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [row] = await db.insert(runningLabScenarios).values({
+        ...input,
+        userId: OWNER_USER_ID,
+        updatedAt: new Date(),
+      }).returning();
+      return row;
+    }),
+
+  deleteLabScenario: ownerProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await db.delete(runningLabScenarios).where(and(
+        eq(runningLabScenarios.id, input.id),
+        eq(runningLabScenarios.userId, OWNER_USER_ID),
+      ));
       return { success: true };
     }),
 

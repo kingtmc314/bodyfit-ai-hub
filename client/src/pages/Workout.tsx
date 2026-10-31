@@ -15,7 +15,7 @@ import PremiumFeatureHero from "@/components/PremiumFeatureHero";
 import {
   Plus, Dumbbell, Trash2, Edit2, Search, ChevronRight, Loader2,
   Flame, Timer, Weight, BarChart2, X, Check, Trophy, Target, Star, ArrowUpDown,
-  Camera, Sparkles, PlusCircle, AlertCircle, CheckCircle2, Copy
+  Camera, Sparkles, PlusCircle, AlertCircle, CheckCircle2, Copy, ListChecks, TrendingUp
 } from "lucide-react";
 import MuscleMap, { MUSCLE_GROUPS } from "@/components/MuscleMap";
 import ExerciseDetailModal from "@/components/ExerciseDetailModal";
@@ -111,6 +111,61 @@ const BUILT_IN_EXERCISES = [
   { name: "Jacob's Ladder", nameZh: "天梯機", muscleGroup: "cardio", equipment: "Machine", instructions: "Climb at steady pace, engage core, track time and floors." },
 ];
 
+const WORKOUT_TEMPLATES = [
+  {
+    key: "push",
+    name: "Push Day",
+    nameZh: "推日：胸、肩、三頭",
+    description: "以推舉動作建立胸肩三頭的力量基礎。",
+    exercises: [
+      { name: "Bench Press", nameZh: "臥推", targetSets: 4, targetReps: "6–10", equipment: "Barbell" },
+      { name: "Incline Bench Press", nameZh: "上斜臥推", targetSets: 3, targetReps: "8–12", equipment: "Barbell" },
+      { name: "Dumbbell Shoulder Press", nameZh: "啞鈴肩推", targetSets: 3, targetReps: "8–12", equipment: "Dumbbell" },
+      { name: "Lateral Raise", nameZh: "側平舉", targetSets: 3, targetReps: "12–15", equipment: "Dumbbell" },
+      { name: "Tricep Pushdown", nameZh: "繩索下壓", targetSets: 3, targetReps: "10–15", equipment: "Cable" },
+    ],
+  },
+  {
+    key: "pull",
+    name: "Pull Day",
+    nameZh: "拉日：背、二頭",
+    description: "平衡垂直與水平拉力，強化背部與手臂。",
+    exercises: [
+      { name: "Lat Pulldown", nameZh: "下拉機", targetSets: 4, targetReps: "8–12", equipment: "Cable" },
+      { name: "Seated Cable Row", nameZh: "坐姿划船", targetSets: 3, targetReps: "8–12", equipment: "Cable" },
+      { name: "Single-arm Dumbbell Row", nameZh: "單臂啞鈴划船", targetSets: 3, targetReps: "8–12", equipment: "Dumbbell" },
+      { name: "Face Pull", nameZh: "繩索臉拉", targetSets: 3, targetReps: "12–15", equipment: "Cable" },
+      { name: "Hammer Curl", nameZh: "錘式彎舉", targetSets: 3, targetReps: "10–12", equipment: "Dumbbell" },
+    ],
+  },
+  {
+    key: "legs",
+    name: "Leg Day",
+    nameZh: "腿日：股四頭、臀腿後側",
+    description: "以蹲、髖伸與單腿動作建立下肢力量。",
+    exercises: [
+      { name: "Squat", nameZh: "深蹲", targetSets: 4, targetReps: "6–10", equipment: "Barbell" },
+      { name: "Romanian Deadlift", nameZh: "羅馬尼亞硬拉", targetSets: 3, targetReps: "8–12", equipment: "Barbell" },
+      { name: "Leg Press", nameZh: "腿推機", targetSets: 3, targetReps: "10–12", equipment: "Machine" },
+      { name: "Leg Curl", nameZh: "腿彎舉機", targetSets: 3, targetReps: "10–15", equipment: "Machine" },
+      { name: "Standing Calf Raise", nameZh: "站姿提踵", targetSets: 3, targetReps: "12–15", equipment: "Machine" },
+    ],
+  },
+  {
+    key: "full-body",
+    name: "Full Body",
+    nameZh: "全身力量",
+    description: "適合每週 2–3 次的均衡全身訓練。",
+    exercises: [
+      { name: "Squat", nameZh: "深蹲", targetSets: 3, targetReps: "6–10", equipment: "Barbell" },
+      { name: "Bench Press", nameZh: "臥推", targetSets: 3, targetReps: "6–10", equipment: "Barbell" },
+      { name: "Lat Pulldown", nameZh: "下拉機", targetSets: 3, targetReps: "8–12", equipment: "Cable" },
+      { name: "Hip Thrust", nameZh: "臀推", targetSets: 3, targetReps: "8–12", equipment: "Barbell" },
+      { name: "Plank", nameZh: "平板撐", targetSets: 3, targetReps: "30–45 秒", equipment: "Bodyweight" },
+    ],
+  },
+] as const;
+
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload?.length) {
     return (
@@ -141,6 +196,7 @@ export default function Workout() {
   const [selectedExercise, setSelectedExercise] = useState<any>(null);
   const [setForm, setSetForm] = useState({ reps: 10, weight: 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: "" });
   const [sessionName, setSessionName] = useState("");
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>("custom");
   const [editSet, setEditSet] = useState<any>(null);
   const [sessionSort, setSessionSort] = useState<'date_desc'|'date_asc'|'volume_desc'|'duration_desc'>('date_desc');
   const [sessionSearch, setSessionSearch] = useState('');
@@ -165,15 +221,26 @@ export default function Workout() {
   const { data: sessionDetail } = trpc.workout.getSessionWithSets.useQuery(
     { sessionId: activeSession?.id }, { enabled: !!activeSession?.id }
   );
+  const { data: progressionSuggestion } = trpc.workout.getProgressionSuggestion.useQuery(
+    { exerciseName: selectedExercise?.name ?? "" },
+    { enabled: !!selectedExercise?.name && selectedExercise?.muscleGroup !== "cardio" },
+  );
   const { data: exercisePRs = {} } = trpc.workout.getExercisePRs.useQuery();
   const { data: prHistory = [] } = trpc.workout.getPRHistory.useQuery();
 
   const createSession = trpc.workout.createSession.useMutation({
     onSuccess: (data) => {
       utils.workout.getSessions.invalidate();
-      setActiveSession({ id: data.id, name: sessionName, date: selectedDate });
+      const template = WORKOUT_TEMPLATES.find(item => item.key === selectedTemplateKey);
+      setActiveSession({
+        id: data.id,
+        name: sessionName.trim() || template?.nameZh || "訓練",
+        date: selectedDate,
+        templateKey: template?.key,
+        plannedExercises: template?.exercises.map(exercise => ({ ...exercise })),
+      });
       setShowSessionDialog(false);
-      toast.success("Workout session started!");
+      toast.success(template ? `已套用「${template.nameZh}」範本` : "Workout session started!");
     },
   });
   const deleteSession = trpc.workout.deleteSession.useMutation({
@@ -360,6 +427,30 @@ export default function Workout() {
     return [...BUILT_IN_EXERCISES, ...custom];
   }, [customExercisesData]);
 
+  const plannedExercises = useMemo(() => {
+    const raw = activeSession?.plannedExercises;
+    if (Array.isArray(raw)) return raw as Array<{ name: string; nameZh?: string; targetSets: number; targetReps: string; equipment?: string }>;
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }, [activeSession]);
+
+  const openPlannedExercise = (planned: { name: string; targetReps: string; equipment?: string }) => {
+    const exercise = allExercises.find(item => item.name === planned.name)
+      ?? { name: planned.name, muscleGroup: "chest", equipment: planned.equipment ?? "Machine" };
+    const reps = Number.parseInt(planned.targetReps, 10) || 10;
+    setSelectedExercise(exercise);
+    setSetForm({ reps, weight: 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: "" });
+    setEditSet(null);
+    setShowAddSetDialog(true);
+  };
+
   const filteredExercises = useMemo(() => {
     return allExercises.filter(e => {
       const isCardioEx = e.muscleGroup === 'cardio';
@@ -451,8 +542,15 @@ export default function Workout() {
   const selectedDayCalories = selectedDaySessions.reduce((sum: number, session: any) => sum + (Number(session.caloriesBurned) || 0), 0);
 
   const handleStartSession = () => {
-    if (!sessionName.trim()) return toast.error("Enter session name");
-    createSession.mutate({ date: selectedDate, name: sessionName });
+    const template = WORKOUT_TEMPLATES.find(item => item.key === selectedTemplateKey);
+    const name = sessionName.trim() || template?.nameZh;
+    if (!name) return toast.error("請輸入課程名稱或選擇訓練範本");
+    createSession.mutate({
+      date: selectedDate,
+      name,
+      templateKey: template?.key,
+      plannedExercises: template?.exercises.map(exercise => ({ ...exercise })),
+    });
   };
 
   const handleAddSet = () => {
@@ -662,6 +760,22 @@ export default function Workout() {
                       <div className={`rounded-2xl border p-3.5 ${restSeconds > 0 ? 'border-amber-400/40 bg-amber-400/10' : 'border-border bg-card'}`}>
                         <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><div className={`flex h-8 w-8 items-center justify-center rounded-lg ${restSeconds > 0 ? 'bg-amber-400 text-amber-950' : 'bg-muted text-muted-foreground'}`}><Timer className="h-4 w-4" /></div><div><p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">休息計時器</p><p className="text-sm font-bold text-foreground">{restSeconds > 0 ? `${Math.floor(restSeconds / 60)}:${String(restSeconds % 60).padStart(2, '0')}` : '準備就緒'}</p></div></div><Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setRestIsActive(value => !value)} disabled={restSeconds === 0}>{restIsActive ? '暫停' : '繼續'}</Button></div>
                         <div className="mt-2.5 flex gap-1.5">{[45, 60, 90, 120].map(seconds => <button key={seconds} type="button" onClick={() => { setRestPreset(seconds); setRestSeconds(seconds); setRestIsActive(true); }} className={`rounded-md px-2 py-1 text-[10px] font-semibold transition-colors ${restPreset === seconds ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>{seconds}s</button>)}<button type="button" onClick={() => { setRestSeconds(0); setRestIsActive(false); }} className="ml-auto text-[10px] font-semibold text-muted-foreground hover:text-foreground">重設</button></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {plannedExercises.length > 0 && (
+                    <div className="rounded-2xl border border-primary/15 bg-gradient-to-br from-primary/5 via-card to-violet-500/5 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary"><ListChecks className="h-4 w-4" /></span><div><p className="text-sm font-bold text-foreground">本次訓練計劃</p><p className="text-[11px] text-muted-foreground">{activeSession.templateKey ? "已套用範本；完成組數會獨立記錄。" : "預先規劃的動作順序"}</p></div></div>
+                        <Badge variant="outline" className="text-[11px]">{plannedExercises.length} 個動作</Badge>
+                      </div>
+                      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                        {plannedExercises.map(planned => {
+                          const completed = (sessionDetail?.sets ?? []).filter(set => set.exerciseName === planned.name).length;
+                          const complete = completed >= planned.targetSets;
+                          return <button key={planned.name} type="button" onClick={() => isOwner && !activeSession.endTime && openPlannedExercise(planned)} disabled={!isOwner || !!activeSession.endTime} className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${complete ? "border-emerald-400/25 bg-emerald-400/10" : "border-border bg-card/80 hover:border-primary/35 hover:bg-primary/5"}`}><div className="min-w-0"><p className="truncate text-xs font-bold text-foreground">{planned.nameZh || planned.name}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{planned.targetSets} 組 × {planned.targetReps}{planned.equipment ? ` · ${planned.equipment}` : ""}</p></div><span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${complete ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground"}`}>{completed}/{planned.targetSets}</span></button>;
+                        })}
                       </div>
                     </div>
                   )}
@@ -1148,6 +1262,13 @@ export default function Workout() {
           <DialogHeader><DialogTitle>Start Workout Session</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">訓練範本（選填）</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setSelectedTemplateKey("custom")} className={`rounded-xl border p-2.5 text-left transition-colors ${selectedTemplateKey === "custom" ? "border-primary bg-primary/10" : "border-border hover:bg-muted/40"}`}><p className="text-xs font-bold text-foreground">自訂課程</p><p className="mt-0.5 text-[10px] text-muted-foreground">自由選擇動作</p></button>
+                {WORKOUT_TEMPLATES.map(template => <button key={template.key} type="button" onClick={() => { setSelectedTemplateKey(template.key); if (!sessionName.trim()) setSessionName(template.nameZh); }} className={`rounded-xl border p-2.5 text-left transition-colors ${selectedTemplateKey === template.key ? "border-primary bg-primary/10" : "border-border hover:bg-muted/40"}`}><p className="text-xs font-bold text-foreground">{template.nameZh}</p><p className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">{template.exercises.length} 個動作 · {template.description}</p></button>)}
+              </div>
+            </div>
+            <div>
               <label className="text-xs text-muted-foreground mb-1 block">Session Name</label>
               <Input placeholder="e.g. Push Day, Leg Day…" value={sessionName} onChange={e => setSessionName(e.target.value)} />
             </div>
@@ -1323,6 +1444,14 @@ export default function Workout() {
               </>
             ) : (
               <>
+                {progressionSuggestion && (
+                  <div className="rounded-xl border border-violet-400/20 bg-violet-500/5 p-3">
+                    <div className="flex gap-2.5">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/15 text-violet-600 dark:text-violet-300"><TrendingUp className="h-4 w-4" /></span>
+                      <div className="min-w-0 flex-1"><p className="text-xs font-bold text-foreground">漸進超負荷建議</p><p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">{progressionSuggestion.detail}</p>{progressionSuggestion.available && <Button type="button" size="sm" variant="outline" className="mt-2 h-7 border-violet-300/50 text-[11px] text-violet-700 hover:bg-violet-500/10 dark:text-violet-200" onClick={() => setSetForm(form => ({ ...form, reps: progressionSuggestion.targetReps, weight: weightUnit === "lbs" ? Number((progressionSuggestion.targetWeightKg * 2.20462).toFixed(1)) : progressionSuggestion.targetWeightKg }))}>套用 {progressionSuggestion.targetWeightKg} kg × {progressionSuggestion.targetReps}</Button>}</div>
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">Reps</label>

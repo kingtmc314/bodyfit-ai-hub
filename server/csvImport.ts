@@ -67,6 +67,7 @@ export interface ParsedNutritionRow {
 export interface ParsedRunningRow {
   date: string;
   runningType?: string;
+  routeType?: string;
   runningShoes?: string;
   distanceKm?: number;
   hour?: number;
@@ -511,9 +512,15 @@ export function parseRunningRow(row: Record<string, string>): ParsedRunningRow |
   else if (title.includes("recovery") || title.includes("easy")) runningType = "Easy";
   else if (actType.includes("trail")) runningType = "Trail";
 
+  const routeType = (
+    keys["routetype"] ?? keys["surface"] ?? keys["surfaceinterval"] ??
+    (actType.includes("trail") ? "Trail" : actType.includes("treadmill") ? "Treadmill" : undefined)
+  )?.trim();
+
   return {
     date,
     runningType,
+    routeType,
     distanceKm,
     hour,
     minutes,

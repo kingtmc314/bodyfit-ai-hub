@@ -83,9 +83,9 @@ export const CSV_TEMPLATES: Record<string, { filename: string; content: string }
   running: {
     filename: "template_running.csv",
     content: [
-      "date,running_type,running_shoes,distance_km,hour,minutes,second,average_pace,best_pace,average_heart_rate,maximum_heart_rate,average_cadence,max_cadence,avg_stride_length_m,avg_vertical_ratio,vertical_oscillation_cm,avg_ground_contact_time_ms,calories,temperature,humidity,notes",
-      "2026-01-15,Easy,,10.5,0,55,30,5:29,4:45,145,168,172,185,1.08,8.2,9.1,245,520,18,65,Morning easy run",
-      "2026-01-16,Interval,,8.0,0,38,15,4:47,3:55,162,182,180,195,1.15,7.8,8.5,228,420,17,60,Track intervals",
+      "date,running_type,route_type,running_shoes,distance_km,hour,minutes,second,average_pace,best_pace,average_heart_rate,maximum_heart_rate,average_cadence,max_cadence,avg_stride_length_m,avg_vertical_ratio,vertical_oscillation_cm,avg_ground_contact_time_ms,calories,temperature,humidity,notes",
+      "2026-01-15,Easy,Road,,10.5,0,55,30,5:29,4:45,145,168,172,185,1.08,8.2,9.1,245,520,18,65,Morning easy run",
+      "2026-01-16,Interval,Track,,8.0,0,38,15,4:47,3:55,162,182,180,195,1.15,7.8,8.5,228,420,17,60,Track intervals",
     ].join("\n"),
   },
 };

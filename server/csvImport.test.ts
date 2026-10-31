@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parseBodyRow, parseSleepRow, parseHeartRateRow, parseWorkoutRow,
-  detectDataType, parseRows,
+  parseRunningRow, detectDataType, parseRows,
 } from "./csvImport";
 
 // ─── parseBodyRow ─────────────────────────────────────────────────────────────
@@ -160,6 +160,33 @@ describe("parseWorkoutRow", () => {
     const row = { Date: "2024-01-01", "Activity Type": "CYCLING", Distance: "25400" };
     const result = parseWorkoutRow(row);
     expect(result!.distanceKm).toBeCloseTo(25.4, 1);
+  });
+});
+
+// ─── parseRunningRow ─────────────────────────────────────────────────────────
+describe("parseRunningRow", () => {
+  it("preserves Garmin running metrics and identifies a track route", () => {
+    const result = parseRunningRow({
+      "Activity Type": "RUNNING",
+      Date: "2026-10-31",
+      Title: "Track intervals",
+      Distance: "8.0",
+      Time: "00:38:15",
+      "Avg Pace": "4:47",
+      "Avg Run Cadence": "180",
+      "Max Run Cadence": "195",
+      "Avg Stride Length": "1.15",
+      "Avg Vertical Ratio": "7.8",
+      "Avg Vertical Oscillation": "8.5",
+      "Surface Interval": "Track",
+    });
+    expect(result).toMatchObject({
+      routeType: "Track",
+      maxCadence: 195,
+      avgStrideLengthM: 1.15,
+      avgVerticalRatio: 7.8,
+      verticalOscillationCm: 8.5,
+    });
   });
 });
 

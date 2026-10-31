@@ -27,6 +27,7 @@ import {
   varchar,
   real,
   boolean,
+  json,
   serial,
   bigserial,
   bigint,
@@ -125,6 +126,8 @@ var workoutSessions = pgTable("workout_sessions", {
   endTime: timestamp("end_time"),
   totalVolume: real("total_volume"),
   caloriesBurned: real("calories_burned"),
+  templateKey: text("template_key"),
+  plannedExercises: json("planned_exercises").$type(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
@@ -255,8 +258,26 @@ var runningLogs = pgTable("running_logs", {
   apparentTemp: real("apparent_temp"),
   status: text("status"),
   notes: text("notes"),
+  routeType: text("route_type"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow()
+});
+var runningLabScenarios = pgTable("running_lab_scenarios", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  runningScenario: text("running_scenario").notNull(),
+  easyRunDistance: text("easy_run_distance"),
+  temperatureC: real("temperature_c").notNull(),
+  humidityPct: integer("humidity_pct").notNull(),
+  windKph: real("wind_kph").notNull(),
+  baselinePaceSecPerKm: real("baseline_pace_sec_per_km"),
+  baselineFinishSeconds: real("baseline_finish_seconds").notNull(),
+  weatherPaceSecPerKm: real("weather_pace_sec_per_km").notNull(),
+  weatherFinishSeconds: real("weather_finish_seconds").notNull(),
+  weatherLoadPercent: real("weather_load_percent").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 var goalTypeEnum = pgEnum("goal_type", [
   "weight",
@@ -1637,9 +1658,11 @@ function parseRunningRow(row) {
   else if (title.includes("trail")) runningType = "Trail";
   else if (title.includes("recovery") || title.includes("easy")) runningType = "Easy";
   else if (actType.includes("trail")) runningType = "Trail";
+  const routeType = (keys["routetype"] ?? keys["surface"] ?? keys["surfaceinterval"] ?? (actType.includes("trail") ? "Trail" : actType.includes("treadmill") ? "Treadmill" : void 0))?.trim();
   return {
     date: date2,
     runningType,
+    routeType,
     distanceKm,
     hour,
     minutes,
@@ -1699,6 +1722,177 @@ function parseRows(rows, type) {
     if (parsed) results.push(parsed);
   }
   return results;
+}
+
+// server/sheetsService.ts
+import { google } from "googleapis";
+var SPREADSHEET_ID = "16MzWHNx9Njww8Ml3eq5tJEspmSkHcWxmaI9I5xTqsEU";
+var SHEET_TABS = {
+  body: "Body Fitness",
+  sleep: "Sleep",
+  heartrate: "Heart Rate",
+  running: "Running"
+};
+var BODY_COLUMNS = ["Date", "Weight (kg)", "BMI", "Body Fat %", "Fat Mass (kg)", "Muscle Mass (kg)", "BMR", "Visceral Fat", "Source", "Notes"];
+var SLEEP_COLUMNS = ["Date", "Sleep Score", "Resting HR", "Body Battery", "Pulse Ox (%)", "Respiration", "HRV", "Quality", "Duration (h)", "Source"];
+var HR_COLUMNS = ["Date", "Resting HR", "High HR", "HRV", "Source", "Notes"];
+var RUNNING_COLUMNS = ["Date", "Running Type", "Route Type", "Running Shoes", "Distance (km)", "Duration (h)", "Duration (min)", "Duration (sec)", "Avg Pace", "Best Pace", "Avg HR", "Max HR", "Avg Cadence", "Max Cadence", "Avg Stride Length (m)", "Avg Vertical Ratio", "Vertical Oscillation (cm)", "Avg Ground Contact Time (ms)", "Calories", "Temperature (\xB0C)", "Humidity (%)", "Notes"];
+function getAuth() {
+  const credJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!credJson) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON not set");
+  const credentials = JSON.parse(credJson);
+  return new google.auth.GoogleAuth({
+    credentials,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+  });
+}
+async function writeRowToSheet(type, rowData) {
+  try {
+    const auth = getAuth();
+    const sheets = google.sheets({ version: "v4", auth });
+    const sheetName = SHEET_TABS[type];
+    let values;
+    if (type === "body") {
+      values = [
+        String(rowData.date ?? ""),
+        rowData.weight !== void 0 ? Number(rowData.weight) : "",
+        rowData.bmi !== void 0 ? Number(rowData.bmi) : "",
+        rowData.bodyFatPct !== void 0 ? Number(rowData.bodyFatPct) : "",
+        rowData.fatMass !== void 0 ? Number(rowData.fatMass) : "",
+        rowData.muscleMass !== void 0 ? Number(rowData.muscleMass) : "",
+        rowData.bmr !== void 0 ? Number(rowData.bmr) : "",
+        rowData.visceralFat !== void 0 ? Number(rowData.visceralFat) : "",
+        String(rowData.source ?? "app"),
+        String(rowData.notes ?? "")
+      ];
+    } else if (type === "sleep") {
+      values = [
+        String(rowData.date ?? ""),
+        rowData.score !== void 0 ? Number(rowData.score) : "",
+        rowData.restingHr !== void 0 ? Number(rowData.restingHr) : "",
+        rowData.bodyBattery !== void 0 ? Number(rowData.bodyBattery) : "",
+        rowData.pulseOx !== void 0 ? Number(rowData.pulseOx) : "",
+        rowData.respiration !== void 0 ? Number(rowData.respiration) : "",
+        rowData.hrv !== void 0 ? Number(rowData.hrv) : "",
+        String(rowData.quality ?? ""),
+        rowData.duration !== void 0 ? Number(rowData.duration) : "",
+        String(rowData.source ?? "app")
+      ];
+    } else if (type === "heartrate") {
+      values = [
+        String(rowData.date ?? ""),
+        rowData.restingHr !== void 0 ? Number(rowData.restingHr) : "",
+        rowData.highHr !== void 0 ? Number(rowData.highHr) : "",
+        rowData.hrv !== void 0 ? Number(rowData.hrv) : "",
+        String(rowData.source ?? "app"),
+        String(rowData.notes ?? "")
+      ];
+    } else {
+      values = [
+        String(rowData.date ?? ""),
+        String(rowData.runningType ?? ""),
+        String(rowData.routeType ?? ""),
+        String(rowData.runningShoes ?? ""),
+        rowData.distanceKm !== void 0 ? Number(rowData.distanceKm) : "",
+        rowData.hour !== void 0 ? Number(rowData.hour) : "",
+        rowData.minutes !== void 0 ? Number(rowData.minutes) : "",
+        rowData.second !== void 0 ? Number(rowData.second) : "",
+        String(rowData.averagePace ?? ""),
+        String(rowData.bestPace ?? ""),
+        rowData.averageHeartRate !== void 0 ? Number(rowData.averageHeartRate) : "",
+        rowData.maximumHeartRate !== void 0 ? Number(rowData.maximumHeartRate) : "",
+        rowData.averageCadence !== void 0 ? Number(rowData.averageCadence) : "",
+        rowData.maxCadence !== void 0 ? Number(rowData.maxCadence) : "",
+        rowData.avgStrideLengthM !== void 0 ? Number(rowData.avgStrideLengthM) : "",
+        rowData.avgVerticalRatio !== void 0 ? Number(rowData.avgVerticalRatio) : "",
+        rowData.verticalOscillationCm !== void 0 ? Number(rowData.verticalOscillationCm) : "",
+        rowData.avgGroundContactTimeMs !== void 0 ? Number(rowData.avgGroundContactTimeMs) : "",
+        rowData.calories !== void 0 ? Number(rowData.calories) : "",
+        rowData.temperature !== void 0 ? Number(rowData.temperature) : "",
+        rowData.humidity !== void 0 ? Number(rowData.humidity) : "",
+        String(rowData.notes ?? "")
+      ];
+    }
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${sheetName}!A:Z`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [values]
+      }
+    });
+  } catch (err) {
+    console.error(`[Sheets] writeRowToSheet(${type}) error:`, err?.message);
+    throw err;
+  }
+}
+async function ensureSheetHeaders(type) {
+  try {
+    const auth = getAuth();
+    const sheets = google.sheets({ version: "v4", auth });
+    const sheetName = SHEET_TABS[type];
+    try {
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${sheetName}!A1:Z1`
+      });
+      const firstRow = response.data.values?.[0];
+      if (firstRow && firstRow.length > 0) return;
+    } catch {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: { requests: [{ addSheet: { properties: { title: sheetName } } }] }
+      }).catch(() => void 0);
+    }
+    const headers = type === "body" ? BODY_COLUMNS : type === "sleep" ? SLEEP_COLUMNS : type === "heartrate" ? HR_COLUMNS : RUNNING_COLUMNS;
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${sheetName}!A1`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [headers] }
+    });
+  } catch (err) {
+    console.warn(`[Sheets] ensureSheetHeaders(${type}):`, err?.message);
+  }
+}
+
+// shared/progression.ts
+function buildProgressionSuggestion(rawSets) {
+  const sets = rawSets.map((set) => ({ reps: Number(set.reps ?? 0), weight: Number(set.weight ?? 0) })).filter((set) => Number.isFinite(set.reps) && Number.isFinite(set.weight) && set.reps > 0 && set.weight > 0);
+  if (!sets.length) {
+    return { available: false, detail: "\u5B8C\u6210\u7B2C\u4E00\u7D44\u5F8C\uFF0C\u7CFB\u7D71\u6703\u4F9D\u4F60\u7684\u5BE6\u969B\u8868\u73FE\u63D0\u51FA\u4E0B\u4E00\u6B21\u5EFA\u8B70\u3002" };
+  }
+  const latest = sets[0];
+  const comparable = sets.filter((set) => Math.abs(set.weight - latest.weight) < 0.01).slice(0, 3);
+  const averageReps = comparable.reduce((sum, set) => sum + set.reps, 0) / comparable.length;
+  const increment = latest.weight >= 100 ? 5 : latest.weight >= 30 ? 2.5 : 1;
+  const roundedIncrement = Math.round(increment * 10) / 10;
+  if (averageReps >= 10) {
+    const targetWeightKg = Math.round((latest.weight + roundedIncrement) * 10) / 10;
+    return {
+      available: true,
+      strategy: "increase_weight",
+      targetWeightKg,
+      targetReps: Math.max(6, latest.reps - 2),
+      detail: `\u6700\u8FD1 ${comparable.length} \u7D44\u65BC ${latest.weight} kg \u5E73\u5747\u5B8C\u6210 ${averageReps.toFixed(1)} \u6B21\uFF0C\u53EF\u5617\u8A66\u52A0\u91CD ${roundedIncrement} kg\u3002`
+    };
+  }
+  if (averageReps < 6) {
+    return {
+      available: true,
+      strategy: "maintain",
+      targetWeightKg: latest.weight,
+      targetReps: Math.max(6, latest.reps),
+      detail: `\u5148\u4EE5 ${latest.weight} kg \u7A69\u5B9A\u5B8C\u6210\u81F3\u5C11 6 \u6B21\uFF0C\u4FDD\u7559 1\u20132 \u6B21\u9918\u529B\u4E26\u512A\u5148\u78BA\u8A8D\u52D5\u4F5C\u63A7\u5236\u3002`
+    };
+  }
+  return {
+    available: true,
+    strategy: "increase_reps",
+    targetWeightKg: latest.weight,
+    targetReps: Math.min(12, latest.reps + 1),
+    detail: `\u7DAD\u6301 ${latest.weight} kg\uFF0C\u4E0B\u4E00\u7D44\u76EE\u6A19\u591A\u5B8C\u6210 1 \u6B21\uFF1B\u9054\u5230 10\u201312 \u6B21\u5F8C\u518D\u5C0F\u5E45\u52A0\u91CD\u3002`
+  };
 }
 
 // server/routers.ts
@@ -2014,11 +2208,24 @@ var workoutRouter = router({
     date: z2.string(),
     name: z2.string().optional(),
     duration: z2.number().optional(),
-    notes: z2.string().optional()
+    notes: z2.string().optional(),
+    templateKey: z2.string().optional(),
+    plannedExercises: z2.array(z2.object({
+      name: z2.string(),
+      nameZh: z2.string().optional(),
+      targetSets: z2.number().int().min(1).max(12),
+      targetReps: z2.string(),
+      equipment: z2.string().optional()
+    })).optional()
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const result = await db.insert(workoutSessions).values({ ...input, userId: OWNER_USER_ID }).returning({ id: workoutSessions.id });
+    const { date: date2, ...sessionInput } = input;
+    const result = await db.insert(workoutSessions).values({
+      ...sessionInput,
+      userId: OWNER_USER_ID,
+      startTime: /* @__PURE__ */ new Date(`${date2}T12:00:00+08:00`)
+    }).returning({ id: workoutSessions.id });
     return { success: true, id: result[0]?.id ?? 0 };
   }),
   // Update session
@@ -2431,6 +2638,22 @@ Provide a brief trend analysis and exactly 3 specific recommendations covering: 
       exerciseName: Array.from(prMap.keys())[i],
       ...v
     }));
+  }),
+  getProgressionSuggestion: publicProcedure.input(z2.object({ exerciseName: z2.string().min(1) })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return buildProgressionSuggestion([]);
+    const rows = await db.select({
+      reps: workoutSets.reps,
+      weight: workoutSets.weight,
+      createdAt: workoutSets.createdAt
+    }).from(workoutSets).innerJoin(workoutSessions, eq2(workoutSets.sessionId, workoutSessions.id)).where(and(
+      eq2(workoutSessions.userId, OWNER_USER_ID),
+      eq2(workoutSets.exerciseName, input.exerciseName),
+      sql2`${workoutSessions.endTime} IS NOT NULL`,
+      sql2`${workoutSets.reps} IS NOT NULL`,
+      sql2`${workoutSets.weight} IS NOT NULL`
+    )).orderBy(desc(workoutSets.createdAt)).limit(12);
+    return buildProgressionSuggestion(rows);
   })
 });
 var bodyRouter = router({
@@ -3078,7 +3301,7 @@ var csvImportRouter = router({
         try {
           await db.execute(sql2`
               INSERT INTO running_logs (
-                date, running_type, running_shoes, distance_km, hour, minutes, second,
+                date, running_type, route_type, running_shoes, distance_km, hour, minutes, second,
                 average_pace, best_pace, average_heart_rate, maximum_heart_rate,
                 average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
                 vertical_oscillation_cm, avg_ground_contact_time_ms, calories,
@@ -3086,6 +3309,7 @@ var csvImportRouter = router({
               ) VALUES (
                 ${r.date},
                 ${r.runningType ?? null},
+                ${r.routeType ?? null},
                 ${r.runningShoes ?? null},
                 ${r.distanceKm ?? null},
                 ${r.hour ?? null},
@@ -3650,6 +3874,33 @@ var runningRouter = router({
     );
     return rows.rows ?? rows;
   }),
+  getShoePerformance: publicProcedure.input(z2.object({
+    distanceBand: z2.enum(["all", "short", "medium", "long", "ultra"]).default("all"),
+    routeType: z2.string().default("all")
+  })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const distanceWhere = input.distanceBand === "short" ? sql2`distance_km < 5` : input.distanceBand === "medium" ? sql2`distance_km >= 5 AND distance_km < 10` : input.distanceBand === "long" ? sql2`distance_km >= 10 AND distance_km < 21.1` : input.distanceBand === "ultra" ? sql2`distance_km >= 21.1` : sql2`TRUE`;
+    const routeWhere = input.routeType === "all" ? sql2`TRUE` : sql2`route_type = ${input.routeType}`;
+    const rows = await db.execute(sql2`
+        SELECT
+          running_shoes AS shoe,
+          COUNT(*)::int AS runs,
+          ROUND(COALESCE(SUM(distance_km), 0)::numeric, 1) AS distance,
+          AVG(CASE WHEN average_pace ~ '^[0-9]+(\\.[0-9]+)?$' THEN average_pace::numeric END) AS avg_pace,
+          ROUND(AVG(average_heart_rate)::numeric, 0) AS avg_hr,
+          ROUND(AVG(average_cadence)::numeric, 0) AS avg_cadence
+        FROM running_logs
+        WHERE running_shoes IS NOT NULL
+          AND running_shoes <> ''
+          AND distance_km IS NOT NULL
+          AND ${distanceWhere}
+          AND ${routeWhere}
+        GROUP BY running_shoes
+        ORDER BY SUM(distance_km) DESC, running_shoes ASC
+      `);
+    return rows.rows ?? rows;
+  }),
   getStats: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return null;
@@ -3695,6 +3946,7 @@ var runningRouter = router({
   addLog: publicProcedure.input(z2.object({
     date: z2.string(),
     runningType: z2.string().optional(),
+    routeType: z2.string().optional(),
     runningShoes: z2.string().optional(),
     distanceKm: z2.number().optional(),
     hour: z2.number().optional(),
@@ -3725,7 +3977,7 @@ var runningRouter = router({
     }
     const result = await db.execute(sql2`
         INSERT INTO running_logs (
-          date, running_type, running_shoes, shoes_id, distance_km, hour, minutes, second,
+          date, running_type, route_type, running_shoes, shoes_id, distance_km, hour, minutes, second,
           average_pace, best_pace, average_heart_rate, maximum_heart_rate,
           average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
           vertical_oscillation_cm, avg_ground_contact_time_ms,
@@ -3733,6 +3985,7 @@ var runningRouter = router({
         ) VALUES (
           ${input.date},
           ${input.runningType ?? null},
+          ${input.routeType ?? null},
           ${input.runningShoes ?? null},
           ${shoesId},
           ${input.distanceKm ?? null},
@@ -3757,12 +4010,19 @@ var runningRouter = router({
       `);
     const rows = result.rows ?? result;
     const newId = rows[0]?.id ? Number(rows[0].id) : 0;
+    if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+      await ensureSheetHeaders("running");
+      await writeRowToSheet("running", input).catch((error) => {
+        console.warn("[Sheets] Running log saved locally but could not be appended:", error instanceof Error ? error.message : error);
+      });
+    }
     return { success: true, id: newId };
   }),
   updateLog: publicProcedure.input(z2.object({
     id: z2.number(),
     date: z2.string().optional(),
     runningType: z2.string().optional(),
+    routeType: z2.string().optional(),
     runningShoes: z2.string().optional(),
     distanceKm: z2.number().optional(),
     hour: z2.number().optional(),
@@ -3803,6 +4063,42 @@ var runningRouter = router({
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     await db.execute(sql2`DELETE FROM running_logs WHERE id = ${input.id}`);
+    return { success: true };
+  }),
+  getLabScenarios: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(runningLabScenarios).where(eq2(runningLabScenarios.userId, OWNER_USER_ID)).orderBy(desc(runningLabScenarios.createdAt)).limit(12);
+  }),
+  saveLabScenario: ownerProcedure.input(z2.object({
+    name: z2.string().trim().min(1).max(80),
+    runningScenario: z2.string().min(1),
+    easyRunDistance: z2.string().optional(),
+    temperatureC: z2.number().min(0).max(45),
+    humidityPct: z2.number().int().min(10).max(100),
+    windKph: z2.number().min(0).max(80),
+    baselinePaceSecPerKm: z2.number().optional(),
+    baselineFinishSeconds: z2.number().positive(),
+    weatherPaceSecPerKm: z2.number().positive(),
+    weatherFinishSeconds: z2.number().positive(),
+    weatherLoadPercent: z2.number().min(0).max(100)
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const [row] = await db.insert(runningLabScenarios).values({
+      ...input,
+      userId: OWNER_USER_ID,
+      updatedAt: /* @__PURE__ */ new Date()
+    }).returning();
+    return row;
+  }),
+  deleteLabScenario: ownerProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    await db.delete(runningLabScenarios).where(and(
+      eq2(runningLabScenarios.id, input.id),
+      eq2(runningLabScenarios.userId, OWNER_USER_ID)
+    ));
     return { success: true };
   }),
   getAIAnalysis: ownerProcedure.input(z2.object({ weeks: z2.number().optional().default(12) })).mutation(async ({ input }) => {

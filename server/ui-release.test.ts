@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.14.0");
+    expect(APP_VERSION).toBe("3.14.1");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -84,5 +84,36 @@ describe("v3.14 focused training scope", () => {
     expect(runningSource).toContain("各跑鞋效能統計");
     expect(runningSource).toContain("RunningEnergyLab");
     expect(runningSource).toContain("AI 教練");
+  });
+});
+
+describe("v3.14.1 performance workflow", () => {
+  const runningSource = readFileSync(new URL("../client/src/pages/Running.tsx", import.meta.url), "utf8");
+  const labSource = readFileSync(new URL("../client/src/components/RunningEnergyLab.tsx", import.meta.url), "utf8");
+  const workoutSource = readFileSync(new URL("../client/src/pages/Workout.tsx", import.meta.url), "utf8");
+  const routerSource = readFileSync(new URL("../server/routers.ts", import.meta.url), "utf8");
+  const schemaSource = readFileSync(new URL("../drizzle/schema.ts", import.meta.url), "utf8");
+
+  it("filters shoe intelligence by distance and route without replacing historical metrics", () => {
+    expect(runningSource).toContain("DISTANCE_BANDS");
+    expect(runningSource).toContain("shoeDistanceBand");
+    expect(runningSource).toContain("shoeRouteType");
+    expect(routerSource).toContain("getShoePerformance");
+    expect(schemaSource).toContain("routeType: text(\"route_type\")");
+  });
+
+  it("keeps planned templates separate from logged sets and exposes overload guidance", () => {
+    expect(workoutSource).toContain("WORKOUT_TEMPLATES");
+    expect(workoutSource).toContain("plannedExercises");
+    expect(workoutSource).toContain("漸進超負荷建議");
+    expect(routerSource).toContain("getProgressionSuggestion");
+    expect(schemaSource).toContain("plannedExercises: json(\"planned_exercises\")");
+  });
+
+  it("persists named weather comparisons in the running energy lab", () => {
+    expect(labSource).toContain("儲存比較");
+    expect(labSource).toContain("已儲存的天氣比較");
+    expect(routerSource).toContain("saveLabScenario");
+    expect(schemaSource).toContain("runningLabScenarios");
   });
 });

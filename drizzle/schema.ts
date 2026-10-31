@@ -130,6 +130,8 @@ export const workoutSessions = pgTable("workout_sessions", {
   endTime: timestamp("end_time"),
   totalVolume: real("total_volume"),
   caloriesBurned: real("calories_burned"),
+  templateKey: text("template_key"),
+  plannedExercises: json("planned_exercises").$type<Array<{ name: string; nameZh?: string; targetSets: number; targetReps: string; equipment?: string }>>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -296,12 +298,36 @@ export const runningLogs = pgTable("running_logs", {
   apparentTemp: real("apparent_temp"),
   status: text("status"),
   notes: text("notes"),
+  routeType: text("route_type"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export type RunningLog = typeof runningLogs.$inferSelect;
 export type InsertRunningLog = typeof runningLogs.$inferInsert;
+
+// ─── Saved Running Lab Scenarios ──────────────────────────────────────────────
+// Scenario inputs and their calculated outputs are stored together so later
+// comparisons remain meaningful even after the runner logs more activities.
+export const runningLabScenarios = pgTable("running_lab_scenarios", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  runningScenario: text("running_scenario").notNull(),
+  easyRunDistance: text("easy_run_distance"),
+  temperatureC: real("temperature_c").notNull(),
+  humidityPct: integer("humidity_pct").notNull(),
+  windKph: real("wind_kph").notNull(),
+  baselinePaceSecPerKm: real("baseline_pace_sec_per_km"),
+  baselineFinishSeconds: real("baseline_finish_seconds").notNull(),
+  weatherPaceSecPerKm: real("weather_pace_sec_per_km").notNull(),
+  weatherFinishSeconds: real("weather_finish_seconds").notNull(),
+  weatherLoadPercent: real("weather_load_percent").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export type RunningLabScenario = typeof runningLabScenarios.$inferSelect;
+export type InsertRunningLabScenario = typeof runningLabScenarios.$inferInsert;
 
 // ─── Health Goals ─────────────────────────────────────────────────────────────
 export const goalTypeEnum = pgEnum("goal_type", [

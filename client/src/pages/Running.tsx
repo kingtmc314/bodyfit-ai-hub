@@ -44,6 +44,14 @@ const formatDuration = (h: number, m: number, s: number): string => {
 };
 
 const RUNNING_TYPES = ["Easy", "Tempo", "Interval", "Long Run", "Race", "Trail", "Recovery", "Fartlek", "Sprint", "Time Trial", "其他"];
+const ROUTE_TYPES = ["Road", "Track", "Trail", "Treadmill", "Mixed"];
+const DISTANCE_BANDS = [
+  { value: "all", label: "全部距離" },
+  { value: "short", label: "短距離 ＜5 km" },
+  { value: "medium", label: "中距離 5–10 km" },
+  { value: "long", label: "長距離 10–21.1 km" },
+  { value: "ultra", label: "超長距離 ≥21.1 km" },
+];
 const WEEKS_OPTIONS = [4, 8, 12, 24, 52];
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -66,6 +74,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 const defaultForm = {
   date: todayHKString(),
   runningType: "Easy",
+  routeType: "Road",
   runningShoes: "",
   distanceKm: "",
   hour: "0",
@@ -104,6 +113,8 @@ export default function Running() {
   const [logSort, setLogSort] = useState<'date_desc' | 'date_asc' | 'distance_desc' | 'pace_asc' | 'hr_asc'>('date_desc');
   const [logFilterType, setLogFilterType] = useState<string>('all');
   const [logSearch, setLogSearch] = useState('');
+  const [shoeDistanceBand, setShoeDistanceBand] = useState<'all' | 'short' | 'medium' | 'long' | 'ultra'>('all');
+  const [shoeRouteType, setShoeRouteType] = useState('all');
 
   // Shoe Locker state
   const [showShoeDialog, setShowShoeDialog] = useState(false);
@@ -146,6 +157,10 @@ export default function Running() {
 
   const utils = trpc.useUtils();
   const { data: logs = [], isLoading } = trpc.running.getLogs.useQuery({ limit: 200 });
+  const { data: filteredShoePerformance = [] } = trpc.running.getShoePerformance.useQuery({
+    distanceBand: shoeDistanceBand,
+    routeType: shoeRouteType,
+  });
   const { data: stats } = trpc.running.getStats.useQuery();
   const { data: activeShoes = [] } = trpc.running.getActiveShoes.useQuery();
   const { data: allShoes = [] } = trpc.running.getShoes.useQuery();
@@ -283,6 +298,7 @@ export default function Running() {
     setForm({
       date: row.date ?? todayHKString(),
       runningType: row.running_type ?? "Easy",
+      routeType: row.route_type ?? "Road",
       runningShoes: row.running_shoes ?? "",
       distanceKm: row.distance_km != null ? String(row.distance_km) : "",
       hour: row.hour != null ? String(row.hour) : "0",
@@ -308,6 +324,7 @@ export default function Running() {
     const payload: any = {
       date: form.date,
       runningType: form.runningType || undefined,
+      routeType: form.routeType || undefined,
       runningShoes: form.runningShoes || undefined,
       distanceKm: form.distanceKm ? parseFloat(form.distanceKm) : undefined,
       hour: form.hour ? parseInt(form.hour) : undefined,
@@ -357,28 +374,15 @@ export default function Running() {
   }, [logs]);
 
   const shoePerformanceData = useMemo(() => {
-    const byShoe = new Map<string, { distance: number; runs: number; paceDistance: number; paceTotal: number; heartRateTotal: number; heartRateCount: number; cadenceTotal: number; cadenceCount: number }>();
-    (logs as any[]).forEach((run: any) => {
-      if (!run.running_shoes) return;
-      const distance = Number.parseFloat(run.distance_km || 0) || 0;
-      const current = byShoe.get(run.running_shoes) ?? { distance: 0, runs: 0, paceDistance: 0, paceTotal: 0, heartRateTotal: 0, heartRateCount: 0, cadenceTotal: 0, cadenceCount: 0 };
-      current.distance += distance;
-      current.runs += 1;
-      const pace = parsePaceField(run.average_pace);
-      if (pace > 0) { current.paceDistance += Math.max(distance, 1); current.paceTotal += pace * Math.max(distance, 1); }
-      if (run.average_heart_rate) { current.heartRateTotal += Number(run.average_heart_rate); current.heartRateCount += 1; }
-      if (run.average_cadence) { current.cadenceTotal += Number(run.average_cadence); current.cadenceCount += 1; }
-      byShoe.set(run.running_shoes, current);
-    });
-    return Array.from(byShoe.entries()).map(([name, values]) => ({
-      shoe: name,
-      距離: Number(values.distance.toFixed(1)),
-      次數: values.runs,
-      配速秒: values.paceDistance ? Math.round(values.paceTotal / values.paceDistance) : null,
-      平均心率: values.heartRateCount ? Math.round(values.heartRateTotal / values.heartRateCount) : null,
-      平均步頻: values.cadenceCount ? Math.round(values.cadenceTotal / values.cadenceCount) : null,
-    })).sort((a, b) => b.距離 - a.距離);
-  }, [logs]);
+    return (filteredShoePerformance as any[]).map((row: any) => ({
+      shoe: row.shoe,
+      距離: Number(row.distance || 0),
+      次數: Number(row.runs || 0),
+      配速秒: row.avg_pace != null ? Math.round(Number(row.avg_pace) * 60) : null,
+      平均心率: row.avg_hr != null ? Math.round(Number(row.avg_hr)) : null,
+      平均步頻: row.avg_cadence != null ? Math.round(Number(row.avg_cadence)) : null,
+    }));
+  }, [filteredShoePerformance]);
 
   // ─── Sorted shoes and races ─────────────────────────────────────────────────
   const sortedShoes = useMemo(() => {
@@ -808,7 +812,7 @@ export default function Running() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/40">
-                      {["日期", "類型", "跑鞋", "距離", "時間", "配速", "心率", "步頻", "接觸", "卡路里", "備注", ""].map((h) => (
+                      {["日期", "類型", "路線", "跑鞋", "距離", "時間", "配速", "心率", "步頻", "接觸", "卡路里", "備注", ""].map((h) => (
                         <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -821,6 +825,9 @@ export default function Running() {
                           {row.running_type ? (
                             <Badge variant="outline" className="text-xs">{row.running_type}</Badge>
                           ) : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                          {row.route_type || "—"}
                         </td>
                         <td className="px-4 py-3 text-muted-foreground text-xs max-w-[120px] truncate">
                           {row.running_shoes || "—"}
@@ -913,8 +920,27 @@ export default function Running() {
               </div>
               <Badge variant="outline" className="border-orange-300/60 text-orange-700 dark:text-orange-300">{shoePerformanceData.length} 雙有紀錄</Badge>
             </div>
+            <div className="mb-4 grid grid-cols-1 gap-2 rounded-xl border border-orange-200/60 bg-white/65 p-2.5 sm:grid-cols-2 dark:border-orange-400/15 dark:bg-slate-950/25">
+              <label className="min-w-0">
+                <span className="mb-1 block text-[11px] font-semibold text-muted-foreground">距離區間</span>
+                <Select value={shoeDistanceBand} onValueChange={(value) => setShoeDistanceBand(value as typeof shoeDistanceBand)}>
+                  <SelectTrigger className="h-8 bg-card text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>{DISTANCE_BANDS.map(band => <SelectItem key={band.value} value={band.value}>{band.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </label>
+              <label className="min-w-0">
+                <span className="mb-1 block text-[11px] font-semibold text-muted-foreground">路線類型</span>
+                <Select value={shoeRouteType} onValueChange={setShoeRouteType}>
+                  <SelectTrigger className="h-8 bg-card text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部路線</SelectItem>
+                    {ROUTE_TYPES.map(route => <SelectItem key={route} value={route}>{route === "Road" ? "公路" : route === "Track" ? "跑道" : route === "Trail" ? "越野" : route === "Treadmill" ? "跑步機" : "混合路線"}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </label>
+            </div>
             {shoePerformanceData.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-orange-300/50 py-8 text-center text-sm text-muted-foreground">在跑步紀錄選擇跑鞋後，這裡會自動建立各鞋效能圖。</div>
+              <div className="rounded-xl border border-dashed border-orange-300/50 py-8 text-center text-sm text-muted-foreground">此篩選條件下暫無跑鞋紀錄；可調整篩選或在跑步紀錄填入跑鞋及路線類型。</div>
             ) : (
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                 <div className="rounded-xl border border-border/70 bg-card/75 p-3">
@@ -1656,6 +1682,15 @@ export default function Running() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {RUNNING_TYPES.map((rt) => <SelectItem key={rt} value={rt}>{rt}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">路線類型</label>
+              <Select value={form.routeType || "Road"} onValueChange={(v) => f("routeType", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {ROUTE_TYPES.map(route => <SelectItem key={route} value={route}>{route === "Road" ? "公路" : route === "Track" ? "跑道" : route === "Trail" ? "越野" : route === "Treadmill" ? "跑步機" : "混合路線"}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
