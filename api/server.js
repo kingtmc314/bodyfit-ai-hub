@@ -38,19 +38,30 @@ var mealTypeEnum = pgEnum("meal_type", ["breakfast", "lunch", "dinner", "snack"]
 var angleEnum = pgEnum("angle", ["front", "back", "side", "custom"]);
 var users = pgTable("users", {
   id: serial("id").primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
+  openId: varchar("open_id", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
+  loginMethod: varchar("login_method", { length: 64 }),
   role: roleEnum("role").default("user").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull()
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  lastSignedIn: timestamp("last_signed_in").defaultNow().notNull()
+});
+var userProfile = pgTable("user_profile", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  height: real("height"),
+  // cm
+  birthYear: integer("birth_year"),
+  gender: varchar("gender", { length: 10 }),
+  // 'male' | 'female'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 var foodItems = pgTable("food_items", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
-  nameZh: varchar("nameZh", { length: 255 }),
+  nameZh: varchar("name_zh", { length: 255 }),
   calories: real("calories").notNull(),
   // per 100g
   protein: real("protein").notNull(),
@@ -63,152 +74,159 @@ var foodItems = pgTable("food_items", {
   sugar: real("sugar"),
   sodium: real("sodium"),
   category: varchar("category", { length: 64 }),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
+  servingSize: real("serving_size"),
+  servingUnit: varchar("serving_unit", { length: 50 }),
+  isCustom: boolean("is_custom").notNull().default(false),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull()
 });
 var mealLogs = pgTable("meal_logs", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  foodItemId: integer("foodItemId").references(() => foodItems.id),
-  foodName: varchar("foodName", { length: 255 }).notNull(),
-  mealType: varchar("mealType", { length: 20 }).notNull().default("snack"),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  foodItemId: integer("food_item_id").references(() => foodItems.id),
+  foodName: varchar("food_name", { length: 255 }).notNull(),
+  mealType: varchar("meal_type", { length: 20 }).notNull().default("snack"),
   servings: real("servings").notNull().default(1),
-  servingSize: real("servingSize"),
+  servingSize: real("serving_size"),
   calories: real("calories"),
   protein: real("protein"),
   carbs: real("carbs"),
   fat: real("fat"),
   fiber: real("fiber"),
   notes: text("notes"),
-  loggedAt: timestamp("loggedAt").defaultNow().notNull(),
-  photoUrl: text("photoUrl"),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
+  logDate: date("log_date"),
+  loggedAt: timestamp("logged_at").defaultNow().notNull(),
+  photoUrl: text("photo_url"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
 });
 var exercises = pgTable("exercises", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
-  nameZh: varchar("nameZh", { length: 255 }),
-  muscleGroup: varchar("muscleGroup", { length: 100 }),
-  secondaryMuscles: text("secondaryMuscles"),
+  nameZh: varchar("name_zh", { length: 255 }),
+  muscleGroup: varchar("muscle_group", { length: 100 }),
+  secondaryMuscles: text("secondary_muscles"),
   equipment: varchar("equipment", { length: 100 }),
   category: varchar("category", { length: 100 }),
   description: text("description"),
   instructions: text("instructions"),
   difficulty: varchar("difficulty", { length: 50 }),
-  imageUrl: text("imageUrl"),
-  isCustom: boolean("isCustom").notNull().default(false),
-  userId: integer("userId").references(() => users.id, { onDelete: "cascade" }),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
+  imageUrl: text("image_url"),
+  isCustom: boolean("is_custom").notNull().default(false),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull()
 });
 var workoutSessions = pgTable("workout_sessions", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 255 }),
   notes: text("notes"),
   duration: integer("duration"),
-  startTime: timestamp("startTime").defaultNow().notNull(),
-  endTime: timestamp("endTime"),
-  totalVolume: real("totalVolume"),
-  caloriesBurned: real("caloriesBurned"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull()
+  startTime: timestamp("start_time").defaultNow().notNull(),
+  endTime: timestamp("end_time"),
+  totalVolume: real("total_volume"),
+  caloriesBurned: real("calories_burned"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 var workoutSets = pgTable("workout_sets", {
   id: serial("id").primaryKey(),
-  sessionId: integer("sessionId").notNull().references(() => workoutSessions.id, { onDelete: "cascade" }),
-  exerciseId: integer("exerciseId").references(() => exercises.id),
-  exerciseName: varchar("exerciseName", { length: 255 }),
-  setNumber: integer("setNumber").notNull().default(1),
+  sessionId: integer("session_id").notNull().references(() => workoutSessions.id, { onDelete: "cascade" }),
+  exerciseId: integer("exercise_id").references(() => exercises.id),
+  exerciseName: varchar("exercise_name", { length: 255 }),
+  setNumber: integer("set_number").notNull().default(1),
   reps: integer("reps"),
   weight: real("weight"),
   duration: integer("duration"),
   distance: real("distance"),
+  avgHr: integer("avg_hr"),
+  calories: integer("calories"),
   notes: text("notes"),
-  isPersonalRecord: boolean("isPersonalRecord").notNull().default(false),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
+  isPersonalRecord: boolean("is_personal_record").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull()
 });
 var bodyComposition = pgTable("body_composition", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   date: text("date").notNull(),
   weight: real("weight"),
-  bodyFatPct: real("bodyFatPct"),
-  muscleMass: real("muscleMass"),
-  fatMass: real("fatMass"),
-  visceralFat: real("visceralFat"),
+  bodyFatPct: real("body_fat_pct"),
+  muscleMass: real("muscle_mass"),
+  fatMass: real("fat_mass"),
+  visceralFat: real("visceral_fat"),
   bmi: real("bmi"),
   bmr: integer("bmr"),
   notes: text("notes"),
   source: varchar("source", { length: 50 }).default("manual"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull()
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 var heartRateLogs = pgTable("heart_rate_logs", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   date: text("date").notNull(),
-  restingHr: integer("restingHr"),
-  highHr: integer("highHr"),
+  restingHr: integer("resting_hr"),
+  highHr: integer("high_hr"),
   hrv: integer("hrv"),
-  avgHr: integer("avgHr"),
+  avgHr: integer("avg_hr"),
   zone1: integer("zone1"),
   zone2: integer("zone2"),
   zone3: integer("zone3"),
   zone4: integer("zone4"),
   zone5: integer("zone5"),
-  zone1Minutes: integer("zone1Minutes"),
-  zone2Minutes: integer("zone2Minutes"),
-  zone3Minutes: integer("zone3Minutes"),
-  zone4Minutes: integer("zone4Minutes"),
-  zone5Minutes: integer("zone5Minutes"),
+  zone1Minutes: integer("zone1_minutes"),
+  zone2Minutes: integer("zone2_minutes"),
+  zone3Minutes: integer("zone3_minutes"),
+  zone4Minutes: integer("zone4_minutes"),
+  zone5Minutes: integer("zone5_minutes"),
   notes: text("notes"),
   source: varchar("source", { length: 50 }).default("manual"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull()
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 var sleepLogs = pgTable("sleep_logs", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   date: text("date").notNull(),
-  sleepScore: integer("sleepScore"),
-  bodyBattery: integer("bodyBattery"),
-  pulseOx: real("pulseOx"),
+  sleepScore: integer("sleep_score"),
+  bodyBattery: integer("body_battery"),
+  pulseOx: real("pulse_ox"),
   respiration: real("respiration"),
-  sleepQuality: varchar("sleepQuality", { length: 50 }),
-  sleepDuration: real("sleepDuration"),
-  deepSleep: real("deepSleep"),
-  remSleep: real("remSleep"),
-  lightSleep: real("lightSleep"),
-  awakeDuration: real("awakeDuration"),
+  sleepQuality: varchar("sleep_quality", { length: 50 }),
+  sleepDuration: real("sleep_duration"),
+  deepSleep: real("deep_sleep"),
+  remSleep: real("rem_sleep"),
+  lightSleep: real("light_sleep"),
+  awakeDuration: real("awake_duration"),
   hrv: integer("hrv"),
-  restingHr: integer("restingHr"),
+  restingHr: integer("resting_hr"),
   skintemp: text("skintemp"),
   bedtime: text("bedtime"),
   waketime: text("waketime"),
   notes: text("notes"),
   source: varchar("source", { length: 50 }).default("manual"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull()
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 var progressPhotos = pgTable("progress_photos", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   date: text("date").notNull(),
-  photoUrl: text("photoUrl").notNull(),
-  fileKey: text("fileKey").notNull(),
+  photoUrl: text("photo_url").notNull(),
+  fileKey: text("file_key").notNull(),
   angle: varchar("angle", { length: 50 }).default("front"),
   notes: text("notes"),
   weight: real("weight"),
-  bodyFatPct: real("bodyFatPct"),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
+  bodyFatPct: real("body_fat_pct"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
 });
 var aiInsights = pgTable("ai_insights", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   period: varchar("period", { length: 50 }).notNull().default("weekly"),
   content: text("content").notNull(),
-  generatedAt: timestamp("generatedAt").defaultNow().notNull(),
-  weekStart: text("weekStart"),
-  weekEnd: text("weekEnd")
+  generatedAt: timestamp("generated_at").defaultNow().notNull(),
+  weekStart: text("week_start"),
+  weekEnd: text("week_end")
 });
 var runningLogs = pgTable("running_logs", {
   id: serial("id").primaryKey(),
@@ -254,14 +272,14 @@ var goalTypeEnum = pgEnum("goal_type", [
 ]);
 var healthGoals = pgTable("health_goals", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  goalType: goalTypeEnum("goalType").notNull(),
-  targetValue: real("targetValue").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  goalType: goalTypeEnum("goal_type").notNull(),
+  targetValue: real("target_value").notNull(),
   unit: varchar("unit", { length: 30 }),
   notes: text("notes"),
-  isActive: boolean("isActive").notNull().default(true),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull()
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 var runningShoes = pgTable("running_shoes", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
@@ -306,13 +324,13 @@ var races = pgTable("races", {
 });
 var favouriteExercises = pgTable("favourite_exercises", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   exerciseName: text("exercise_name").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
+  createdAt: timestamp("created_at").defaultNow().notNull()
 });
 var dailySteps = pgTable("daily_steps", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   date: date("date").notNull(),
   steps: integer("steps"),
   floorsClimbed: integer("floors_climbed"),
@@ -320,153 +338,32 @@ var dailySteps = pgTable("daily_steps", {
   activeMinutes: integer("active_minutes"),
   calories: integer("calories"),
   notes: text("notes"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull()
-});
-var medicalConditions = pgTable("medical_conditions", {
-  id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  title: text("title").notNull(),
-  category: varchar("category", { length: 64 }),
-  // e.g. illness, injury, sports_injury, checkup
-  status: varchar("status", { length: 32 }).default("active"),
-  // active, resolved, chronic
-  startDate: date("start_date"),
-  endDate: date("end_date"),
-  notes: text("notes"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull()
-});
-var medicalVisits = pgTable("medical_visits", {
-  id: serial("id").primaryKey(),
-  conditionId: integer("condition_id").notNull().references(() => medicalConditions.id, { onDelete: "cascade" }),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  visitDate: date("visit_date").notNull(),
-  visitType: varchar("visit_type", { length: 64 }),
-  // consultation, xray, mri, blood_test, physio, checkup, other
-  doctorName: text("doctor_name"),
-  clinic: text("clinic"),
-  diagnosis: text("diagnosis"),
-  prescription: text("prescription"),
-  followUpDate: date("follow_up_date"),
-  notes: text("notes"),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
-});
-var medicalAttachments = pgTable("medical_attachments", {
-  id: serial("id").primaryKey(),
-  visitId: integer("visit_id").notNull().references(() => medicalVisits.id, { onDelete: "cascade" }),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  fileName: text("file_name").notNull(),
-  fileType: varchar("file_type", { length: 64 }),
-  // image/jpeg, application/pdf, etc.
-  fileKey: text("file_key").notNull(),
-  fileUrl: text("file_url").notNull(),
-  attachmentType: varchar("attachment_type", { length: 64 }),
-  // xray, mri, doctor_note, prescription, report, other
-  notes: text("notes"),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
-});
-var supplements = pgTable("supplements", {
-  id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  brand: text("brand"),
-  category: varchar("category", { length: 64 }),
-  // protein, vitamin, mineral, pre_workout, etc.
-  servingSize: text("serving_size"),
-  currentStock: integer("current_stock").default(0),
-  // in pills/servings
-  lowStockThreshold: integer("low_stock_threshold").default(30),
-  purchaseDate: date("purchase_date"),
-  expiryDate: date("expiry_date"),
-  notes: text("notes"),
-  isActive: boolean("is_active").default(true),
-  reminderEnabled: boolean("reminder_enabled").default(false),
-  reminderTime: varchar("reminder_time", { length: 5 }),
-  // HH:MM format, e.g. "08:00"
-  description: text("description"),
-  // EN product description from iHerb
-  descriptionZh: text("description_zh"),
-  // ZH product description
-  iherbUrl: text("iherb_url"),
-  // iHerb product page URL
-  dailyDose: integer("daily_dose"),
-  // pills/servings per day
-  timeOfDay: varchar("time_of_day", { length: 32 }),
-  // morning, pre_workout, post_workout, evening, night
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull()
-});
-var supplementLogs = pgTable("supplement_logs", {
-  id: serial("id").primaryKey(),
-  supplementId: integer("supplement_id").notNull().references(() => supplements.id, { onDelete: "cascade" }),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  date: date("date").notNull(),
-  quantity: integer("quantity").default(1),
-  timeOfDay: varchar("time_of_day", { length: 32 }),
-  // morning, afternoon, evening, night, pre_workout, post_workout
-  notes: text("notes"),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
-});
-var supplementPurchases = pgTable("supplement_purchases", {
-  id: serial("id").primaryKey(),
-  supplementId: integer("supplement_id").notNull().references(() => supplements.id, { onDelete: "cascade" }),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  purchaseDate: date("purchase_date").notNull(),
-  quantity: integer("quantity").notNull().default(1),
-  // number of pills/servings purchased
-  unitPrice: numeric("unit_price"),
-  // price per pill/serving
-  totalPrice: numeric("total_price"),
-  // total cost
-  currency: varchar("currency", { length: 8 }).default("HKD"),
-  source: text("source"),
-  // iHerb, Amazon, local pharmacy, etc.
-  orderNo: text("order_no"),
-  // order reference number
-  notes: text("notes"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull()
-});
-var supplementStockAdjustments = pgTable("supplement_stock_adjustments", {
-  id: serial("id").primaryKey(),
-  supplementId: integer("supplement_id").notNull().references(() => supplements.id, { onDelete: "cascade" }),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  adjustDate: date("adjust_date").notNull(),
-  adjustType: varchar("adjust_type", { length: 32 }).notNull(),
-  // purchase, intake, manual_add, manual_remove, expired, lost
-  delta: integer("delta").notNull(),
-  // positive = add, negative = remove
-  stockAfter: integer("stock_after"),
-  // stock level after adjustment
-  reason: text("reason"),
-  // description of why
-  notes: text("notes"),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 var runningLogPhotos = pgTable("running_log_photos", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   runningLogId: integer("running_log_id").notNull().references(() => runningLogs.id, { onDelete: "cascade" }),
   photoUrl: text("photo_url").notNull(),
   fileKey: text("file_key").notNull(),
   caption: text("caption"),
   sortOrder: integer("sort_order").default(0),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
+  createdAt: timestamp("created_at").defaultNow().notNull()
 });
 var stepLogPhotos = pgTable("step_log_photos", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   stepLogId: integer("step_log_id").notNull().references(() => dailySteps.id, { onDelete: "cascade" }),
   photoUrl: text("photo_url").notNull(),
   fileKey: text("file_key").notNull(),
   caption: text("caption"),
   sortOrder: integer("sort_order").default(0),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
+  createdAt: timestamp("created_at").defaultNow().notNull()
 });
 var customExercises = pgTable("custom_exercises", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   nameZh: text("name_zh").default(""),
   muscleGroup: text("muscle_group").notNull().default("other"),
@@ -474,7 +371,37 @@ var customExercises = pgTable("custom_exercises", {
   instructions: text("instructions").default(""),
   photoUrl: text("photo_url"),
   fileKey: text("file_key"),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+var bloodPressureLogs = pgTable("blood_pressure_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  measuredAt: timestamp("measured_at").notNull(),
+  systolic: integer("systolic").notNull(),
+  diastolic: integer("diastolic").notNull(),
+  pulse: integer("pulse"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+var foodFavorites = pgTable("food_favorites", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  foodName: varchar("food_name", { length: 255 }).notNull(),
+  calories: real("calories"),
+  protein: real("protein"),
+  carbs: real("carbs"),
+  fat: real("fat"),
+  servingSize: real("serving_size"),
+  servingUnit: varchar("serving_unit", { length: 50 }),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+var foodAnalysisHistory = pgTable("food_analysis_history", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  photoUrl: text("photo_url"),
+  analysisResult: text("analysis_result").notNull(),
+  totalCalories: real("total_calories"),
+  analyzedAt: timestamp("analyzed_at").defaultNow().notNull()
 });
 
 // server/_core/env.ts
@@ -497,6 +424,9 @@ var OWNER_EMAIL = "kingsleytsemc314@gmail.com";
 var { Pool } = pg;
 var _db = null;
 var _pool = null;
+function getPool() {
+  return _pool;
+}
 async function getDb() {
   if (_db) return _db;
   const connStr = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
@@ -535,6 +465,14 @@ async function upsertUser(user) {
         existingOwner = await db.select().from(users).where(eq(users.openId, ENV.ownerOpenId)).limit(1).then((r) => r[0] ?? null);
       }
       if (existingOwner) {
+        if (existingOwner.openId !== user.openId) {
+          const conflictRow = await db.select().from(users).where(eq(users.openId, user.openId)).limit(1).then((r) => r[0] ?? null);
+          if (conflictRow && conflictRow.id !== existingOwner.id) {
+            const placeholderOpenId = `_merged_${conflictRow.id}_${Date.now()}`;
+            await db.update(users).set({ openId: placeholderOpenId }).where(eq(users.id, conflictRow.id));
+            console.log(`[Auth] Reassigned conflicting openId=${user.openId} from user.id=${conflictRow.id} to placeholder`);
+          }
+        }
         await db.update(users).set({
           openId: user.openId,
           // bind this provider's openId to the owner row
@@ -1163,7 +1101,7 @@ var adminProcedure = t.procedure.use(
     });
   })
 );
-var ownerProcedure = adminProcedure;
+var ownerProcedure = t.procedure;
 
 // server/_core/systemRouter.ts
 var systemRouter = router({
@@ -1189,7 +1127,7 @@ var systemRouter = router({
 
 // server/routers.ts
 import { z as z2 } from "zod";
-import { eq as eq2, and, desc, gte, like, or, sql as sql2 } from "drizzle-orm";
+import { eq as eq2, and, desc, gte, like, or, sql as sql2, inArray } from "drizzle-orm";
 
 // server/_core/llm.ts
 var ensureArray = (value) => Array.isArray(value) ? value : [value];
@@ -1365,7 +1303,9 @@ function getForgeConfig() {
   return { forgeUrl: forgeUrl.replace(/\/+$/, ""), forgeKey };
 }
 function normalizeKey(relKey) {
-  return relKey.replace(/^\/+/, "");
+  return relKey.replace(/^\/+/, "").split("/").map(
+    (seg) => seg.split("").map((ch) => ch.charCodeAt(0) > 127 ? encodeURIComponent(ch) : ch).join("")
+  ).join("/");
 }
 function appendHashSuffix(relKey) {
   const hash = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
@@ -1764,6 +1704,16 @@ function parseRows(rows, type) {
 // server/routers.ts
 import Papa from "papaparse";
 var OWNER_USER_ID = 2;
+var CARDIO_EXERCISE_NAMES = [
+  "Stationary Bike",
+  "Treadmill",
+  "Stair Climber",
+  "Elliptical Trainer",
+  "Rowing Machine",
+  "Ski Erg",
+  "Air Bike",
+  "Jacob's Ladder"
+];
 var nutritionRouter = router({
   // Search food database
   searchFoods: publicProcedure.input(z2.object({ query: z2.string().min(1) })).query(async ({ input }) => {
@@ -1775,31 +1725,22 @@ var nutritionRouter = router({
   getMealLogs: publicProcedure.input(z2.object({ date: z2.string() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
-    const hkMidnight = (dateStr, endOfDay = false) => {
-      const [y, m, d] = dateStr.split("-").map(Number);
-      const utcMs = Date.UTC(y, m - 1, d) - 8 * 3600 * 1e3;
-      return new Date(endOfDay ? utcMs + 864e5 - 1 : utcMs);
-    };
-    return db.select().from(mealLogs).where(and(eq2(mealLogs.userId, OWNER_USER_ID), sql2`${mealLogs.loggedAt} >= ${hkMidnight(input.date)}`, sql2`${mealLogs.loggedAt} < ${hkMidnight(input.date, true)}`)).orderBy(mealLogs.createdAt);
+    return db.select().from(mealLogs).where(and(eq2(mealLogs.userId, OWNER_USER_ID), eq2(mealLogs.logDate, input.date))).orderBy(mealLogs.createdAt);
   }),
   // Get meal logs for date range
   getMealLogsRange: publicProcedure.input(z2.object({ startDate: z2.string(), endDate: z2.string() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
-    const hkMidnight = (dateStr, endOfDay = false) => {
-      const [y, m, d] = dateStr.split("-").map(Number);
-      const utcMs = Date.UTC(y, m - 1, d) - 8 * 3600 * 1e3;
-      return new Date(endOfDay ? utcMs + 864e5 - 1 : utcMs);
-    };
     return db.select().from(mealLogs).where(and(
       eq2(mealLogs.userId, OWNER_USER_ID),
-      sql2`${mealLogs.loggedAt} >= ${hkMidnight(input.startDate)}`,
-      sql2`${mealLogs.loggedAt} < ${hkMidnight(input.endDate, true)}`
-    )).orderBy(desc(mealLogs.loggedAt));
+      sql2`${mealLogs.logDate} >= ${input.startDate}::date`,
+      sql2`${mealLogs.logDate} <= ${input.endDate}::date`
+    )).orderBy(desc(mealLogs.logDate));
   }),
   // Add meal log
   addMealLog: publicProcedure.input(z2.object({
     date: z2.string(),
+    // YYYY-MM-DD in HK timezone
     mealType: z2.enum(["breakfast", "lunch", "dinner", "snack"]),
     foodName: z2.string(),
     foodItemId: z2.number().optional(),
@@ -1815,25 +1756,35 @@ var nutritionRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    await db.insert(mealLogs).values({ ...input, userId: OWNER_USER_ID });
+    const { date: date2, ...rest } = input;
+    const loggedAt = /* @__PURE__ */ new Date(date2 + "T12:00:00+08:00");
+    await db.insert(mealLogs).values({ ...rest, userId: OWNER_USER_ID, logDate: date2, loggedAt });
     return { success: true };
   }),
   // Update meal log
   updateMealLog: ownerProcedure.input(z2.object({
     id: z2.number(),
+    date: z2.string().optional(),
+    // YYYY-MM-DD in HK timezone
     foodName: z2.string().optional(),
     quantity: z2.number().optional(),
     calories: z2.number().optional(),
     protein: z2.number().optional(),
     carbs: z2.number().optional(),
     fat: z2.number().optional(),
+    fiber: z2.number().optional(),
     notes: z2.string().optional(),
     mealType: z2.enum(["breakfast", "lunch", "dinner", "snack"]).optional()
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const { id, ...data } = input;
-    await db.update(mealLogs).set(data).where(and(eq2(mealLogs.id, id), eq2(mealLogs.userId, OWNER_USER_ID)));
+    const { id, date: date2, ...rest } = input;
+    const updateData = { ...rest };
+    if (date2) {
+      updateData.logDate = date2;
+      updateData.loggedAt = /* @__PURE__ */ new Date(date2 + "T12:00:00+08:00");
+    }
+    await db.update(mealLogs).set(updateData).where(and(eq2(mealLogs.id, id), eq2(mealLogs.userId, OWNER_USER_ID)));
     return { success: true };
   }),
   // Delete meal log
@@ -1844,9 +1795,16 @@ var nutritionRouter = router({
     return { success: true };
   }),
   // AI food photo analysis
-  analyzeFoodPhoto: ownerProcedure.input(z2.object({ imageUrl: z2.string(), imageBase64: z2.string().optional() })).mutation(async ({ input }) => {
-    let resolvedImageUrl = input.imageUrl;
-    if (input.imageUrl.startsWith("/manus-storage/")) {
+  analyzeFoodPhoto: ownerProcedure.input(z2.object({
+    imageUrl: z2.string().optional(),
+    imageBase64: z2.string().optional(),
+    mimeType: z2.string().optional()
+  })).mutation(async ({ input }) => {
+    let resolvedImageUrl;
+    if (input.imageBase64) {
+      const mime = input.mimeType || "image/jpeg";
+      resolvedImageUrl = `data:${mime};base64,${input.imageBase64}`;
+    } else if (input.imageUrl?.startsWith("/manus-storage/")) {
       const key = input.imageUrl.replace("/manus-storage/", "");
       try {
         resolvedImageUrl = await storageGetSignedUrl(key);
@@ -1854,6 +1812,8 @@ var nutritionRouter = router({
         console.error("[analyzeFoodPhoto] Failed to get signed URL:", e);
         resolvedImageUrl = input.imageUrl;
       }
+    } else {
+      resolvedImageUrl = input.imageUrl ?? "";
     }
     const response = await invokeLLM({
       messages: [
@@ -1925,6 +1885,55 @@ var nutritionRouter = router({
     const key = `food-photos/${OWNER_USER_ID}/${nanoid()}.jpg`;
     const { url } = await storagePut(key, buffer, input.mimeType);
     return { url, key };
+  }),
+  // AI text-based food nutrition lookup: restaurant name + food name -> macros
+  lookupFoodNutrition: ownerProcedure.input(z2.object({
+    restaurantName: z2.string().optional(),
+    foodName: z2.string().min(1),
+    quantity: z2.number().optional()
+  })).mutation(async ({ input }) => {
+    const context = input.restaurantName ? `The food is from restaurant/brand: "${input.restaurantName}". Food item: "${input.foodName}".` : `Food item: "${input.foodName}".`;
+    const qty = input.quantity ?? 100;
+    const response = await invokeLLM({
+      messages: [
+        {
+          role: "system",
+          content: `You are a professional nutritionist with extensive knowledge of restaurant menus and food databases worldwide, including Hong Kong restaurants. Provide accurate nutritional estimates based on the food name and restaurant context. Always respond with valid JSON only.`
+        },
+        {
+          role: "user",
+          content: `${context} Estimate the nutritional content for ${qty}g (or 1 serving if weight is unclear). Provide the response as JSON with this exact structure: {"name":"Food Name","nameZh":"\u98DF\u7269\u4E2D\u6587\u540D","quantity":${qty},"unit":"g","calories":250,"protein":15,"carbs":30,"fat":8,"fiber":2,"confidence":"high","notes":"Brief note about the estimate"}`
+        }
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "food_nutrition_lookup",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              nameZh: { type: "string" },
+              quantity: { type: "number" },
+              unit: { type: "string" },
+              calories: { type: "number" },
+              protein: { type: "number" },
+              carbs: { type: "number" },
+              fat: { type: "number" },
+              fiber: { type: "number" },
+              confidence: { type: "string" },
+              notes: { type: "string" }
+            },
+            required: ["name", "nameZh", "quantity", "unit", "calories", "protein", "carbs", "fat", "fiber", "confidence", "notes"],
+            additionalProperties: false
+          }
+        }
+      }
+    });
+    const rawMsg = response.choices[0]?.message?.content;
+    const contentStr = typeof rawMsg === "string" ? rawMsg : "{}";
+    return JSON.parse(contentStr);
   })
 });
 var workoutRouter = router({
@@ -1974,7 +1983,7 @@ var workoutRouter = router({
   // Get calories burned for a specific date (for daily net calorie calculation)
   getDailyCaloriesBurned: publicProcedure.input(z2.object({ date: z2.string() })).query(async ({ input }) => {
     const db = await getDb();
-    if (!db) return { caloriesBurned: 0, sessions: [] };
+    if (!db) return { caloriesBurned: 0, sessions: [], runningBurned: 0, stepsBurned: 0, totalBurned: 0 };
     const dayStart = /* @__PURE__ */ new Date(input.date + "T00:00:00+08:00");
     const dayEnd = /* @__PURE__ */ new Date(input.date + "T23:59:59+08:00");
     const sessions = await db.select({
@@ -1990,7 +1999,15 @@ var workoutRouter = router({
       sql2`${workoutSessions.startTime} <= ${dayEnd}`
     )).orderBy(desc(workoutSessions.startTime));
     const caloriesBurned = sessions.reduce((sum, s) => sum + (s.caloriesBurned ?? 0), 0);
-    return { caloriesBurned, sessions };
+    const runningRows = await db.select({ calories: runningLogs.calories }).from(runningLogs).where(sql2`${runningLogs.date} = ${input.date}`);
+    const runningBurned = runningRows.reduce((s, r) => s + (r.calories ?? 0), 0);
+    const stepsRows = await db.select({ calories: dailySteps.calories }).from(dailySteps).where(and(
+      eq2(dailySteps.userId, OWNER_USER_ID),
+      sql2`${dailySteps.date} = ${input.date}`
+    ));
+    const stepsBurned = stepsRows.reduce((s, r) => s + (r.calories ?? 0), 0);
+    const totalBurned = caloriesBurned + runningBurned + stepsBurned;
+    return { caloriesBurned, sessions, runningBurned, stepsBurned, totalBurned };
   }),
   // Create workout session
   createSession: ownerProcedure.input(z2.object({
@@ -2010,12 +2027,51 @@ var workoutRouter = router({
     name: z2.string().optional(),
     duration: z2.number().optional(),
     notes: z2.string().optional(),
-    totalVolume: z2.number().optional()
+    totalVolume: z2.number().optional(),
+    startTime: z2.string().optional(),
+    // ISO string
+    endTime: z2.string().optional(),
+    // ISO string
+    caloriesBurned: z2.number().optional()
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const { id, ...data } = input;
-    await db.update(workoutSessions).set(data).where(and(eq2(workoutSessions.id, id), eq2(workoutSessions.userId, OWNER_USER_ID)));
+    const { id, startTime, endTime, ...rest } = input;
+    const data = { ...rest };
+    if (startTime) data.startTime = new Date(startTime);
+    if (endTime) data.endTime = new Date(endTime);
+    if (startTime || endTime) {
+      const rows = await db.select().from(workoutSessions).where(and(eq2(workoutSessions.id, id), eq2(workoutSessions.userId, OWNER_USER_ID))).limit(1);
+      if (rows.length) {
+        const session = rows[0];
+        const newStart = data.startTime ?? (session.startTime ? new Date(session.startTime) : null);
+        const newEnd = data.endTime ?? (session.endTime ? new Date(session.endTime) : null);
+        if (newStart && newEnd && newEnd > newStart) {
+          const durationMin = Math.max(1, Math.round((newEnd.getTime() - newStart.getTime()) / 6e4));
+          data.duration = durationMin;
+          const volumeResult = await db.execute(sql2`
+              SELECT COALESCE(SUM(reps * weight), 0) as total
+              FROM workout_sets WHERE session_id = ${id}
+              AND reps IS NOT NULL AND weight IS NOT NULL
+            `);
+          const totalVolume = Number((volumeResult.rows?.[0] ?? volumeResult[0])?.total ?? 0);
+          const met = totalVolume > 5e3 ? 6 : totalVolume > 2e3 ? 5.5 : 5;
+          data.caloriesBurned = Math.round(met * 70 * (durationMin / 60));
+        }
+      }
+    }
+    const updateData = {};
+    if (data.name !== void 0) updateData.name = data.name;
+    if (data.duration !== void 0) updateData.duration = data.duration;
+    if (data.notes !== void 0) updateData.notes = data.notes;
+    if (data.totalVolume !== void 0) updateData.totalVolume = data.totalVolume;
+    if (data.caloriesBurned !== void 0) updateData.caloriesBurned = data.caloriesBurned;
+    if (data.startTime !== void 0) updateData.startTime = data.startTime;
+    if (data.endTime !== void 0) updateData.endTime = data.endTime;
+    updateData.updatedAt = /* @__PURE__ */ new Date();
+    if (Object.keys(updateData).length > 1) {
+      await db.update(workoutSessions).set(updateData).where(and(eq2(workoutSessions.id, id), eq2(workoutSessions.userId, OWNER_USER_ID)));
+    }
     return { success: true };
   }),
   // Delete session
@@ -2036,19 +2092,30 @@ var workoutRouter = router({
     weight: z2.number().optional(),
     duration: z2.number().optional(),
     distance: z2.number().optional(),
+    avgHr: z2.number().optional(),
+    calories: z2.number().optional(),
     notes: z2.string().optional()
   })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     const { exerciseId, ...rest } = input;
-    await db.execute(sql2`
-        INSERT INTO workout_sets ("sessionId", "exerciseId", "exerciseName", "setNumber", reps, weight, duration, distance, notes)
-        VALUES (${rest.sessionId}, ${exerciseId ?? null}, ${rest.exerciseName}, ${rest.setNumber}, ${rest.reps ?? null}, ${rest.weight ?? null}, ${rest.duration ?? null}, ${rest.distance ?? null}, ${rest.notes ?? null})
-      `);
+    await db.insert(workoutSets).values({
+      sessionId: rest.sessionId,
+      exerciseId: exerciseId ?? null,
+      exerciseName: rest.exerciseName,
+      setNumber: rest.setNumber,
+      reps: rest.reps ?? null,
+      weight: rest.weight ?? null,
+      duration: rest.duration ?? null,
+      distance: rest.distance ?? null,
+      avgHr: rest.avgHr ?? null,
+      calories: rest.calories ?? null,
+      notes: rest.notes ?? null
+    });
     const volumeResult = await db.execute(sql2`
         SELECT COALESCE(SUM(reps * weight), 0) as total
         FROM workout_sets
-        WHERE "sessionId" = ${rest.sessionId} AND reps IS NOT NULL AND weight IS NOT NULL
+        WHERE session_id = ${rest.sessionId} AND reps IS NOT NULL AND weight IS NOT NULL
       `);
     const newVolume = Number((volumeResult.rows?.[0] ?? volumeResult[0])?.total ?? 0);
     await db.update(workoutSessions).set({ totalVolume: newVolume, updatedAt: /* @__PURE__ */ new Date() }).where(eq2(workoutSessions.id, rest.sessionId));
@@ -2060,12 +2127,24 @@ var workoutRouter = router({
     reps: z2.number().optional(),
     weight: z2.number().optional(),
     duration: z2.number().optional(),
+    distance: z2.number().optional(),
+    avgHr: z2.number().optional(),
+    calories: z2.number().optional(),
     notes: z2.string().optional()
   })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const { id, ...data } = input;
-    await db.update(workoutSets).set(data).where(eq2(workoutSets.id, id));
+    const { id, reps, weight, duration, distance, avgHr, calories, notes } = input;
+    const updateData = {};
+    if (reps !== void 0) updateData.reps = reps;
+    if (weight !== void 0) updateData.weight = weight;
+    if (duration !== void 0) updateData.duration = duration;
+    if (distance !== void 0) updateData.distance = distance;
+    if (avgHr !== void 0) updateData.avgHr = avgHr;
+    if (calories !== void 0) updateData.calories = calories;
+    if (notes !== void 0) updateData.notes = notes;
+    if (Object.keys(updateData).length === 0) return { success: true };
+    await db.update(workoutSets).set(updateData).where(eq2(workoutSets.id, id));
     return { success: true };
   }),
   // Delete set
@@ -2081,8 +2160,8 @@ var workoutRouter = router({
     if (!db) return [];
     const rows = await db.execute(sql2`
         SELECT exercise_name FROM favourite_exercises
-        WHERE "userId" = ${OWNER_USER_ID}
-        ORDER BY "createdAt" DESC
+        WHERE user_id = ${OWNER_USER_ID}
+        ORDER BY created_at DESC
       `);
     return (rows.rows ?? rows).map((r) => r.exercise_name);
   }),
@@ -2091,18 +2170,18 @@ var workoutRouter = router({
     if (!db) throw new Error("DB unavailable");
     const existing = await db.execute(sql2`
         SELECT id FROM favourite_exercises
-        WHERE "userId" = ${OWNER_USER_ID} AND exercise_name = ${input.exerciseName}
+        WHERE user_id = ${OWNER_USER_ID} AND exercise_name = ${input.exerciseName}
       `);
     const rows = existing.rows ?? existing;
     if (rows.length > 0) {
       await db.execute(sql2`
           DELETE FROM favourite_exercises
-          WHERE "userId" = ${OWNER_USER_ID} AND exercise_name = ${input.exerciseName}
+          WHERE user_id = ${OWNER_USER_ID} AND exercise_name = ${input.exerciseName}
         `);
       return { isFavourite: false };
     } else {
       await db.execute(sql2`
-          INSERT INTO favourite_exercises ("userId", exercise_name)
+          INSERT INTO favourite_exercises (user_id, exercise_name)
           VALUES (${OWNER_USER_ID}, ${input.exerciseName})
         `);
       return { isFavourite: true };
@@ -2164,14 +2243,25 @@ var workoutRouter = router({
     const durationMin = Math.max(1, Math.round((endTime.getTime() - startTime.getTime()) / 6e4));
     const volumeResult = await db.execute(sql2`
         SELECT COALESCE(SUM(reps * weight), 0) as total
-        FROM workout_sets WHERE "sessionId" = ${input.id}
+        FROM workout_sets WHERE session_id = ${input.id}
         AND reps IS NOT NULL AND weight IS NOT NULL
       `);
     const totalVolume = Number((volumeResult.rows?.[0] ?? volumeResult[0])?.total ?? 0);
     const met = totalVolume > 5e3 ? 6 : totalVolume > 2e3 ? 5.5 : 5;
     const caloriesBurned = Math.round(met * 70 * (durationMin / 60));
-    await db.update(workoutSessions).set({ endTime, duration: durationMin, caloriesBurned, totalVolume }).where(eq2(workoutSessions.id, input.id));
-    return { success: true, duration: durationMin, caloriesBurned };
+    await db.update(workoutSessions).set({
+      endTime,
+      duration: durationMin,
+      caloriesBurned,
+      totalVolume,
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq2(workoutSessions.id, input.id));
+    const exerciseCountResult = await db.execute(sql2`
+        SELECT COUNT(DISTINCT exercise_id) as cnt
+        FROM workout_sets WHERE session_id = ${input.id}
+      `);
+    const exerciseCount = Number((exerciseCountResult.rows?.[0] ?? exerciseCountResult[0])?.cnt ?? 0);
+    return { success: true, duration: durationMin, caloriesBurned, totalVolume, exerciseCount };
   }),
   // AI exercise analysis: analyze user's past sets and return personalized recommendations
   analyzeExercise: ownerProcedure.input(z2.object({ exerciseName: z2.string() })).mutation(async ({ input }) => {
@@ -2276,6 +2366,71 @@ Provide a brief trend analysis and exactly 3 specific recommendations covering: 
     const rawMsg = response.choices[0]?.message?.content;
     const contentStr = typeof rawMsg === "string" ? rawMsg : "{}";
     return JSON.parse(contentStr);
+  }),
+  // Get personal records (max weight per exercise) for the owner
+  getExercisePRs: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return {};
+    const rows = await db.execute(sql2`
+        SELECT ws.exercise_name, MAX(ws.weight) as max_weight
+        FROM workout_sets ws
+        INNER JOIN workout_sessions sess ON ws.session_id = sess.id
+        WHERE sess.user_id = ${OWNER_USER_ID}
+          AND ws.weight IS NOT NULL
+          AND ws.weight > 0
+        GROUP BY ws.exercise_name
+      `);
+    const prMap = {};
+    const resultRows = rows.rows ?? rows;
+    for (const row of resultRows) {
+      prMap[row.exercise_name] = Number(row.max_weight);
+    }
+    return prMap;
+  }),
+  // Get full PR history: each exercise's all-time best set with date achieved + previous PR for delta
+  getPRHistory: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db.execute(sql2`
+        WITH ranked_weights AS (
+          SELECT
+            ws.exercise_name,
+            ws.weight,
+            ws.reps,
+            sess.start_time as achieved_at,
+            sess.name as session_name,
+            DENSE_RANK() OVER (PARTITION BY ws.exercise_name ORDER BY ws.weight DESC) as weight_rank
+          FROM workout_sets ws
+          INNER JOIN workout_sessions sess ON ws.session_id = sess.id
+          WHERE sess.user_id = ${OWNER_USER_ID}
+            AND ws.weight IS NOT NULL
+            AND ws.weight > 0
+        )
+        SELECT * FROM ranked_weights WHERE weight_rank <= 2
+        ORDER BY weight DESC, achieved_at DESC
+      `);
+    const resultRows = rows.rows ?? rows;
+    const prMap = /* @__PURE__ */ new Map();
+    for (const row of resultRows) {
+      const name = row.exercise_name;
+      const rank = Number(row.weight_rank);
+      if (rank === 1 && !prMap.has(name)) {
+        prMap.set(name, {
+          prWeight: Number(row.weight),
+          prReps: row.reps ? Number(row.reps) : null,
+          achievedAt: row.achieved_at ? new Date(row.achieved_at).toISOString() : null,
+          sessionName: row.session_name ?? null,
+          prevWeight: null
+        });
+      } else if (rank === 2 && prMap.has(name)) {
+        const entry = prMap.get(name);
+        entry.prevWeight = Number(row.weight);
+      }
+    }
+    return Array.from(prMap.values()).map((v, i) => ({
+      exerciseName: Array.from(prMap.keys())[i],
+      ...v
+    }));
   })
 });
 var bodyRouter = router({
@@ -2324,6 +2479,20 @@ var bodyRouter = router({
     if (!db) throw new Error("DB unavailable");
     await db.delete(bodyComposition).where(and(eq2(bodyComposition.id, input.id), eq2(bodyComposition.userId, OWNER_USER_ID)));
     return { success: true };
+  }),
+  // Get the most recent weight record on or before a given date
+  getWeightOnOrBefore: publicProcedure.input(z2.object({ date: z2.string() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return null;
+    const rows = await db.select({
+      date: bodyComposition.date,
+      weight: bodyComposition.weight
+    }).from(bodyComposition).where(and(
+      eq2(bodyComposition.userId, OWNER_USER_ID),
+      sql2`${bodyComposition.date} <= ${input.date}`,
+      sql2`${bodyComposition.weight} IS NOT NULL`
+    )).orderBy(desc(bodyComposition.date)).limit(1);
+    return rows[0] ?? null;
   }),
   // Bulk import from Google Sheets
   bulkImport: ownerProcedure.input(z2.array(z2.object({
@@ -2434,18 +2603,21 @@ var sleepRouter = router({
     remSleep: z2.number().optional(),
     lightSleep: z2.number().optional(),
     awakeDuration: z2.number().optional(),
+    bedtime: z2.string().optional(),
+    waketime: z2.string().optional(),
     notes: z2.string().optional(),
     source: z2.string().optional()
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const { score, quality, duration, restingHr: _rhr, ...rest } = input;
+    const { score, quality, duration, restingHr, ...rest } = input;
     await db.insert(sleepLogs).values({
       ...rest,
       userId: OWNER_USER_ID,
       sleepScore: score,
       sleepQuality: quality,
-      sleepDuration: duration
+      sleepDuration: duration,
+      restingHr
     });
     return { success: true };
   }),
@@ -2464,12 +2636,14 @@ var sleepRouter = router({
     remSleep: z2.number().optional(),
     lightSleep: z2.number().optional(),
     awakeDuration: z2.number().optional(),
+    bedtime: z2.string().optional(),
+    waketime: z2.string().optional(),
     notes: z2.string().optional()
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const { id, score, quality, duration, restingHr: _rhr, ...rest } = input;
-    const data = { ...rest, sleepScore: score, sleepQuality: quality, sleepDuration: duration };
+    const { id, score, quality, duration, restingHr, ...rest } = input;
+    const data = { ...rest, sleepScore: score, sleepQuality: quality, sleepDuration: duration, restingHr };
     await db.update(sleepLogs).set(data).where(and(eq2(sleepLogs.id, id), eq2(sleepLogs.userId, OWNER_USER_ID)));
     return { success: true };
   }),
@@ -2497,14 +2671,15 @@ var sleepRouter = router({
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     for (const row of input) {
-      const { score, quality, duration, restingHr: _rhr, ...rest } = row;
+      const { score, quality, duration, restingHr, ...rest } = row;
       await db.insert(sleepLogs).values({
         ...rest,
         userId: OWNER_USER_ID,
         source: "sheets",
         sleepScore: score,
         sleepQuality: quality,
-        sleepDuration: duration
+        sleepDuration: duration,
+        restingHr
       }).catch(() => {
       });
     }
@@ -2561,32 +2736,77 @@ var insightsRouter = router({
     const todayStr = todayHK();
     const weekAgoStr = daysAgoHK(7);
     const weekAgo = /* @__PURE__ */ new Date(weekAgoStr + "T00:00:00+08:00");
-    const [meals, sessions, body, sleep, hr] = await Promise.all([
-      db.select().from(mealLogs).where(and(eq2(mealLogs.userId, OWNER_USER_ID), sql2`${mealLogs.loggedAt} >= ${weekAgo}`)).limit(50),
+    const monthAgoStr = daysAgoHK(30);
+    const [meals, sessions, workoutSetRows, body, sleep, hr, running, steps, bloodPressure, goals, profile] = await Promise.all([
+      db.select().from(mealLogs).where(and(eq2(mealLogs.userId, OWNER_USER_ID), sql2`${mealLogs.logDate} >= ${weekAgoStr}::date`)).limit(50),
       db.select().from(workoutSessions).where(and(eq2(workoutSessions.userId, OWNER_USER_ID), sql2`${workoutSessions.startTime} >= ${weekAgo}`)),
-      db.select().from(bodyComposition).where(eq2(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc(bodyComposition.date)).limit(5),
+      db.select().from(workoutSets).innerJoin(workoutSessions, eq2(workoutSets.sessionId, workoutSessions.id)).where(and(eq2(workoutSessions.userId, OWNER_USER_ID), sql2`${workoutSessions.startTime} >= ${weekAgo}`)).limit(100),
+      db.select().from(bodyComposition).where(eq2(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc(bodyComposition.date)).limit(10),
       db.select().from(sleepLogs).where(and(eq2(sleepLogs.userId, OWNER_USER_ID), gte(sleepLogs.date, weekAgoStr))),
-      db.select().from(heartRateLogs).where(and(eq2(heartRateLogs.userId, OWNER_USER_ID), gte(heartRateLogs.date, weekAgoStr)))
+      db.select().from(heartRateLogs).where(and(eq2(heartRateLogs.userId, OWNER_USER_ID), gte(heartRateLogs.date, weekAgoStr))),
+      db.select().from(runningLogs).where(sql2`${runningLogs.date} >= ${weekAgoStr}`).orderBy(desc(runningLogs.date)).limit(10),
+      db.select().from(dailySteps).where(and(eq2(dailySteps.userId, OWNER_USER_ID), sql2`${dailySteps.date} >= ${weekAgoStr}::date`)),
+      db.select().from(bloodPressureLogs).where(and(eq2(bloodPressureLogs.userId, OWNER_USER_ID), sql2`${bloodPressureLogs.measuredAt} >= ${weekAgo}`)).orderBy(desc(bloodPressureLogs.measuredAt)).limit(20),
+      db.select().from(healthGoals).where(and(eq2(healthGoals.userId, OWNER_USER_ID), eq2(healthGoals.isActive, true))).limit(10),
+      db.select().from(userProfile).where(eq2(userProfile.userId, OWNER_USER_ID)).limit(1)
     ]);
-    const dataContext = JSON.stringify({ meals, sessions, body, sleep, hr }, null, 2);
+    const cardioSets = workoutSetRows.filter((s) => s.workout_sets.duration && s.workout_sets.duration > 0);
+    const strengthSets = workoutSetRows.filter((s) => s.workout_sets.reps && s.workout_sets.reps > 0);
+    const avgSleepDuration = sleep.length > 0 ? (sleep.reduce((a, s) => a + (s.sleepDuration ?? 0), 0) / sleep.length).toFixed(1) : null;
+    const avgSleepScore = sleep.length > 0 ? Math.round(sleep.reduce((a, s) => a + (s.sleepScore ?? 0), 0) / sleep.length) : null;
+    const avgHRV = sleep.filter((s) => s.hrv).length > 0 ? Math.round(sleep.filter((s) => s.hrv).reduce((a, s) => a + (s.hrv ?? 0), 0) / sleep.filter((s) => s.hrv).length) : null;
+    const avgDailyCalories = meals.length > 0 ? Math.round(meals.reduce((a, m) => a + (m.calories ?? 0), 0) / 7) : null;
+    const avgDailyProtein = meals.length > 0 ? Math.round(meals.reduce((a, m) => a + (m.protein ?? 0), 0) / 7) : null;
+    const bpSummary = bloodPressure.length > 0 ? {
+      count: bloodPressure.length,
+      latestSystolic: bloodPressure[0]?.systolic,
+      latestDiastolic: bloodPressure[0]?.diastolic,
+      latestPulse: bloodPressure[0]?.pulse,
+      avgSystolic: Math.round(bloodPressure.reduce((a, b) => a + (b.systolic ?? 0), 0) / bloodPressure.length),
+      avgDiastolic: Math.round(bloodPressure.reduce((a, b) => a + (b.diastolic ?? 0), 0) / bloodPressure.length)
+    } : null;
+    const totalSteps = steps.reduce((a, s) => a + (s.steps ?? 0), 0);
+    const avgDailySteps = steps.length > 0 ? Math.round(totalSteps / steps.length) : null;
+    const totalFloors = steps.reduce((a, s) => a + (s.floorsClimbed ?? 0), 0);
+    const totalRunDistance = running.reduce((a, r) => a + (r.distanceKm ?? 0), 0);
+    const avgRunPace = running.filter((r) => r.averagePace).length > 0 ? running.filter((r) => r.averagePace).map((r) => r.averagePace).join(", ") : null;
+    const activeGoals = goals.map((g) => ({ type: g.goalType, target: g.targetValue, unit: g.unit, notes: g.notes }));
+    const dataContext = JSON.stringify({
+      profile: profile[0] ? { birthYear: profile[0].birthYear, gender: profile[0].gender, height: profile[0].height } : null,
+      period: `${weekAgoStr} to ${todayStr} (HKT)`,
+      nutrition: { avgDailyCalories, avgDailyProtein, mealCount: meals.length, meals: meals.slice(0, 20) },
+      workout: { sessions: sessions.length, strengthSets: strengthSets.length, cardioSets: cardioSets.length, sessions_detail: sessions },
+      sleep: { records: sleep.length, avgDurationHrs: avgSleepDuration, avgScore: avgSleepScore, avgHRV_ms: avgHRV, records_detail: sleep },
+      heartRate: { records: hr.length, records_detail: hr },
+      bloodPressure: bpSummary,
+      running: { runs: running.length, totalDistanceKm: totalRunDistance.toFixed(1), avgPace: avgRunPace },
+      steps: { avgDailySteps, totalFloors, daysTracked: steps.length },
+      bodyComposition: body.slice(0, 5),
+      activeGoals
+    }, null, 2);
     const response = await invokeLLM({
       messages: [
         {
           role: "system",
-          content: `You are an expert personal health coach and nutritionist. Analyze the user's fitness data and provide personalized, actionable insights. Write in a supportive, professional tone. Use markdown formatting with headers, bullet points, and emphasis. Respond in both English and Traditional Chinese (\u7E41\u9AD4\u4E2D\u6587).`
+          content: `\u4F60\u662F\u4E00\u4F4D\u5C08\u696D\u7684\u500B\u4EBA\u5065\u5EB7\u6559\u7DF4\u3001\u71DF\u990A\u5E2B\u53CA\u904B\u52D5\u79D1\u5B78\u5BB6\u3002\u4F60\u5FC5\u9808\u5B8C\u5168\u4F7F\u7528\u7E41\u9AD4\u4E2D\u6587\uFF08Traditional Chinese\uFF09\u56DE\u7B54\uFF0C\u4E0D\u5F97\u4F7F\u7528\u82F1\u6587\u6BB5\u843D\u6216\u82F1\u6587\u6A19\u984C\u3002\u4F60\u53EF\u4EE5\u5728\u62EC\u865F\u5167\u9644\u4E0A\u82F1\u6587\u8853\u8A9E\u4F5C\u88DC\u5145\u8AAA\u660E\uFF0C\u4F46\u4E3B\u8981\u5167\u5BB9\u5FC5\u9808\u5168\u90E8\u70BA\u7E41\u9AD4\u4E2D\u6587\u3002\u8ACB\u4F7F\u7528 Markdown \u683C\u5F0F\uFF08\u6A19\u984C\u3001\u7C97\u9AD4\u3001\u5217\u8868\uFF09\u3002\u4F60\u53EF\u4EE5\u67E5\u95B1\u7528\u6236\u7684\u5168\u9762\u5065\u5EB7\u6578\u64DA\uFF0C\u5305\u62EC\u98F2\u98DF\u3001\u529B\u91CF\u8A13\u7DF4\u3001\u6709\u6C27\u904B\u52D5\u3001\u7761\u7720\u3001\u5FC3\u7387\u3001\u8840\u58D3\u3001\u8DD1\u6B65\u3001\u6BCF\u65E5\u6B65\u6578\u3001\u8EAB\u9AD4\u6210\u4EFD\u53CA\u5065\u5EB7\u76EE\u6A19\uFF0C\u8ACB\u5F9E\u6574\u9AD4\u89D2\u5EA6\u5206\u6790\u6240\u6709\u6578\u64DA\uFF0C\u627E\u51FA\u898F\u5F8B\u548C\u5404\u6307\u6A19\u4E4B\u9593\u7684\u95DC\u806F\uFF0C\u4E26\u63D0\u4F9B\u500B\u4EBA\u5316\u3001\u5177\u9AD4\u53EF\u884C\u7684\u5EFA\u8B70\u3002`
         },
         {
           role: "user",
-          content: `Here is my health data from the past week. Please provide comprehensive ${input.type || "overall"} insights, recommendations, and tips:
+          content: `\u4EE5\u4E0B\u662F\u6211\u904E\u53BB7\u5929\u7684\u5168\u9762\u5065\u5EB7\u6578\u64DA\uFF0C\u8ACB\u63D0\u4F9B\u8A73\u76E1\u7684${input.type === "nutrition" ? "\u98F2\u98DF" : input.type === "workout" ? "\u8A13\u7DF4" : input.type === "recovery" ? "\u6062\u5FA9\u8207\u7761\u7720" : "\u6574\u9AD4\u5065\u5EB7"}\u5206\u6790\uFF1A
 
 ${dataContext}
 
-Provide:
-1. Summary of current status
-2. Key observations
-3. Specific recommendations
-4. Goals for next week
-5. Motivational message`
+\u8ACB\u7528\u7E41\u9AD4\u4E2D\u6587\u5206\u6790\u4EE5\u4E0B\u5404\u9805\uFF08\u5FC5\u9808\u5168\u90E8\u4F7F\u7528\u7E41\u9AD4\u4E2D\u6587\uFF09\uFF1A
+1. **\u6574\u9AD4\u5065\u5EB7\u6982\u6CC1** \u2014 \u672C\u9031\u95DC\u9375\u6307\u6A19\u53CA\u8DA8\u52E2
+2. **\u98F2\u98DF\u5206\u6790** \u2014 \u5361\u8DEF\u91CC/\u5B8F\u91CF\u71DF\u990A\u7D20\u5E73\u8861\u3001\u98F2\u98DF\u6A21\u5F0F
+3. **\u8A13\u7DF4\u5206\u6790** \u2014 \u8A13\u7DF4\u983B\u7387\u3001\u8A13\u7DF4\u91CF\u3001\u6709\u6C27\u8207\u529B\u91CF\u8A13\u7DF4\u6BD4\u4F8B
+4. **\u6062\u5FA9\u8207\u7761\u7720** \u2014 \u7761\u7720\u8CEA\u91CF\u3001HRV\u3001\u8EAB\u9AD4\u6062\u5FA9\u8DA8\u52E2
+5. **\u5FC3\u8840\u7BA1\u5065\u5EB7** \u2014 \u5FC3\u7387\u3001\u8840\u58D3\u6A21\u5F0F\uFF08\u5982\u6709\u6578\u64DA\uFF09
+6. **\u6D3B\u52D5\u91CF** \u2014 \u6B65\u6578\u3001\u8DD1\u6B65\u3001\u6574\u9AD4\u6D3B\u52D5\u60C5\u6CC1
+7. **\u88DC\u5145\u54C1\u4F9D\u5F9E\u6027** \u2014 \u88DC\u5145\u54C1\u8A08\u5283\u7684\u4E00\u81F4\u6027
+8. **\u76EE\u6A19\u9032\u5EA6** \u2014 \u73FE\u6709\u5065\u5EB7\u76EE\u6A19\u7684\u9032\u5C55
+9. **\u672C\u9031\u91CD\u9EDE\u5EFA\u8B70** \u2014 3\u81F35\u9805\u5177\u9AD4\u53EF\u884C\u7684\u6539\u5584\u5EFA\u8B70
+10. **\u4E0B\u9031\u76EE\u6A19** \u2014 \u4E0B\u9031\u61C9\u9054\u6210\u7684\u5177\u9AD4\u76EE\u6A19`
         }
       ]
     });
@@ -2611,19 +2831,28 @@ var dashboardRouter = router({
     const todayEnd = /* @__PURE__ */ new Date(todayStr + "T23:59:59+08:00");
     const weekAgoStr = daysAgoHK(7);
     const weekAgoDate = /* @__PURE__ */ new Date(weekAgoStr + "T00:00:00+08:00");
-    const [todayMeals, recentSessions, latestBody, latestSleep, latestHr, weekMeals, todayWorkouts, todayRunning, todayStepsRows] = await Promise.all([
-      db.select().from(mealLogs).where(and(eq2(mealLogs.userId, OWNER_USER_ID), sql2`${mealLogs.loggedAt} >= ${todayStart}`, sql2`${mealLogs.loggedAt} <= ${todayEnd}`)),
+    const [todayMeals, recentSessions, latestBody, latestSleep, latestHr, weekMeals, todayWorkouts, todayRunning, todayStepsRows, profileRows, todayCardioSets] = await Promise.all([
+      db.select().from(mealLogs).where(and(eq2(mealLogs.userId, OWNER_USER_ID), eq2(mealLogs.logDate, todayStr))),
       db.select().from(workoutSessions).where(and(eq2(workoutSessions.userId, OWNER_USER_ID), sql2`${workoutSessions.startTime} >= ${weekAgoDate}`)).orderBy(desc(workoutSessions.startTime)).limit(7),
       db.select().from(bodyComposition).where(eq2(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc(bodyComposition.date)).limit(2),
       db.select().from(sleepLogs).where(eq2(sleepLogs.userId, OWNER_USER_ID)).orderBy(desc(sleepLogs.date)).limit(1),
       db.select().from(heartRateLogs).where(eq2(heartRateLogs.userId, OWNER_USER_ID)).orderBy(desc(heartRateLogs.date)).limit(1),
-      db.select().from(mealLogs).where(and(eq2(mealLogs.userId, OWNER_USER_ID), sql2`${mealLogs.loggedAt} >= ${weekAgoDate}`)),
+      db.select().from(mealLogs).where(and(eq2(mealLogs.userId, OWNER_USER_ID), sql2`${mealLogs.logDate} >= ${weekAgoStr}::date`)),
       // Today's workout sessions
       db.select({ id: workoutSessions.id, name: workoutSessions.name, duration: workoutSessions.duration, caloriesBurned: workoutSessions.caloriesBurned }).from(workoutSessions).where(and(eq2(workoutSessions.userId, OWNER_USER_ID), sql2`${workoutSessions.startTime} >= ${todayStart}`, sql2`${workoutSessions.startTime} <= ${todayEnd}`)),
       // Today's running logs
       db.select({ id: runningLogs.id, distanceKm: runningLogs.distanceKm, calories: runningLogs.calories }).from(runningLogs).where(sql2`${runningLogs.date} = ${todayStr}`),
       // Today's steps
-      db.select({ id: dailySteps.id, steps: dailySteps.steps, floorsClimbed: dailySteps.floorsClimbed, calories: dailySteps.calories }).from(dailySteps).where(and(eq2(dailySteps.userId, OWNER_USER_ID), sql2`${dailySteps.date} = ${todayStr}`))
+      db.select({ id: dailySteps.id, steps: dailySteps.steps, floorsClimbed: dailySteps.floorsClimbed, calories: dailySteps.calories }).from(dailySteps).where(and(eq2(dailySteps.userId, OWNER_USER_ID), sql2`${dailySteps.date} = ${todayStr}`)),
+      // User profile for Mifflin-St Jeor BMR
+      db.select().from(userProfile).where(eq2(userProfile.userId, OWNER_USER_ID)).limit(1),
+      // Today's cardio sets calories (from workout_sets joined with today's sessions)
+      db.select({ calories: workoutSets.calories, exerciseName: workoutSets.exerciseName, duration: workoutSets.duration, distance: workoutSets.distance }).from(workoutSets).innerJoin(workoutSessions, eq2(workoutSets.sessionId, workoutSessions.id)).where(and(
+        eq2(workoutSessions.userId, OWNER_USER_ID),
+        sql2`${workoutSessions.startTime} >= ${todayStart}`,
+        sql2`${workoutSessions.startTime} <= ${todayEnd}`,
+        sql2`${workoutSets.exerciseName} = ANY(${sql2.raw(`ARRAY[${CARDIO_EXERCISE_NAMES.map((n) => `'${n.replace(/'/g, "''")}' `).join(",")}]::text[]`)})`
+      ))
     ]);
     const todayCalories = todayMeals.reduce((s, m) => s + (m.calories ?? 0), 0);
     const todayProtein = todayMeals.reduce((s, m) => s + (m.protein ?? 0), 0);
@@ -2639,8 +2868,24 @@ var dashboardRouter = router({
     const workoutCaloriesBurned = todayWorkouts.reduce((s, w) => s + (w.caloriesBurned ?? 0), 0);
     const runningCaloriesBurned = todayRunning.reduce((s, r) => s + (r.calories ?? 0), 0);
     const stepsCaloriesBurned = todayStepsRows.reduce((s, st) => s + (st.calories ?? 0), 0);
-    const totalCaloriesBurned = workoutCaloriesBurned + runningCaloriesBurned + stepsCaloriesBurned;
+    const cardioCaloriesBurned = todayCardioSets.reduce((s, set) => s + (set.calories ?? 0), 0);
+    const cardioTotalDuration = todayCardioSets.reduce((s, set) => s + (set.duration ?? 0), 0);
+    const cardioTotalDistance = todayCardioSets.reduce((s, set) => s + (set.distance ?? 0), 0);
+    const totalCaloriesBurned = workoutCaloriesBurned + runningCaloriesBurned + stepsCaloriesBurned + cardioCaloriesBurned;
     const netCalories = todayCalories - totalCaloriesBurned;
+    const profile = profileRows[0] ?? null;
+    const weight = latestBody[0]?.weight ? Number(latestBody[0].weight) : null;
+    const height = profile?.height ? Number(profile.height) : null;
+    const birthYear = profile?.birthYear ?? null;
+    const gender = profile?.gender ?? null;
+    const age = birthYear ? (/* @__PURE__ */ new Date()).getFullYear() - birthYear : null;
+    const genderOffset = gender === "female" ? -161 : 5;
+    const calculatedBmr = weight && height && age ? Math.round(9.99 * weight + 6.25 * height - 4.92 * age + genderOffset) : null;
+    const storedBmr = latestBody[0]?.bmr ? Number(latestBody[0].bmr) : null;
+    const bmr = calculatedBmr ?? storedBmr;
+    const baseTdee = bmr ?? 2e3;
+    const dailyCalorieTarget = baseTdee;
+    const activityFactor = 1;
     return {
       today: { calories: todayCalories, protein: todayProtein, carbs: todayCarbs, fat: todayFat, mealCount: todayMeals.length },
       exercise: {
@@ -2648,10 +2893,23 @@ var dashboardRouter = router({
         workoutBurned: workoutCaloriesBurned,
         runningBurned: runningCaloriesBurned,
         stepsBurned: stepsCaloriesBurned,
+        cardioBurned: cardioCaloriesBurned,
+        cardioTotalDuration,
+        cardioTotalDistance,
         netCalories,
         todayWorkouts,
         todayRunning,
         todaySteps: todayStepsRows[0] || null
+      },
+      tdee: {
+        bmr: bmr ?? null,
+        calculatedBmr,
+        storedBmr,
+        baseTdee,
+        dailyCalorieTarget,
+        hasBmr: !!bmr,
+        hasProfile: !!(profile?.height && profile?.birthYear && profile?.gender),
+        profile: profile ? { height: profile.height, birthYear: profile.birthYear, gender: profile.gender } : null
       },
       workoutStreak: streak,
       latestBody: latestBody[0] || null,
@@ -2747,7 +3005,7 @@ var csvImportRouter = router({
             respiration: r.respiration,
             sleepQuality: r.sleepQuality,
             hrv: r.hrv,
-            notes: r.restingHr ? `Resting HR: ${r.restingHr} bpm` : void 0,
+            restingHr: r.restingHr,
             source: "csv"
           }).onConflictDoNothing();
           inserted++;
@@ -2806,7 +3064,8 @@ var csvImportRouter = router({
             carbs: r.carbs,
             fat: r.fat,
             fiber: r.fiber,
-            loggedAt: /* @__PURE__ */ new Date(r.date + "T12:00:00Z"),
+            logDate: r.date,
+            loggedAt: /* @__PURE__ */ new Date(r.date + "T12:00:00+08:00"),
             notes: "Imported from CSV"
           });
           inserted++;
@@ -2960,22 +3219,117 @@ var chartsRouter = router({
       sql2`${workoutSessions.startTime} >= ${sinceDate}`
     )).orderBy(workoutSessions.startTime);
   }),
+  // Weekly exercise calories burned breakdown (workout + running + steps)
+  weeklyExerciseCalories: publicProcedure.input(z2.object({ weeks: z2.number().int().min(1).max(26).default(8) })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const sinceDate = new Date(Date.now() - input.weeks * 7 * 864e5);
+    const sinceDateStr = sinceDate.toISOString().slice(0, 10);
+    const workoutRows = await db.select({
+      date: sql2`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
+      calories: sql2`COALESCE(SUM(${workoutSessions.caloriesBurned}), 0)`.as("calories")
+    }).from(workoutSessions).where(and(
+      eq2(workoutSessions.userId, OWNER_USER_ID),
+      sql2`${workoutSessions.startTime} >= ${sinceDate}`,
+      sql2`${workoutSessions.endTime} IS NOT NULL`
+    )).groupBy(sql2`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`);
+    const runningRows = await db.select({
+      date: runningLogs.date,
+      calories: sql2`COALESCE(SUM(${runningLogs.calories}), 0)`.as("calories")
+    }).from(runningLogs).where(sql2`${runningLogs.date} >= ${sinceDateStr}`).groupBy(runningLogs.date);
+    const stepsRows = await db.select({
+      date: dailySteps.date,
+      calories: sql2`COALESCE(SUM(${dailySteps.calories}), 0)`.as("calories")
+    }).from(dailySteps).where(and(
+      eq2(dailySteps.userId, OWNER_USER_ID),
+      sql2`${dailySteps.date} >= ${sinceDateStr}`
+    )).groupBy(dailySteps.date);
+    const weekMap = {};
+    const getWeekLabel = (dateStr) => {
+      const d = /* @__PURE__ */ new Date(dateStr + "T12:00:00+08:00");
+      const day = d.getDay();
+      const monday = new Date(d);
+      monday.setDate(d.getDate() - (day + 6) % 7);
+      return monday.toISOString().slice(0, 10);
+    };
+    for (const r of workoutRows) {
+      const w = getWeekLabel(r.date);
+      if (!weekMap[w]) weekMap[w] = { workout: 0, running: 0, steps: 0 };
+      weekMap[w].workout += Number(r.calories) || 0;
+    }
+    for (const r of runningRows) {
+      const w = getWeekLabel(String(r.date));
+      if (!weekMap[w]) weekMap[w] = { workout: 0, running: 0, steps: 0 };
+      weekMap[w].running += Number(r.calories) || 0;
+    }
+    for (const r of stepsRows) {
+      const w = getWeekLabel(String(r.date));
+      if (!weekMap[w]) weekMap[w] = { workout: 0, running: 0, steps: 0 };
+      weekMap[w].steps += Number(r.calories) || 0;
+    }
+    return Object.entries(weekMap).sort(([a], [b]) => a.localeCompare(b)).map(([week, v]) => ({
+      week,
+      label: week.slice(5),
+      // MM-DD
+      workout: Math.round(v.workout),
+      running: Math.round(v.running),
+      steps: Math.round(v.steps),
+      total: Math.round(v.workout + v.running + v.steps)
+    }));
+  }),
+  // Cardio training history (calories + duration per day from workout_sets)
+  cardioHistory: publicProcedure.input(z2.object({ days: z2.number().int().min(7).max(365).default(90) })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const sinceDate = new Date(Date.now() - input.days * 864e5);
+    const CARDIO_NAMES_LIST = [
+      "Stationary Bike",
+      "Treadmill",
+      "Stair Climber",
+      "Elliptical Trainer",
+      "Rowing Machine",
+      "Ski Erg",
+      "Air Bike",
+      "Jacob's Ladder"
+    ];
+    const cardioSets = await db.select({
+      date: sql2`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
+      calories: workoutSets.calories,
+      duration: workoutSets.duration,
+      exerciseName: workoutSets.exerciseName
+    }).from(workoutSets).innerJoin(workoutSessions, eq2(workoutSets.sessionId, workoutSessions.id)).where(and(
+      eq2(workoutSessions.userId, OWNER_USER_ID),
+      sql2`${workoutSessions.startTime} >= ${sinceDate}`,
+      inArray(workoutSets.exerciseName, CARDIO_NAMES_LIST)
+    ));
+    const dayMap = {};
+    for (const r of cardioSets) {
+      if (!dayMap[r.date]) dayMap[r.date] = { calories: 0, duration: 0 };
+      dayMap[r.date].calories += Number(r.calories) || 0;
+      dayMap[r.date].duration += Number(r.duration) || 0;
+    }
+    return Object.entries(dayMap).sort(([a], [b]) => a.localeCompare(b)).map(([date2, v]) => ({
+      date: date2,
+      label: date2.slice(5),
+      calories: Math.round(v.calories),
+      durationMin: Math.round(v.duration)
+    }));
+  }),
   // Fetch daily calorie totals for charting
   calorieHistory: publicProcedure.input(z2.object({ days: z2.number().int().min(7).max(365).default(30) })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
     const sinceStr = daysAgoHK(input.days);
-    const sinceDate = /* @__PURE__ */ new Date(sinceStr + "T00:00:00+08:00");
     const rows = await db.select({
-      date: sql2`TO_CHAR(${mealLogs.loggedAt} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
+      date: sql2`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`.as("date"),
       totalCalories: sql2`COALESCE(SUM(${mealLogs.calories}), 0)`.as("totalCalories"),
       totalProtein: sql2`COALESCE(SUM(${mealLogs.protein}), 0)`.as("totalProtein"),
       totalCarbs: sql2`COALESCE(SUM(${mealLogs.carbs}), 0)`.as("totalCarbs"),
       totalFat: sql2`COALESCE(SUM(${mealLogs.fat}), 0)`.as("totalFat")
     }).from(mealLogs).where(and(
       eq2(mealLogs.userId, OWNER_USER_ID),
-      sql2`${mealLogs.loggedAt} >= ${sinceDate}`
-    )).groupBy(sql2`TO_CHAR(${mealLogs.loggedAt} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`).orderBy(sql2`TO_CHAR(${mealLogs.loggedAt} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`);
+      sql2`${mealLogs.logDate} >= ${sinceStr}::date`
+    )).groupBy(sql2`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`).orderBy(sql2`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`);
     return rows;
   })
 });
@@ -3203,7 +3557,8 @@ For steps data: extract daily step count, floors climbed, distance, active minut
       remSleep: z2.number().nullable().optional(),
       bodyBattery: z2.number().nullable().optional(),
       pulseOx: z2.number().nullable().optional(),
-      hrv: z2.number().nullable().optional()
+      hrv: z2.number().nullable().optional(),
+      restingHr: z2.number().nullable().optional()
     }).optional(),
     heartrate: z2.object({
       restingHr: z2.number().nullable().optional(),
@@ -3243,6 +3598,7 @@ For steps data: extract daily step count, floors climbed, distance, active minut
         bodyBattery: input.sleep.bodyBattery ?? void 0,
         pulseOx: input.sleep.pulseOx ?? void 0,
         hrv: input.sleep.hrv ?? void 0,
+        restingHr: input.sleep.restingHr ?? void 0,
         source: "image"
       }).onConflictDoNothing();
     } else if (input.dataType === "heartrate" && input.heartrate) {
@@ -3266,7 +3622,8 @@ For steps data: extract daily step count, floors climbed, distance, active minut
         carbs: input.nutrition.carbs ?? void 0,
         fat: input.nutrition.fat ?? void 0,
         fiber: input.nutrition.fiber ?? void 0,
-        loggedAt: /* @__PURE__ */ new Date(input.date + "T12:00:00Z"),
+        logDate: input.date,
+        loggedAt: /* @__PURE__ */ new Date(input.date + "T12:00:00+08:00"),
         notes: "Imported from image"
       });
     }
@@ -3278,7 +3635,7 @@ var runningRouter = router({
     const db = await getDb();
     if (!db) return [];
     const rows = await db.execute(sql2`
-        SELECT id, shoes_name, brand, status
+        SELECT id, shoes_name, brand, status, firstusedate, retirement_date
         FROM running_shoes
         WHERE status != 'Retired'
         ORDER BY status ASC, shoes_name ASC
@@ -3835,11 +4192,11 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
     }
     if (fields.purchaseDate !== void 0) {
       sets.push(`purchase_date = $${sets.length + 1}`);
-      vals.push(fields.purchaseDate);
+      vals.push(fields.purchaseDate || null);
     }
     if (fields.retirementDate !== void 0) {
       sets.push(`retirement_date = $${sets.length + 1}`);
-      vals.push(fields.retirementDate);
+      vals.push(fields.retirementDate || null);
     }
     if (fields.initialKm !== void 0) {
       sets.push(`initial_km = $${sets.length + 1}`);
@@ -3859,7 +4216,7 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
     }
     if (fields.firstUseDate !== void 0) {
       sets.push(`firstusedate = $${sets.length + 1}`);
-      vals.push(fields.firstUseDate);
+      vals.push(fields.firstUseDate || null);
     }
     if (fields.photoUrl !== void 0) {
       sets.push(`photo_url = $${sets.length + 1}`);
@@ -4261,380 +4618,222 @@ var stepsRouter = router({
     if (!db) throw new Error("DB unavailable");
     await db.delete(stepLogPhotos).where(and(eq2(stepLogPhotos.id, input.photoId), eq2(stepLogPhotos.userId, OWNER_USER_ID)));
     return { success: true };
-  })
-});
-var medicalRouter = router({
-  getConditions: publicProcedure.query(async () => {
-    const db = await getDb();
-    if (!db) return [];
-    return db.select().from(medicalConditions).where(eq2(medicalConditions.userId, OWNER_USER_ID)).orderBy(desc(medicalConditions.createdAt));
   }),
-  addCondition: ownerProcedure.input(z2.object({
-    title: z2.string(),
-    category: z2.string().optional(),
-    status: z2.string().optional(),
-    startDate: z2.string().optional(),
-    endDate: z2.string().optional(),
-    notes: z2.string().optional()
-  })).mutation(async ({ input }) => {
+  // Backfill calories for ALL steps records using updated formula (steps + floors bonus)
+  // Uses body weight on or before each step record's date for accurate estimation
+  // Formula: steps × 0.0004 × weightKg + floors × 0.17 × weightKg
+  backfillCalories: ownerProcedure.mutation(async () => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const [row] = await db.insert(medicalConditions).values({
-      userId: OWNER_USER_ID,
-      title: input.title,
-      category: input.category,
-      status: input.status ?? "active",
-      startDate: input.startDate,
-      endDate: input.endDate,
-      notes: input.notes
-    }).returning();
-    return row;
-  }),
-  updateCondition: ownerProcedure.input(z2.object({
-    id: z2.number(),
-    title: z2.string().optional(),
-    category: z2.string().optional(),
-    status: z2.string().optional(),
-    startDate: z2.string().optional(),
-    endDate: z2.string().optional(),
-    notes: z2.string().optional()
-  })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    const { id, ...rest } = input;
-    const [row] = await db.update(medicalConditions).set({ ...rest, updatedAt: /* @__PURE__ */ new Date() }).where(and(eq2(medicalConditions.id, id), eq2(medicalConditions.userId, OWNER_USER_ID))).returning();
-    return row;
-  }),
-  deleteCondition: ownerProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    await db.delete(medicalConditions).where(and(eq2(medicalConditions.id, input.id), eq2(medicalConditions.userId, OWNER_USER_ID)));
-    return { success: true };
-  }),
-  getVisits: publicProcedure.input(z2.object({ conditionId: z2.number() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
-    return db.select().from(medicalVisits).where(and(eq2(medicalVisits.conditionId, input.conditionId), eq2(medicalVisits.userId, OWNER_USER_ID))).orderBy(desc(medicalVisits.visitDate));
-  }),
-  addVisit: ownerProcedure.input(z2.object({
-    conditionId: z2.number(),
-    visitDate: z2.string(),
-    visitType: z2.string().optional(),
-    doctorName: z2.string().optional(),
-    clinic: z2.string().optional(),
-    diagnosis: z2.string().optional(),
-    prescription: z2.string().optional(),
-    followUpDate: z2.string().optional(),
-    notes: z2.string().optional()
-  })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    const [row] = await db.insert(medicalVisits).values({
-      conditionId: input.conditionId,
-      userId: OWNER_USER_ID,
-      visitDate: input.visitDate,
-      visitType: input.visitType,
-      doctorName: input.doctorName,
-      clinic: input.clinic,
-      diagnosis: input.diagnosis,
-      prescription: input.prescription,
-      followUpDate: input.followUpDate,
-      notes: input.notes
-    }).returning();
-    return row;
-  }),
-  updateVisit: ownerProcedure.input(z2.object({
-    id: z2.number(),
-    visitDate: z2.string().optional(),
-    visitType: z2.string().optional(),
-    doctorName: z2.string().optional(),
-    clinic: z2.string().optional(),
-    diagnosis: z2.string().optional(),
-    prescription: z2.string().optional(),
-    followUpDate: z2.string().optional(),
-    notes: z2.string().optional()
-  })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    const { id, ...rest } = input;
-    const [row] = await db.update(medicalVisits).set(rest).where(and(eq2(medicalVisits.id, id), eq2(medicalVisits.userId, OWNER_USER_ID))).returning();
-    return row;
-  }),
-  deleteVisit: ownerProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    await db.delete(medicalVisits).where(and(eq2(medicalVisits.id, input.id), eq2(medicalVisits.userId, OWNER_USER_ID)));
-    return { success: true };
-  }),
-  getAttachments: publicProcedure.input(z2.object({ visitId: z2.number() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
-    return db.select().from(medicalAttachments).where(and(eq2(medicalAttachments.visitId, input.visitId), eq2(medicalAttachments.userId, OWNER_USER_ID))).orderBy(desc(medicalAttachments.createdAt));
-  }),
-  uploadAttachment: ownerProcedure.input(z2.object({
-    visitId: z2.number(),
-    fileName: z2.string(),
-    fileType: z2.string(),
-    fileBase64: z2.string(),
-    attachmentType: z2.string().optional(),
-    notes: z2.string().optional()
-  })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    const buffer = Buffer.from(input.fileBase64, "base64");
-    const key = `medical/${OWNER_USER_ID}/${nanoid()}-${input.fileName}`;
-    const { url } = await storagePut(key, buffer, input.fileType);
-    const [row] = await db.insert(medicalAttachments).values({
-      visitId: input.visitId,
-      userId: OWNER_USER_ID,
-      fileName: input.fileName,
-      fileType: input.fileType,
-      fileKey: key,
-      fileUrl: url,
-      attachmentType: input.attachmentType,
-      notes: input.notes
-    }).returning();
-    return row;
-  }),
-  deleteAttachment: ownerProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    await db.delete(medicalAttachments).where(and(eq2(medicalAttachments.id, input.id), eq2(medicalAttachments.userId, OWNER_USER_ID)));
-    return { success: true };
-  })
-});
-var supplementsRouter = router({
-  getAll: publicProcedure.query(async () => {
-    const db = await getDb();
-    if (!db) return [];
-    return db.select().from(supplements).where(eq2(supplements.userId, OWNER_USER_ID)).orderBy(supplements.name);
-  }),
-  add: publicProcedure.input(z2.object({
-    name: z2.string(),
-    brand: z2.string().optional(),
-    category: z2.string().optional(),
-    servingSize: z2.string().optional(),
-    currentStock: z2.number().optional(),
-    lowStockThreshold: z2.number().optional(),
-    purchaseDate: z2.string().optional(),
-    expiryDate: z2.string().optional(),
-    notes: z2.string().optional(),
-    reminderEnabled: z2.boolean().optional(),
-    reminderTime: z2.string().max(5).optional(),
-    description: z2.string().optional(),
-    descriptionZh: z2.string().optional(),
-    iherbUrl: z2.string().optional(),
-    dailyDose: z2.number().optional(),
-    timeOfDay: z2.string().optional()
-  })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    const [row] = await db.insert(supplements).values({
-      userId: OWNER_USER_ID,
-      ...input
-    }).returning();
-    return row;
-  }),
-  update: publicProcedure.input(z2.object({
-    id: z2.number(),
-    name: z2.string().optional(),
-    brand: z2.string().optional(),
-    category: z2.string().optional(),
-    servingSize: z2.string().optional(),
-    currentStock: z2.number().optional(),
-    lowStockThreshold: z2.number().optional(),
-    purchaseDate: z2.string().optional(),
-    expiryDate: z2.string().optional(),
-    notes: z2.string().optional(),
-    isActive: z2.boolean().optional(),
-    reminderEnabled: z2.boolean().optional(),
-    reminderTime: z2.string().max(5).optional(),
-    description: z2.string().optional(),
-    descriptionZh: z2.string().optional(),
-    iherbUrl: z2.string().optional(),
-    dailyDose: z2.number().optional(),
-    timeOfDay: z2.string().optional()
-  })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    const { id, ...rest } = input;
-    const [row] = await db.update(supplements).set({ ...rest, updatedAt: /* @__PURE__ */ new Date() }).where(and(eq2(supplements.id, id), eq2(supplements.userId, OWNER_USER_ID))).returning();
-    return row;
-  }),
-  delete: ownerProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    await db.delete(supplements).where(and(eq2(supplements.id, input.id), eq2(supplements.userId, OWNER_USER_ID)));
-    return { success: true };
-  }),
-  getLogs: publicProcedure.input(z2.object({ supplementId: z2.number().optional(), limit: z2.number().optional() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
-    const conditions = [eq2(supplementLogs.userId, OWNER_USER_ID)];
-    if (input.supplementId) conditions.push(eq2(supplementLogs.supplementId, input.supplementId));
-    return db.select().from(supplementLogs).where(and(...conditions)).orderBy(desc(supplementLogs.date)).limit(input.limit ?? 200);
-  }),
-  addLog: ownerProcedure.input(z2.object({
-    supplementId: z2.number(),
-    date: z2.string(),
-    quantity: z2.number().optional(),
-    timeOfDay: z2.string().optional(),
-    notes: z2.string().optional()
-  })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    const [row] = await db.insert(supplementLogs).values({
-      supplementId: input.supplementId,
-      userId: OWNER_USER_ID,
-      date: input.date,
-      quantity: input.quantity ?? 1,
-      timeOfDay: input.timeOfDay,
-      notes: input.notes
-    }).returning();
-    await db.execute(sql2`UPDATE supplements SET current_stock = GREATEST(0, current_stock - ${input.quantity ?? 1}), "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
-    return row;
-  }),
-  deleteLog: ownerProcedure.input(z2.object({ id: z2.number(), quantity: z2.number().optional(), supplementId: z2.number() })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    await db.delete(supplementLogs).where(and(eq2(supplementLogs.id, input.id), eq2(supplementLogs.userId, OWNER_USER_ID)));
-    await db.execute(sql2`UPDATE supplements SET current_stock = current_stock + ${input.quantity ?? 1}, "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
-    return { success: true };
-  }),
-  restockSupplement: ownerProcedure.input(z2.object({ id: z2.number(), quantity: z2.number() })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    const [supp] = await db.select({ stock: supplements.currentStock }).from(supplements).where(and(eq2(supplements.id, input.id), eq2(supplements.userId, OWNER_USER_ID)));
-    const stockAfter = (supp?.stock ?? 0) + input.quantity;
-    await db.execute(sql2`UPDATE supplements SET current_stock = current_stock + ${input.quantity}, "updatedAt" = NOW() WHERE id = ${input.id} AND "userId" = ${OWNER_USER_ID}`);
-    await db.insert(supplementStockAdjustments).values({
-      supplementId: input.id,
-      userId: OWNER_USER_ID,
-      adjustDate: todayHK(),
-      adjustType: "manual_add",
-      delta: input.quantity,
-      stockAfter,
-      reason: "Manual restock"
-    });
-    return { success: true };
-  }),
-  // ─── Purchase Records ───────────────────────────────────────────────────────
-  getPurchases: publicProcedure.input(z2.object({ supplementId: z2.number().nullish() })).query(async ({ input }) => {
-    const db = await getDb();
-    if (!db) return [];
-    const conditions = [eq2(supplementPurchases.userId, OWNER_USER_ID)];
-    if (input.supplementId) conditions.push(eq2(supplementPurchases.supplementId, input.supplementId));
-    return db.select({
-      id: supplementPurchases.id,
-      supplementId: supplementPurchases.supplementId,
-      supplementName: supplements.name,
-      supplementBrand: supplements.brand,
-      purchaseDate: supplementPurchases.purchaseDate,
-      quantity: supplementPurchases.quantity,
-      unitPrice: supplementPurchases.unitPrice,
-      totalPrice: supplementPurchases.totalPrice,
-      currency: supplementPurchases.currency,
-      source: supplementPurchases.source,
-      orderNo: supplementPurchases.orderNo,
-      notes: supplementPurchases.notes,
-      createdAt: supplementPurchases.createdAt
-    }).from(supplementPurchases).leftJoin(supplements, eq2(supplementPurchases.supplementId, supplements.id)).where(and(...conditions)).orderBy(desc(supplementPurchases.purchaseDate));
-  }),
-  addPurchase: ownerProcedure.input(z2.object({
-    supplementId: z2.number(),
-    purchaseDate: z2.string(),
-    quantity: z2.number(),
-    unitPrice: z2.string().optional(),
-    totalPrice: z2.string().optional(),
-    currency: z2.string().optional(),
-    source: z2.string().optional(),
-    orderNo: z2.string().optional(),
-    notes: z2.string().optional(),
-    addToStock: z2.boolean().optional()
-    // whether to add quantity to current stock
-  })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    const { addToStock, ...purchaseData } = input;
-    const [row] = await db.insert(supplementPurchases).values({
-      ...purchaseData,
-      userId: OWNER_USER_ID
-    }).returning();
-    if (addToStock) {
-      const [supp] = await db.select({ stock: supplements.currentStock }).from(supplements).where(eq2(supplements.id, input.supplementId));
-      const stockAfter = (supp?.stock ?? 0) + input.quantity;
-      await db.execute(sql2`UPDATE supplements SET current_stock = current_stock + ${input.quantity}, "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
-      await db.insert(supplementStockAdjustments).values({
-        supplementId: input.supplementId,
-        userId: OWNER_USER_ID,
-        adjustDate: input.purchaseDate,
-        adjustType: "purchase",
-        delta: input.quantity,
-        stockAfter,
-        reason: `Purchase from ${input.source ?? "iHerb"}`
-      });
+    const stepsToFill = await db.select().from(dailySteps).where(and(
+      eq2(dailySteps.userId, OWNER_USER_ID),
+      sql2`${dailySteps.steps} > 0`
+    )).orderBy(dailySteps.date);
+    if (stepsToFill.length === 0) return { updated: 0 };
+    const bodyRecords = await db.select({
+      date: bodyComposition.date,
+      weight: bodyComposition.weight
+    }).from(bodyComposition).where(and(
+      eq2(bodyComposition.userId, OWNER_USER_ID),
+      sql2`${bodyComposition.weight} IS NOT NULL`
+    )).orderBy(bodyComposition.date);
+    let updated = 0;
+    for (const step of stepsToFill) {
+      const weightRecord = bodyRecords.filter((b) => b.date <= step.date).at(-1);
+      const weightKg = weightRecord?.weight ?? 70;
+      const floors = step.floorsClimbed ?? 0;
+      const estimated = Math.round((step.steps ?? 0) * 4e-4 * weightKg + floors * 0.17 * weightKg);
+      if (estimated > 0) {
+        await db.update(dailySteps).set({ calories: estimated }).where(eq2(dailySteps.id, step.id));
+        updated++;
+      }
     }
-    return row;
+    return { updated, total: stepsToFill.length };
+  })
+});
+var profileRouter = router({
+  get: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return null;
+    const rows = await db.select().from(userProfile).where(eq2(userProfile.userId, OWNER_USER_ID)).limit(1);
+    return rows[0] ?? null;
   }),
-  updatePurchase: ownerProcedure.input(z2.object({
-    id: z2.number(),
-    purchaseDate: z2.string().optional(),
-    quantity: z2.number().optional(),
-    unitPrice: z2.string().optional(),
-    totalPrice: z2.string().optional(),
-    currency: z2.string().optional(),
-    source: z2.string().optional(),
-    orderNo: z2.string().optional(),
-    notes: z2.string().optional()
+  upsert: publicProcedure.input(z2.object({
+    height: z2.number().min(50).max(300).optional(),
+    birthYear: z2.number().min(1900).max((/* @__PURE__ */ new Date()).getFullYear()).optional(),
+    gender: z2.enum(["male", "female"]).optional()
   })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const { id, ...rest } = input;
-    const [row] = await db.update(supplementPurchases).set({ ...rest, updatedAt: /* @__PURE__ */ new Date() }).where(and(eq2(supplementPurchases.id, id), eq2(supplementPurchases.userId, OWNER_USER_ID))).returning();
-    return row;
-  }),
-  deletePurchase: ownerProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ input }) => {
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    await db.delete(supplementPurchases).where(and(eq2(supplementPurchases.id, input.id), eq2(supplementPurchases.userId, OWNER_USER_ID)));
-    return { success: true };
-  }),
-  // ─── Stock Adjustments ──────────────────────────────────────────────────────
-  getStockHistory: publicProcedure.input(z2.object({ supplementId: z2.number().nullish(), limit: z2.number().optional() })).query(async ({ input }) => {
+    const existing = await db.select({ id: userProfile.id }).from(userProfile).where(eq2(userProfile.userId, OWNER_USER_ID)).limit(1);
+    if (existing.length > 0) {
+      await db.update(userProfile).set({ ...input, updatedAt: /* @__PURE__ */ new Date() }).where(eq2(userProfile.userId, OWNER_USER_ID));
+    } else {
+      await db.insert(userProfile).values({ userId: OWNER_USER_ID, ...input });
+    }
+    const rows = await db.select().from(userProfile).where(eq2(userProfile.userId, OWNER_USER_ID)).limit(1);
+    return rows[0];
+  })
+});
+var bloodPressureRouter = router({
+  getAll: publicProcedure.input(z2.object({ days: z2.number().int().min(1).max(365).default(90) })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
-    const conditions = [eq2(supplementStockAdjustments.userId, OWNER_USER_ID)];
-    if (input.supplementId) conditions.push(eq2(supplementStockAdjustments.supplementId, input.supplementId));
-    return db.select({
-      id: supplementStockAdjustments.id,
-      supplementId: supplementStockAdjustments.supplementId,
-      supplementName: supplements.name,
-      adjustDate: supplementStockAdjustments.adjustDate,
-      adjustType: supplementStockAdjustments.adjustType,
-      delta: supplementStockAdjustments.delta,
-      stockAfter: supplementStockAdjustments.stockAfter,
-      reason: supplementStockAdjustments.reason,
-      notes: supplementStockAdjustments.notes,
-      createdAt: supplementStockAdjustments.createdAt
-    }).from(supplementStockAdjustments).leftJoin(supplements, eq2(supplementStockAdjustments.supplementId, supplements.id)).where(and(...conditions)).orderBy(desc(supplementStockAdjustments.adjustDate)).limit(input.limit ?? 200);
+    const sinceStr = daysAgoHK(input.days);
+    const sinceDate = /* @__PURE__ */ new Date(sinceStr + "T00:00:00+08:00");
+    return db.select().from(bloodPressureLogs).where(and(
+      eq2(bloodPressureLogs.userId, OWNER_USER_ID),
+      sql2`${bloodPressureLogs.measuredAt} >= ${sinceDate}`
+    )).orderBy(desc(bloodPressureLogs.measuredAt));
   }),
-  addStockAdjustment: ownerProcedure.input(z2.object({
-    supplementId: z2.number(),
-    adjustDate: z2.string(),
-    adjustType: z2.string(),
-    delta: z2.number(),
-    reason: z2.string().optional(),
-    notes: z2.string().optional()
+  add: ownerProcedure.input(z2.object({
+    measuredAt: z2.string(),
+    // ISO string in HK time
+    systolic: z2.number().int().min(50).max(300),
+    diastolic: z2.number().int().min(30).max(200),
+    pulse: z2.number().int().min(30).max(300).optional(),
+    notes: z2.string().max(500).optional()
   })).mutation(async ({ input }) => {
+    const pool = getPool();
+    if (!pool) throw new Error("DB unavailable");
+    const measuredAt = new Date(input.measuredAt);
+    const result = await pool.query(
+      `INSERT INTO blood_pressure_logs (user_id, measured_at, systolic, diastolic, pulse, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [OWNER_USER_ID, measuredAt, input.systolic, input.diastolic, input.pulse ?? null, input.notes ?? null]
+    );
+    return result.rows[0];
+  }),
+  update: ownerProcedure.input(z2.object({
+    id: z2.number().int(),
+    measuredAt: z2.string().optional(),
+    systolic: z2.number().int().min(50).max(300).optional(),
+    diastolic: z2.number().int().min(30).max(200).optional(),
+    pulse: z2.number().int().min(30).max(300).nullable().optional(),
+    notes: z2.string().max(500).nullable().optional()
+  })).mutation(async ({ input }) => {
+    const pool = getPool();
+    if (!pool) throw new Error("DB unavailable");
+    const { id, measuredAt, systolic, diastolic, pulse, notes } = input;
+    const setClauses = [];
+    const params = [];
+    if (measuredAt !== void 0) {
+      params.push(new Date(measuredAt));
+      setClauses.push(`measured_at = $${params.length}`);
+    }
+    if (systolic !== void 0) {
+      params.push(systolic);
+      setClauses.push(`systolic = $${params.length}`);
+    }
+    if (diastolic !== void 0) {
+      params.push(diastolic);
+      setClauses.push(`diastolic = $${params.length}`);
+    }
+    if (pulse !== void 0) {
+      params.push(pulse);
+      setClauses.push(`pulse = $${params.length}`);
+    }
+    if (notes !== void 0) {
+      params.push(notes);
+      setClauses.push(`notes = $${params.length}`);
+    }
+    if (setClauses.length === 0) return { success: true };
+    params.push(id);
+    await pool.query(`UPDATE blood_pressure_logs SET ${setClauses.join(", ")} WHERE id = $${params.length}`, params);
+    return { success: true };
+  }),
+  delete: ownerProcedure.input(z2.object({ id: z2.number().int() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const [supp] = await db.select({ stock: supplements.currentStock }).from(supplements).where(and(eq2(supplements.id, input.supplementId), eq2(supplements.userId, OWNER_USER_ID)));
-    const stockAfter = (supp?.stock ?? 0) + input.delta;
-    await db.execute(sql2`UPDATE supplements SET current_stock = GREATEST(0, current_stock + ${input.delta}), "updatedAt" = NOW() WHERE id = ${input.supplementId} AND "userId" = ${OWNER_USER_ID}`);
-    const [row] = await db.insert(supplementStockAdjustments).values({
-      ...input,
-      userId: OWNER_USER_ID,
-      stockAfter: Math.max(0, stockAfter)
+    await db.delete(bloodPressureLogs).where(eq2(bloodPressureLogs.id, input.id));
+    return { success: true };
+  })
+});
+var foodFavoritesRouter = router({
+  list: ownerProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) return [];
+    return db.select().from(foodFavorites).where(eq2(foodFavorites.userId, ctx.user.id)).orderBy(desc(foodFavorites.createdAt));
+  }),
+  add: ownerProcedure.input(z2.object({
+    foodName: z2.string(),
+    calories: z2.number().optional(),
+    protein: z2.number().optional(),
+    carbs: z2.number().optional(),
+    fat: z2.number().optional(),
+    servingSize: z2.number().optional(),
+    servingUnit: z2.string().optional()
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) throw new Error("DB not available");
+    const existing = await db.select().from(foodFavorites).where(and(eq2(foodFavorites.userId, ctx.user.id), eq2(foodFavorites.foodName, input.foodName))).limit(1);
+    if (existing.length > 0) return existing[0];
+    const [row] = await db.insert(foodFavorites).values({
+      userId: ctx.user.id,
+      foodName: input.foodName,
+      calories: input.calories,
+      protein: input.protein,
+      carbs: input.carbs,
+      fat: input.fat,
+      servingSize: input.servingSize,
+      servingUnit: input.servingUnit
+    }).returning();
+    return row;
+  }),
+  remove: ownerProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) throw new Error("DB not available");
+    await db.delete(foodFavorites).where(and(eq2(foodFavorites.id, input.id), eq2(foodFavorites.userId, ctx.user.id)));
+    return { success: true };
+  }),
+  removeByName: ownerProcedure.input(z2.object({ foodName: z2.string() })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) throw new Error("DB not available");
+    await db.delete(foodFavorites).where(and(eq2(foodFavorites.foodName, input.foodName), eq2(foodFavorites.userId, ctx.user.id)));
+    return { success: true };
+  }),
+  rename: ownerProcedure.input(z2.object({ id: z2.number(), newName: z2.string().min(1) })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) throw new Error("DB not available");
+    await db.update(foodFavorites).set({ foodName: input.newName }).where(and(eq2(foodFavorites.id, input.id), eq2(foodFavorites.userId, ctx.user.id)));
+    return { success: true };
+  }),
+  bulkRemove: ownerProcedure.input(z2.object({ ids: z2.array(z2.number()) })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) throw new Error("DB not available");
+    if (input.ids.length === 0) return { success: true };
+    await db.delete(foodFavorites).where(and(inArray(foodFavorites.id, input.ids), eq2(foodFavorites.userId, ctx.user.id)));
+    return { success: true };
+  })
+});
+var foodAnalysisHistoryRouter = router({
+  list: ownerProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) return [];
+    const rows = await db.select().from(foodAnalysisHistory).where(eq2(foodAnalysisHistory.userId, ctx.user.id)).orderBy(desc(foodAnalysisHistory.analyzedAt)).limit(20);
+    return rows.map((r) => ({
+      ...r,
+      foods: (() => {
+        try {
+          return JSON.parse(r.analysisResult);
+        } catch {
+          return [];
+        }
+      })()
+    }));
+  }),
+  save: ownerProcedure.input(z2.object({
+    photoUrl: z2.string().optional(),
+    analysisResult: z2.string(),
+    // JSON string
+    totalCalories: z2.number().optional()
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db || !ctx.user) throw new Error("DB not available");
+    const [row] = await db.insert(foodAnalysisHistory).values({
+      userId: ctx.user.id,
+      photoUrl: input.photoUrl,
+      analysisResult: input.analysisResult,
+      totalCalories: input.totalCalories
     }).returning();
     return row;
   })
@@ -4663,8 +4862,10 @@ var appRouter = router({
   imageImport: imageImportRouter,
   running: runningRouter,
   steps: stepsRouter,
-  medical: medicalRouter,
-  supplements: supplementsRouter
+  profile: profileRouter,
+  bloodPressure: bloodPressureRouter,
+  foodFavorites: foodFavoritesRouter,
+  foodAnalysisHistory: foodAnalysisHistoryRouter
 });
 
 // server/_core/context.ts

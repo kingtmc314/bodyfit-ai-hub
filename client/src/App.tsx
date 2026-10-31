@@ -26,11 +26,7 @@ const Trends = lazy(() => import("./pages/Trends"));
 const Goals = lazy(() => import("./pages/Goals"));
 const Running = lazy(() => import("./pages/Running"));
 const Steps = lazy(() => import("./pages/Steps"));
-const Medical = lazy(() => import("./pages/Medical"));
-const Supplements = lazy(() => import("./pages/Supplements"));
 const BloodPressure = lazy(() => import("./pages/BloodPressure"));
-const PhysioTherapy = lazy(() => import("./pages/PhysioTherapy"));
-const Fasting = lazy(() => import("./pages/Fasting"));
 
 const PageLoader = () => (
   <div className="p-6 space-y-4">
@@ -65,11 +61,7 @@ function Router() {
       <Route path="/goals" component={() => <AppLayout><Lazy><Goals /></Lazy></AppLayout>} />
       <Route path="/running" component={() => <AppLayout><Lazy><Running /></Lazy></AppLayout>} />
       <Route path="/steps" component={() => <AppLayout><Lazy><Steps /></Lazy></AppLayout>} />
-      <Route path="/medical" component={() => <AppLayout><Lazy><Medical /></Lazy></AppLayout>} />
-      <Route path="/supplements" component={() => <AppLayout><Lazy><Supplements /></Lazy></AppLayout>} />
       <Route path="/blood-pressure" component={() => <AppLayout><Lazy><BloodPressure /></Lazy></AppLayout>} />
-      <Route path="/physio" component={() => <AppLayout><Lazy><PhysioTherapy /></Lazy></AppLayout>} />
-      <Route path="/fasting" component={() => <AppLayout><Lazy><Fasting /></Lazy></AppLayout>} />
       <Route path="/login" component={Login} />
       <Route path="/auth/callback" component={AuthCallback} />
       <Route path="/404" component={NotFound} />

@@ -449,3 +449,13 @@
 - [x] Upgrade Workout with an activity-focused hero and session summary cards
 - [x] Upgrade Sleep with a recovery-focused hero and latest sleep data cards
 - [x] Verify desktop/mobile presentation, TypeScript, automated tests, and production build
+
+## v3.14 Focused Training & Running Lab
+- [x] Permanently remove fasting, supplement, medical and physiotherapy routes, UI, APIs, scheduled handler, schema and related database records
+- [x] Remove physiotherapy actions from the Gymwork-style workout experience
+- [x] Refine Nutrition into a photo-first CaLoMei-inspired capture → review → log workflow while retaining manual entry and favourites
+- [x] Refine Workout into a Gymwork-inspired guided session workflow with focused set logging, rest timer and history context
+- [x] Add running-shoe performance API and shoe-level mileage, pace, heart-rate and cadence charts
+- [x] Add a data-calibrated, interactive running energy-system lab for sprint, middle-distance and steady-running events
+- [x] Retain and improve the AI-powered running analysis tab alongside the simulation lab
+- [x] Validate migration result, removal coverage, desktop/mobile UX, automated tests, TypeScript, production build, checkpoint and Vercel release

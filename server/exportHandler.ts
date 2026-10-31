@@ -5,7 +5,7 @@
 import type { Request, Response } from "express";
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
-import { bodyComposition, supplements, supplementLogs } from "../drizzle/schema";
+import { bodyComposition } from "../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 
 const OWNER_USER_ID = parseInt(process.env.OWNER_USER_ID ?? "2");
@@ -143,42 +143,6 @@ export async function exportBodyCompositionHandler(req: Request, res: Response) 
     const csv = rowsToCsv(headers, mapped);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="body-composition-${new Date().toISOString().split("T")[0]}.csv"`);
-    return res.send("\uFEFF" + csv);
-  } catch (err: any) {
-    return res.status(500).json({ error: err?.message ?? "Unknown error" });
-  }
-}
-
-// ─── Supplement Logs Export ──────────────────────────────────────────────────
-export async function exportSupplementLogsHandler(req: Request, res: Response) {
-  try {
-    const format = (req.params.format ?? "csv").toLowerCase();
-    const db = await getDb();
-    if (!db) return res.status(500).json({ error: "DB unavailable" });
-
-    const result = await db.execute(sql`
-      SELECT sl.date, s.name AS supplement_name, s.brand, s.category,
-             sl.quantity, sl.time_of_day, sl.notes
-      FROM supplement_logs sl
-      JOIN supplements s ON s.id = sl.supplement_id
-      WHERE sl."userId" = ${OWNER_USER_ID}
-      ORDER BY sl.date DESC
-      LIMIT 2000
-    `);
-    const rows = ((result as any).rows ?? result) as Record<string, unknown>[];
-
-    const headers = ["date", "supplement_name", "brand", "category", "quantity", "time_of_day", "notes"];
-
-    if (format === "pdf") {
-      const html = buildHtmlTable("Supplement Log — BodyFit AI Hub", headers, rows);
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="supplement-log-${new Date().toISOString().split("T")[0]}.html"`);
-      return res.send(html);
-    }
-
-    const csv = rowsToCsv(headers, rows);
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="supplement-log-${new Date().toISOString().split("T")[0]}.csv"`);
     return res.send("\uFEFF" + csv);
   } catch (err: any) {
     return res.status(500).json({ error: err?.message ?? "Unknown error" });

@@ -404,6 +404,38 @@ export default function Nutrition() {
         ]}
       />
 
+      <section className="overflow-hidden rounded-2xl border border-orange-200/60 bg-gradient-to-br from-orange-50 via-card to-amber-50/40 shadow-sm dark:border-orange-500/15 dark:from-orange-950/20 dark:via-card dark:to-amber-950/10">
+        <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_21rem]">
+          <div className="p-5 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-orange-600 dark:text-orange-300"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500/15"><Sparkles className="h-4 w-4" /></span><span className="text-[11px] font-bold uppercase tracking-[0.16em]">SMART FOOD FLOW</span></div>
+                <h2 className="mt-2 text-lg font-bold tracking-tight text-foreground">吃甚麼？一拍即記，分項確認。</h2>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">以相片、餐廳名稱或常用食物開始，確認營養估算後加入指定餐次。</p>
+              </div>
+              <Badge variant="outline" className="border-orange-300/60 bg-white/60 text-orange-700 dark:bg-orange-950/20 dark:text-orange-300">{meals.length} 項 · {Math.round(totals.calories)} kcal</Badge>
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <button type="button" onClick={openPhotoDialog} disabled={!isOwner} className="group rounded-xl border border-orange-300/50 bg-gradient-to-br from-orange-500 to-amber-500 p-4 text-left text-white shadow-lg shadow-orange-500/15 transition-all hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60">
+                <Camera className="h-5 w-5" /><p className="mt-5 text-sm font-bold">拍照分析</p><p className="mt-1 text-xs leading-5 text-white/80">餐點相片 → AI 拆分食物 → 確認並加入</p><span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold">開始 <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" /></span>
+              </button>
+              <button type="button" onClick={() => { setEditEntry(null); setDialogDate(selectedDate); resetForm(); setShowAILookup(true); setShowAddDialog(true); }} disabled={!isOwner} className="group rounded-xl border border-border bg-card p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60">
+                <Search className="h-5 w-5 text-primary" /><p className="mt-5 text-sm font-bold text-foreground">搜尋餐點</p><p className="mt-1 text-xs leading-5 text-muted-foreground">輸入餐廳或食物，由 AI 估算營養與份量</p><span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-primary">查詢 <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" /></span>
+              </button>
+              <button type="button" onClick={() => { setEditEntry(null); setDialogDate(selectedDate); resetForm(); setShowFavorites(true); setShowAddDialog(true); }} disabled={!isOwner} className="group rounded-xl border border-border bg-card p-4 text-left transition-all hover:-translate-y-0.5 hover:border-amber-400/45 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60">
+                <Star className="h-5 w-5 text-amber-500 fill-amber-500" /><p className="mt-5 text-sm font-bold text-foreground">常用食物</p><p className="mt-1 text-xs leading-5 text-muted-foreground">一按帶入熟悉餐點；可改分量或營養資料</p><span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400">快速帶入 <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" /></span>
+              </button>
+            </div>
+          </div>
+          <div className="border-t border-orange-200/60 bg-white/45 p-5 dark:border-orange-500/15 dark:bg-white/[0.03] lg:border-l lg:border-t-0">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-muted-foreground">今日流程</p>
+            <ol className="mt-3 space-y-3">
+              {[["01", "選擇來源", "相片、餐廳／食物或常用食物"], ["02", "核對份量", "確認 AI 結果或自行調整營養"], ["03", "歸入餐次", "早餐、午餐、晚餐或小食"]].map(([number, title, description]) => <li key={number} className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-500/10 text-[10px] font-bold text-orange-600 dark:text-orange-300">{number}</span><div><p className="text-xs font-semibold text-foreground">{title}</p><p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{description}</p></div></li>)}
+            </ol>
+          </div>
+        </div>
+      </section>
+
       {/* Exercise Calories Burned + Net Balance */}
       {totalCaloriesBurned > 0 && (
         <div className="bg-card border border-orange-200 dark:border-orange-900/50 rounded-2xl p-4 space-y-3">

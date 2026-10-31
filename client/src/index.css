@@ -314,6 +314,41 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .app-main { scrollbar-gutter: stable; }
 .mobile-topbar { background: color-mix(in oklab, var(--card) 88%, transparent); backdrop-filter: blur(18px); }
 
+/* Running science lab — compact high-contrast controls for the dark canvas */
+.running-lab input.running-lab-range[type="range"] {
+  appearance: none;
+  width: 100%;
+  cursor: pointer;
+}
+.running-lab input.running-lab-range[type="range"]::-webkit-slider-runnable-track {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgb(16 185 129 / 0.9), rgb(34 211 238 / 0.75));
+}
+.running-lab input.running-lab-range[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: -0.28rem;
+  border: 2px solid rgb(255 255 255 / 0.78);
+  border-radius: 999px;
+  background: rgb(15 23 42);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.35);
+}
+.running-lab input.running-lab-range[type="range"]::-moz-range-track {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgb(16 185 129 / 0.9), rgb(34 211 238 / 0.75));
+}
+.running-lab input.running-lab-range[type="range"]::-moz-range-thumb {
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 2px solid rgb(255 255 255 / 0.78);
+  border-radius: 999px;
+  background: rgb(15 23 42);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.35);
+}
+
 /* Dashboard system */
 .dashboard-shell { position: relative; }
 .dashboard-shell::before {

@@ -18,6 +18,7 @@ import {
   ResponsiveContainer, Legend, ComposedChart, Area
 } from "recharts";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import RunningEnergyLab from "@/components/RunningEnergyLab";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const formatPace = (secPerKm: number | null | undefined): string => {
@@ -355,6 +356,30 @@ export default function Running() {
     }));
   }, [logs]);
 
+  const shoePerformanceData = useMemo(() => {
+    const byShoe = new Map<string, { distance: number; runs: number; paceDistance: number; paceTotal: number; heartRateTotal: number; heartRateCount: number; cadenceTotal: number; cadenceCount: number }>();
+    (logs as any[]).forEach((run: any) => {
+      if (!run.running_shoes) return;
+      const distance = Number.parseFloat(run.distance_km || 0) || 0;
+      const current = byShoe.get(run.running_shoes) ?? { distance: 0, runs: 0, paceDistance: 0, paceTotal: 0, heartRateTotal: 0, heartRateCount: 0, cadenceTotal: 0, cadenceCount: 0 };
+      current.distance += distance;
+      current.runs += 1;
+      const pace = parsePaceField(run.average_pace);
+      if (pace > 0) { current.paceDistance += Math.max(distance, 1); current.paceTotal += pace * Math.max(distance, 1); }
+      if (run.average_heart_rate) { current.heartRateTotal += Number(run.average_heart_rate); current.heartRateCount += 1; }
+      if (run.average_cadence) { current.cadenceTotal += Number(run.average_cadence); current.cadenceCount += 1; }
+      byShoe.set(run.running_shoes, current);
+    });
+    return Array.from(byShoe.entries()).map(([name, values]) => ({
+      shoe: name,
+      距離: Number(values.distance.toFixed(1)),
+      次數: values.runs,
+      配速秒: values.paceDistance ? Math.round(values.paceTotal / values.paceDistance) : null,
+      平均心率: values.heartRateCount ? Math.round(values.heartRateTotal / values.heartRateCount) : null,
+      平均步頻: values.cadenceCount ? Math.round(values.cadenceTotal / values.cadenceCount) : null,
+    })).sort((a, b) => b.距離 - a.距離);
+  }, [logs]);
+
   // ─── Sorted shoes and races ─────────────────────────────────────────────────
   const sortedShoes = useMemo(() => {
     const shoes = [...(allShoes as any[])];
@@ -567,20 +592,24 @@ export default function Running() {
 
       {/* Tabs */}
       <Tabs defaultValue="charts">
-        <TabsList className="mb-4 flex-wrap h-auto">
-          <TabsTrigger value="charts">趨勢</TabsTrigger>
-          <TabsTrigger value="log">查看全部</TabsTrigger>
-          <TabsTrigger value="shoes" className="flex items-center gap-1">
+        <TabsList className="mb-4 grid h-auto w-full grid-cols-3 gap-1 rounded-xl p-1.5 sm:flex sm:w-auto sm:flex-wrap">
+          <TabsTrigger value="charts" className="min-w-0 px-1.5 text-[11px] sm:px-3 sm:text-sm">趨勢</TabsTrigger>
+          <TabsTrigger value="log" className="min-w-0 px-1.5 text-[11px] sm:px-3 sm:text-sm">查看全部</TabsTrigger>
+          <TabsTrigger value="shoes" className="min-w-0 gap-1 px-1.5 text-[11px] sm:px-3 sm:text-sm">
             <Footprints className="w-3.5 h-3.5" />
-            Shoe Locker
+            <span className="sm:hidden">鞋履</span><span className="hidden sm:inline">Shoe Locker</span>
           </TabsTrigger>
-          <TabsTrigger value="races" className="flex items-center gap-1">
+          <TabsTrigger value="races" className="min-w-0 gap-1 px-1.5 text-[11px] sm:px-3 sm:text-sm">
             <Trophy className="w-3.5 h-3.5" />
             賽事
           </TabsTrigger>
-          <TabsTrigger value="ai" className="flex items-center gap-1">
+          <TabsTrigger value="ai" className="min-w-0 gap-1 px-1.5 text-[11px] sm:px-3 sm:text-sm">
             <Bot className="w-3.5 h-3.5" />
             AI 教練
+          </TabsTrigger>
+          <TabsTrigger value="lab" className="min-w-0 gap-1 px-1.5 text-[11px] sm:px-3 sm:text-sm">
+            <Zap className="w-3.5 h-3.5" />
+            能量實驗室
           </TabsTrigger>
         </TabsList>
 
@@ -873,6 +902,50 @@ export default function Running() {
                 </Button>
               )}
             </div>
+          </div>
+
+          <div className="rounded-2xl border border-orange-200/60 bg-gradient-to-br from-orange-50/80 via-card to-amber-50/40 p-4 shadow-sm dark:border-orange-500/15 dark:from-orange-950/20 dark:via-card dark:to-amber-950/10">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-orange-600 dark:text-orange-400">Shoe Intelligence</p>
+                <h4 className="mt-0.5 font-bold text-foreground">各跑鞋效能統計</h4>
+                <p className="mt-0.5 text-xs text-muted-foreground">比較每雙跑鞋的累積里數、配速、心率與步頻表現。</p>
+              </div>
+              <Badge variant="outline" className="border-orange-300/60 text-orange-700 dark:text-orange-300">{shoePerformanceData.length} 雙有紀錄</Badge>
+            </div>
+            {shoePerformanceData.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-orange-300/50 py-8 text-center text-sm text-muted-foreground">在跑步紀錄選擇跑鞋後，這裡會自動建立各鞋效能圖。</div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <div className="rounded-xl border border-border/70 bg-card/75 p-3">
+                  <p className="mb-2 text-xs font-semibold text-foreground">累積距離（km）</p>
+                  <ResponsiveContainer width="100%" height={190}>
+                    <BarChart data={shoePerformanceData} layout="vertical" margin={{ left: 10, right: 12 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis type="category" dataKey="shoe" width={105} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Bar dataKey="距離" fill="#f97316" radius={[0, 5, 5, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="rounded-xl border border-border/70 bg-card/75 p-3">
+                  <p className="mb-2 text-xs font-semibold text-foreground">平均配速（秒／km，數值較低較快）</p>
+                  <ResponsiveContainer width="100%" height={190}>
+                    <BarChart data={shoePerformanceData} layout="vertical" margin={{ left: 10, right: 12 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis type="category" dataKey="shoe" width={105} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <Tooltip formatter={(value: number) => [formatPace(Number(value)), '平均配速']} />
+                      <Bar dataKey="配速秒" fill="#8b5cf6" radius={[0, 5, 5, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="xl:col-span-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {shoePerformanceData.map(item => <div key={item.shoe} className="rounded-xl border border-border/70 bg-card/75 px-3 py-2.5"><p className="truncate text-xs font-semibold text-foreground">{item.shoe}</p><div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground"><span><b className="text-foreground">{item.次數}</b> 次</span><span><b className="text-foreground">{item.距離}</b> km</span>{item.平均心率 && <span><b className="text-foreground">{item.平均心率}</b> bpm</span>}{item.平均步頻 && <span><b className="text-foreground">{item.平均步頻}</b> spm</span>}</div></div>)}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Shoe cards */}
@@ -1549,6 +1622,14 @@ export default function Running() {
               </div>
             )}
           </div>
+        </TabsContent>
+
+        <TabsContent value="lab" className="space-y-4">
+          <RunningEnergyLab
+            baselinePaceSecPerKm={avgPaceSec || undefined}
+            maxHeartRate={maxHrForZones || undefined}
+            restingHeartRate={restingHr || undefined}
+          />
         </TabsContent>
       </Tabs>
 

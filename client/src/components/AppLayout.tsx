@@ -19,10 +19,7 @@ import {
   TrendingUp,
   Target,
   Footprints,
-  Stethoscope,
-  Pill,
   Droplets,
-  Timer,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
@@ -56,19 +53,15 @@ const navGroups: NavGroup[] = [
     groupKey: "group_health",
     items: [
       { path: "/nutrition",  key: "nutrition",    icon: Utensils,     badgeClass: "icon-badge-yellow" },
-      { path: "/fasting",    key: "fasting",      icon: Timer,        badgeClass: "icon-badge-orange" },
       { path: "/body",       key: "body",         icon: Scale,        badgeClass: "icon-badge-green"  },
       { path: "/heart-rate",     key: "heartrate",      icon: Heart,      badgeClass: "icon-badge-red"    },
       { path: "/blood-pressure",  key: "bloodpressure",  icon: Droplets,   badgeClass: "icon-badge-red"    },
       { path: "/sleep",           key: "sleep",          icon: Moon,       badgeClass: "icon-badge-purple" },
-      { path: "/supplements",     key: "supplements",    icon: Pill,       badgeClass: "icon-badge-blue"   },
     ],
   },
   {
     groupKey: "group_records",
     items: [
-      { path: "/medical",  key: "medical",  icon: Stethoscope, badgeClass: "icon-badge-red"    },
-      { path: "/physio",   key: "physio",   icon: Activity,    badgeClass: "icon-badge-teal"   },
       { path: "/photos",   key: "photos",   icon: Camera,      badgeClass: "icon-badge-blue"   },
       { path: "/import",   key: "import",   icon: Upload,      badgeClass: "icon-badge-green"  },
     ],

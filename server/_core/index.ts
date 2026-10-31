@@ -9,9 +9,8 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { dailyReminderHandler } from "../reminderHandler";
-import { exportRunningLogsHandler, exportBodyCompositionHandler, exportSupplementLogsHandler } from "../exportHandler";
+import { exportRunningLogsHandler, exportBodyCompositionHandler } from "../exportHandler";
 import { CSV_TEMPLATES } from "../csvTemplates";
-import { supplementReminderHandler } from "../supplementReminderHandler";
 import { weeklyHealthSummaryHandler } from "../weeklyHealthSummaryHandler";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -79,11 +78,9 @@ async function startServer() {
   // Data export endpoints (CSV / HTML-PDF)
   app.get("/api/export/running/:format", exportRunningLogsHandler);
   app.get("/api/export/body/:format", exportBodyCompositionHandler);
-  app.get("/api/export/supplements/:format", exportSupplementLogsHandler);
 
   // Scheduled cron handlers — must be before Vite/static fallthrough
   app.post("/api/scheduled/daily-reminder", dailyReminderHandler);
-  app.post("/api/scheduled/supplement-reminder", supplementReminderHandler);
   app.post("/api/scheduled/weekly-health-summary", weeklyHealthSummaryHandler);
 
   // tRPC API

@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.13.1");
+    expect(APP_VERSION).toBe("3.14.0");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -45,5 +45,44 @@ describe("Hong Kong dashboard time helpers", () => {
     expect(label).toContain("14");
     expect(label).toContain("October");
     expect(label).toContain("2026");
+  });
+});
+
+describe("v3.14 focused training scope", () => {
+  const appSource = readFileSync(new URL("../client/src/App.tsx", import.meta.url), "utf8");
+  const layoutSource = readFileSync(new URL("../client/src/components/AppLayout.tsx", import.meta.url), "utf8");
+  const workoutSource = readFileSync(new URL("../client/src/pages/Workout.tsx", import.meta.url), "utf8");
+  const nutritionSource = readFileSync(new URL("../client/src/pages/Nutrition.tsx", import.meta.url), "utf8");
+  const runningSource = readFileSync(new URL("../client/src/pages/Running.tsx", import.meta.url), "utf8");
+  const routerSource = readFileSync(new URL("../server/routers.ts", import.meta.url), "utf8");
+  const schemaSource = readFileSync(new URL("../drizzle/schema.ts", import.meta.url), "utf8");
+
+  it("removes retired modules from routes, navigation, APIs, and schema without touching active data modules", () => {
+    for (const removed of ["/fasting", "/supplements", "/medical", "/physio"]) {
+      expect(appSource).not.toContain(removed);
+      expect(layoutSource).not.toContain(removed);
+    }
+    for (const removed of ["fastingRouter", "supplementsRouter", "medicalRouter", "physioRouter"]) {
+      expect(routerSource).not.toContain(removed);
+    }
+    for (const retained of ["mealLogs", "workoutSessions", "workoutSets", "runningLogs", "runningShoes", "sleepLogs", "heartRateLogs", "bodyComposition"]) {
+      expect(schemaSource).toContain(retained);
+    }
+  });
+
+  it("keeps a photo-first nutrition flow and a guided strength session workflow", () => {
+    expect(nutritionSource).toContain("SMART FOOD FLOW");
+    expect(nutritionSource).toContain("拍照分析");
+    expect(nutritionSource).toContain("常用食物");
+    expect(workoutSource).toContain("下一組 · 一鍵預填");
+    expect(workoutSource).toContain("休息計時器");
+    expect(workoutSource).not.toContain("exerciseLibMode === 'physio'");
+  });
+
+  it("exposes shoe-level performance analysis and the interactive energy lab without replacing AI coaching", () => {
+    expect(runningSource).toContain("shoePerformanceData");
+    expect(runningSource).toContain("各跑鞋效能統計");
+    expect(runningSource).toContain("RunningEnergyLab");
+    expect(runningSource).toContain("AI 教練");
   });
 });

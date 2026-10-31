@@ -15,7 +15,7 @@ import PremiumFeatureHero from "@/components/PremiumFeatureHero";
 import {
   Plus, Dumbbell, Trash2, Edit2, Search, ChevronRight, Loader2,
   Flame, Timer, Weight, BarChart2, X, Check, Trophy, Target, Star, ArrowUpDown,
-  Camera, Sparkles, PlusCircle, AlertCircle, CheckCircle2, Copy, Stethoscope
+  Camera, Sparkles, PlusCircle, AlertCircle, CheckCircle2, Copy
 } from "lucide-react";
 import MuscleMap, { MUSCLE_GROUPS } from "@/components/MuscleMap";
 import ExerciseDetailModal from "@/components/ExerciseDetailModal";
@@ -29,9 +29,6 @@ const EQUIPMENT_LIST = [
   "Kettlebell", "Resistance Band", "Bodyweight", "TRX / Suspension",
   "Pull-up Bar", "Dip Bar", "EZ Bar", "Trap Bar", "Plate",
   "Foam Roller", "Medicine Ball", "Battle Rope", "Cardio Machine",
-  // PT Equipment
-  "Balance Board", "TENS Machine", "Ultrasound Device", "IFC Machine",
-  "Hot Pack", "Cold Pack", "Traction Table", "Parallel Bars", "Hydrotherapy Pool",
 ];
 
 const BUILT_IN_EXERCISES = [
@@ -112,31 +109,6 @@ const BUILT_IN_EXERCISES = [
   { name: "Ski Erg", nameZh: "Ski Erg 機", muscleGroup: "cardio", equipment: "Machine", instructions: "Pull handles down with straight arms, engage core and hips, track distance and time." },
   { name: "Air Bike", nameZh: "風阻单車", muscleGroup: "cardio", equipment: "Machine", instructions: "Push and pull handles while pedaling, maintain steady pace or do intervals." },
   { name: "Jacob's Ladder", nameZh: "天梯機", muscleGroup: "cardio", equipment: "Machine", instructions: "Climb at steady pace, engage core, track time and floors." },
-  // Physiotherapy Exercises
-  { name: "Straight Leg Raise", nameZh: "直腿抬高", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Lie flat, tighten quad, raise straight leg to 45°, hold 2s, lower slowly." },
-  { name: "Short Arc Quad", nameZh: "短弧股四頭肌", muscleGroup: "physio", equipment: "Foam Roller", instructions: "Place roller under knee, extend leg fully from 45°, hold 2s, lower slowly." },
-  { name: "Terminal Knee Extension", nameZh: "終末伸膝", muscleGroup: "physio", equipment: "Resistance Band", instructions: "Band behind knee, stand on one leg, straighten knee against resistance." },
-  { name: "Clamshell", nameZh: "蛤蜊式", muscleGroup: "physio", equipment: "Resistance Band", instructions: "Side-lying, knees bent, feet together, open top knee like a clamshell." },
-  { name: "Hip Abduction", nameZh: "髖關節外展", muscleGroup: "physio", equipment: "Resistance Band", instructions: "Stand, band around ankles, lift leg sideways, control the return." },
-  { name: "Ankle Pumps", nameZh: "踝關節泵", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Seated or lying, pump ankle up and down to improve circulation." },
-  { name: "Heel Slides", nameZh: "足跟滑動", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Lying flat, slide heel toward buttocks bending knee, then extend." },
-  { name: "Quad Sets", nameZh: "股四頭肌收縮", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Lying flat, tighten quad by pressing back of knee to floor, hold 5s." },
-  { name: "Hamstring Curl (PT)", nameZh: "腿後肌彎曲（物理治療）", muscleGroup: "physio", equipment: "Resistance Band", instructions: "Prone, band around ankle, curl heel toward buttocks against resistance." },
-  { name: "Calf Raises (PT)", nameZh: "小腿提升（物理治療）", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Stand on step edge, lower heel below step, raise to tiptoe." },
-  { name: "Step-ups (PT)", nameZh: "踏步（物理治療）", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Step up onto low step, control descent, alternate legs." },
-  { name: "Balance Board Training", nameZh: "平衡板訓練", muscleGroup: "physio", equipment: "Balance Board", instructions: "Stand on balance board, maintain balance, progress to single leg." },
-  { name: "Theraband Shoulder Rotation", nameZh: "彈力帶肩旋轉", muscleGroup: "physio", equipment: "Resistance Band", instructions: "Elbow at 90°, rotate shoulder outward/inward against band resistance." },
-  { name: "Theraband Ankle Eversion", nameZh: "彈力帶踝外翻", muscleGroup: "physio", equipment: "Resistance Band", instructions: "Band around foot, evert ankle outward against resistance, control return." },
-  { name: "Prone Hip Extension", nameZh: "俯臥髖伸展", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Lying prone, tighten glute, lift straight leg 6 inches off table, hold 2s." },
-  { name: "Wall Slides", nameZh: "牆壁滑動", muscleGroup: "physio", equipment: "Bodyweight", instructions: "Back against wall, slide down to 45° squat, hold, slide back up." },
-  { name: "TENS Therapy", nameZh: "電療（TENS）", muscleGroup: "physio", equipment: "TENS Machine", instructions: "Apply electrode pads to target area, set frequency 80-100Hz for pain relief." },
-  { name: "Ultrasound Therapy", nameZh: "超聲波治療", muscleGroup: "physio", equipment: "Ultrasound Device", instructions: "Apply gel to skin, move probe in circular motion over target tissue." },
-  { name: "IFC Therapy", nameZh: "干擾電流治療", muscleGroup: "physio", equipment: "IFC Machine", instructions: "Apply 4 electrodes around target area, set carrier frequency 4000Hz." },
-  { name: "Hot Pack Therapy", nameZh: "熱敷治療", muscleGroup: "physio", equipment: "Hot Pack", instructions: "Apply moist heat pack with towel barrier for 15-20 minutes." },
-  { name: "Cold Pack Therapy", nameZh: "冷敷治療", muscleGroup: "physio", equipment: "Cold Pack", instructions: "Apply ice pack with cloth barrier for 10-15 minutes to reduce inflammation." },
-  { name: "Traction Therapy", nameZh: "牽引治療", muscleGroup: "physio", equipment: "Traction Table", instructions: "Mechanical traction to decompress spinal joints, follow therapist settings." },
-  { name: "Parallel Bars Walking", nameZh: "平行桿步行", muscleGroup: "physio", equipment: "Parallel Bars", instructions: "Hold bars for support, practice weight-bearing walking and balance." },
-  { name: "Hydrotherapy Exercise", nameZh: "水療運動", muscleGroup: "physio", equipment: "Hydrotherapy Pool", instructions: "Perform exercises in warm water to reduce joint load and improve mobility." },
 ];
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -173,9 +145,12 @@ export default function Workout() {
   const [sessionSort, setSessionSort] = useState<'date_desc'|'date_asc'|'volume_desc'|'duration_desc'>('date_desc');
   const [sessionSearch, setSessionSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'session'|'exercises'|'history'|'pr'>('session');  const [prSearch, setPrSearch] = useState('');  const [prSortBy, setPrSortBy] = useState<'weight'|'name'|'date'>('weight');  const [prUnit, setPrUnit] = useState<'kg'|'lbs'>('kg');
-  const [exerciseLibMode, setExerciseLibMode] = useState<'strength'|'cardio'|'physio'>('strength');
+  const [exerciseLibMode, setExerciseLibMode] = useState<'strength'|'cardio'>('strength');
   const [weightUnit, setWeightUnit] = useState<'kg'|'lbs'>('kg');
   const [historyUnit, setHistoryUnit] = useState<'kg'|'lbs'>('kg');
+  const [restSeconds, setRestSeconds] = useState(0);
+  const [restPreset, setRestPreset] = useState(90);
+  const [restIsActive, setRestIsActive] = useState(false);
   // Custom exercise creation state
   const [showCreateExerciseDialog, setShowCreateExerciseDialog] = useState(false);
   const [createExForm, setCreateExForm] = useState({ name: '', nameZh: '', muscleGroup: 'chest', equipment: 'Barbell', instructions: '' });
@@ -212,6 +187,22 @@ export default function Workout() {
       toast.success("Set logged!");
     },
   });
+
+  useEffect(() => {
+    if (!restIsActive || restSeconds <= 0) return;
+    const timer = window.setInterval(() => {
+      setRestSeconds(seconds => {
+        if (seconds <= 1) {
+          window.clearInterval(timer);
+          setRestIsActive(false);
+          toast.success('休息完成，準備下一組！');
+          return 0;
+        }
+        return seconds - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [restIsActive, restSeconds]);
   const updateSet = trpc.workout.updateSet.useMutation({
     onSuccess: () => {
       utils.workout.getSessionWithSets.invalidate();
@@ -372,16 +363,11 @@ export default function Workout() {
   const filteredExercises = useMemo(() => {
     return allExercises.filter(e => {
       const isCardioEx = e.muscleGroup === 'cardio';
-      const isPhysioEx = e.muscleGroup === 'physio';
       const matchSearch = !searchQuery || e.name.toLowerCase().includes(searchQuery.toLowerCase()) || ((e as any).nameZh||'').includes(searchQuery);
       if (exerciseLibMode === 'cardio') return isCardioEx && matchSearch;
-      if (exerciseLibMode === 'physio') {
-        const matchEquip = selectedEquipment === 'all' || e.equipment === selectedEquipment;
-        return isPhysioEx && matchSearch && matchEquip;
-      }
       const matchMuscle = !selectedMuscle || e.muscleGroup === selectedMuscle;
       const matchEquip = selectedEquipment === 'all' || e.equipment === selectedEquipment;
-      return !isCardioEx && !isPhysioEx && matchMuscle && matchEquip && matchSearch;
+      return !isCardioEx && matchMuscle && matchEquip && matchSearch;
     });
   }, [allExercises, selectedMuscle, selectedEquipment, searchQuery, exerciseLibMode]);
 
@@ -483,8 +469,15 @@ export default function Workout() {
         : { id: editSet.id, reps: setForm.reps, weight: weightKg, notes: setForm.notes });
     } else {
       addSet.mutate(isCardio
-        ? { sessionId: activeSession.id, exerciseName: selectedExercise.name, setNumber: setNum, duration: setForm.duration || undefined, distance: setForm.distance || undefined, avgHr: setForm.avgHr || undefined, calories: setForm.calories || undefined, notes: setForm.notes || undefined }
-        : { sessionId: activeSession.id, exerciseName: selectedExercise.name, setNumber: setNum, reps: setForm.reps, weight: weightKg, notes: setForm.notes });
+        ? { sessionId: activeSession.id, exerciseName: selectedExercise.name, setNumber: setNum, duration: setForm.duration || undefined, distance: setForm.distance || undefined, avgHr: setForm.avgHr || undefined, calories: setForm.calories || undefined, notes: setForm.notes }
+        : { sessionId: activeSession.id, exerciseName: selectedExercise.name, setNumber: setNum, reps: setForm.reps, weight: weightKg, notes: setForm.notes }, {
+          onSuccess: () => {
+            if (!isCardio) {
+              setRestSeconds(restPreset);
+              setRestIsActive(true);
+            }
+          },
+        });
     }
   };
 
@@ -498,6 +491,24 @@ export default function Workout() {
     });
     return groups;
   }, [sessionDetail]);
+
+  const lastLoggedSet = useMemo(() => {
+    const sets = sessionDetail?.sets ?? [];
+    return sets.length > 0 ? sets[sets.length - 1] : null;
+  }, [sessionDetail]);
+
+  const openNextSet = () => {
+    if (!lastLoggedSet) return;
+    const exercise = allExercises.find(item => item.name === lastLoggedSet.exerciseName || (item as any).nameZh === lastLoggedSet.exerciseName)
+      ?? { name: lastLoggedSet.exerciseName, muscleGroup: 'chest', equipment: 'Machine' };
+    const isCardio = exercise.muscleGroup === 'cardio';
+    setSelectedExercise(exercise);
+    setSetForm(isCardio
+      ? { reps: 0, weight: 0, duration: lastLoggedSet.duration || 0, distance: lastLoggedSet.distance || 0, avgHr: (lastLoggedSet as any).avgHr || 0, calories: (lastLoggedSet as any).calories || 0, notes: '' }
+      : { reps: lastLoggedSet.reps || 10, weight: lastLoggedSet.weight || 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: '' });
+    setEditSet(null);
+    setShowAddSetDialog(true);
+  };
 
   const handleAiPhotoIdentify = (file: File) => {
     setAiIdentifyLoading(true);
@@ -629,6 +640,32 @@ export default function Workout() {
                     </div>
                   </div>
 
+                  {isOwner && !activeSession.endTime && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                      {lastLoggedSet ? (
+                        <button type="button" onClick={openNextSet} className="group rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-card to-purple-500/10 p-4 text-left transition-all hover:border-primary/45 hover:shadow-md">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm"><Dumbbell className="h-4 w-4" /></div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[11px] font-bold uppercase tracking-wider text-primary">下一組 · 一鍵預填</p>
+                              <p className="mt-0.5 truncate text-sm font-bold text-foreground">{lastLoggedSet.exerciseName}</p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">沿用上一組：{lastLoggedSet.reps || '—'} reps × {lastLoggedSet.weight || 0} kg</p>
+                            </div>
+                            <ChevronRight className="h-5 w-5 text-primary transition-transform group-hover:translate-x-0.5" />
+                          </div>
+                        </button>
+                      ) : (
+                        <button type="button" onClick={() => { setSearchQuery(''); setExerciseLibMode('strength'); setShowExerciseDialog(true); }} className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-4 text-left transition-colors hover:bg-primary/10">
+                          <p className="text-sm font-bold text-foreground">開始你的第一個動作</p><p className="mt-0.5 text-xs text-muted-foreground">從器材與肌群動作庫選擇，立即記錄第一組。</p>
+                        </button>
+                      )}
+                      <div className={`rounded-2xl border p-3.5 ${restSeconds > 0 ? 'border-amber-400/40 bg-amber-400/10' : 'border-border bg-card'}`}>
+                        <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><div className={`flex h-8 w-8 items-center justify-center rounded-lg ${restSeconds > 0 ? 'bg-amber-400 text-amber-950' : 'bg-muted text-muted-foreground'}`}><Timer className="h-4 w-4" /></div><div><p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">休息計時器</p><p className="text-sm font-bold text-foreground">{restSeconds > 0 ? `${Math.floor(restSeconds / 60)}:${String(restSeconds % 60).padStart(2, '0')}` : '準備就緒'}</p></div></div><Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setRestIsActive(value => !value)} disabled={restSeconds === 0}>{restIsActive ? '暫停' : '繼續'}</Button></div>
+                        <div className="mt-2.5 flex gap-1.5">{[45, 60, 90, 120].map(seconds => <button key={seconds} type="button" onClick={() => { setRestPreset(seconds); setRestSeconds(seconds); setRestIsActive(true); }} className={`rounded-md px-2 py-1 text-[10px] font-semibold transition-colors ${restPreset === seconds ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>{seconds}s</button>)}<button type="button" onClick={() => { setRestSeconds(0); setRestIsActive(false); }} className="ml-auto text-[10px] font-semibold text-muted-foreground hover:text-foreground">重設</button></div>
+                      </div>
+                    </div>
+                  )}
+
                   {Object.keys(exerciseGroups).length === 0 ? (
                     <div className="bg-card border border-border rounded-2xl p-6 text-center">
                       <p className="text-muted-foreground text-sm">No exercises logged yet. Add an exercise to start.</p>
@@ -726,7 +763,7 @@ export default function Workout() {
 
         {/* Exercise Library Tab */}
         <TabsContent value="exercises" className="mt-4">
-          {/* Strength / Cardio / Physio mode toggle */}
+          {/* Strength / cardio mode toggle */}
           <div className="flex gap-2 mb-4 flex-wrap">
             <Button variant={exerciseLibMode === 'strength' ? 'default' : 'outline'} size="sm" className="gap-1.5"
               onClick={() => setExerciseLibMode('strength')}>
@@ -735,10 +772,6 @@ export default function Workout() {
             <Button variant={exerciseLibMode === 'cardio' ? 'default' : 'outline'} size="sm" className="gap-1.5"
               onClick={() => setExerciseLibMode('cardio')}>
               <Flame className="w-4 h-4" /> 有氧
-            </Button>
-            <Button variant={exerciseLibMode === 'physio' ? 'default' : 'outline'} size="sm" className="gap-1.5"
-              onClick={() => setExerciseLibMode('physio')}>
-              <Stethoscope className="w-4 h-4" /> 物理治療
             </Button>
           </div>
 
@@ -782,61 +815,6 @@ export default function Workout() {
                 {filteredExercises.length === 0 && (
                   <div className="col-span-3 text-center py-8">
                     <p className="text-muted-foreground text-sm">找不到相關有氧動作</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : exerciseLibMode === 'physio' ? (
-            /* Physio Exercise Grid */
-            <div className="space-y-3">
-              <div className="flex gap-2 flex-wrap">
-                <div className="relative flex-1 max-w-sm">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input placeholder="搜尋物理治療動作…" className="pl-9" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-                </div>
-                <Select value={selectedEquipment} onValueChange={setSelectedEquipment}>
-                  <SelectTrigger className="w-44">
-                    <SelectValue placeholder="Equipment" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Equipment</SelectItem>
-                    {EQUIPMENT_LIST.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {filteredExercises.map((ex: any, i) => (
-                  <div key={i} className="bg-card border border-teal-200/40 rounded-xl p-4 hover:border-teal-400/60 transition-colors cursor-pointer"
-                    onClick={() => { setDetailExercise(ex); setShowExerciseDetail(true); }}>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-2xl">🩺</span>
-                          <div>
-                            <p className="font-semibold text-foreground text-sm leading-tight">{ex.name}</p>
-                            <p className="text-xs text-muted-foreground">{ex.nameZh}</p>
-                          </div>
-                        </div>
-                        {ex.instructions && (
-                          <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{ex.instructions}</p>
-                        )}
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          <Badge className="text-xs bg-teal-100 text-teal-700 border-teal-200">物理治療</Badge>
-                          <Badge variant="outline" className="text-xs">{ex.equipment}</Badge>
-                        </div>
-                      </div>
-                      {activeSession && (
-                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 shrink-0"
-                          onClick={(e) => { e.stopPropagation(); setSelectedExercise(ex); setSetForm({ reps: 10, weight: 0, duration: 0, distance: 0, avgHr: 0, calories: 0, notes: "" }); setEditSet(null); setShowAddSetDialog(true); }}>
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {filteredExercises.length === 0 && (
-                  <div className="col-span-3 text-center py-8">
-                    <p className="text-muted-foreground text-sm">找不到相關物理治療動作</p>
                   </div>
                 )}
               </div>
@@ -1196,7 +1174,6 @@ export default function Workout() {
             <div className="flex gap-1.5">
               <Button size="sm" variant={exerciseLibMode === 'strength' ? 'default' : 'outline'} className="flex-1 text-xs" onClick={() => setExerciseLibMode('strength')}>力量訓練</Button>
               <Button size="sm" variant={exerciseLibMode === 'cardio' ? 'default' : 'outline'} className="flex-1 text-xs" onClick={() => setExerciseLibMode('cardio')}>有氧</Button>
-              <Button size="sm" variant={exerciseLibMode === 'physio' ? 'default' : 'outline'} className="flex-1 text-xs" onClick={() => setExerciseLibMode('physio')}>物理治療</Button>
             </div>
             <Input placeholder="搜尋動作…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
             <div className="space-y-1 flex-1 overflow-y-auto">
