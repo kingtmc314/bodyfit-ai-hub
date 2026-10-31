@@ -465,4 +465,4 @@
 - [x] Add guided workout templates that keep planned exercises distinct from completed workout sets
 - [x] Add deterministic progressive-overload recommendations based on existing completed workout sets
 - [x] Persist named running-weather simulation scenarios and show a Hong Kong-time comparison view
-- [ ] Verify schema migration, historical-record preservation, desktop/mobile UX, tests, production build, checkpoint and Vercel release
+- [x] Verify schema migration, historical-record preservation, desktop/mobile UX, tests, production build, checkpoint and Vercel release
