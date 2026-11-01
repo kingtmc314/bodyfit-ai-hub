@@ -28,6 +28,7 @@ import {
   real,
   boolean,
   json,
+  jsonb,
   serial,
   bigserial,
   bigint,
@@ -262,8 +263,9 @@ var runningLogs = pgTable("running_logs", {
   weatherLocation: text("weather_location"),
   weatherObservedAt: text("weather_observed_at"),
   weatherSource: text("weather_source"),
-  garminDetails: json("garmin_details").$type(),
-  laps: json("laps").$type(),
+  garminDetails: jsonb("garmin_details").$type(),
+  laps: jsonb("laps").$type(),
+  timeSeries: jsonb("time_series").$type(),
   status: text("status"),
   notes: text("notes"),
   routeType: text("route_type"),
@@ -1406,6 +1408,58 @@ async function storageGetSignedUrl(relKey) {
 // server/routers.ts
 import { nanoid } from "nanoid";
 
+// server/garminImport.ts
+function buildGarminVisionContent(signedImageUrls, prompt) {
+  if (!signedImageUrls.length) throw new Error("\u8ACB\u81F3\u5C11\u63D0\u4F9B\u4E00\u5F35 Garmin \u622A\u5716");
+  for (const url of signedImageUrls) {
+    if (!/^https:\/\//i.test(url)) {
+      throw new Error("Garmin \u622A\u5716\u672A\u53D6\u5F97\u53EF\u4F9B\u5206\u6790\u7684\u5B89\u5168\u7DB2\u5740\uFF0C\u8ACB\u91CD\u65B0\u9078\u64C7\u5716\u7247\u5F8C\u518D\u8A66");
+    }
+  }
+  return [
+    { type: "text", text: prompt },
+    ...signedImageUrls.map((url) => ({
+      type: "image_url",
+      image_url: { url, detail: "high" }
+    }))
+  ];
+}
+function getResponseText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.filter((part) => typeof part === "object" && part !== null).filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text).join("\n");
+  }
+  return "";
+}
+function parseGarminExtraction(content) {
+  const source = getResponseText(content).trim();
+  if (!source) throw new Error("\u5206\u6790\u670D\u52D9\u6C92\u6709\u56DE\u50B3\u53EF\u8B80\u53D6\u7684\u8CC7\u6599\uFF0C\u8ACB\u91CD\u8A66");
+  const withoutFence = source.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const start = withoutFence.indexOf("{");
+  const end = withoutFence.lastIndexOf("}");
+  if (start < 0 || end < start) throw new Error("\u5206\u6790\u670D\u52D9\u56DE\u50B3\u7684\u8CC7\u6599\u683C\u5F0F\u4E0D\u5B8C\u6574\uFF0C\u8ACB\u91CD\u8A66");
+  let parsed;
+  try {
+    parsed = JSON.parse(withoutFence.slice(start, end + 1));
+  } catch {
+    throw new Error("\u5206\u6790\u670D\u52D9\u56DE\u50B3\u7684\u8CC7\u6599\u683C\u5F0F\u7121\u6CD5\u8B80\u53D6\uFF0C\u8ACB\u91CD\u8A66");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("\u5206\u6790\u670D\u52D9\u6C92\u6709\u56DE\u50B3\u8DD1\u6B65\u7D00\u9304\uFF0C\u8ACB\u91CD\u8A66");
+  }
+  const value = parsed;
+  const confidence = value.confidence === "high" || value.confidence === "low" ? value.confidence : "medium";
+  return {
+    date: typeof value.date === "string" ? value.date : null,
+    time: typeof value.time === "string" ? value.time : null,
+    running: typeof value.running === "object" && value.running !== null && !Array.isArray(value.running) ? value.running : {},
+    garminDetails: typeof value.garminDetails === "object" && value.garminDetails !== null && !Array.isArray(value.garminDetails) ? value.garminDetails : {},
+    laps: Array.isArray(value.laps) ? value.laps.filter((lap) => typeof lap === "object" && lap !== null && !Array.isArray(lap)) : [],
+    confidence,
+    notes: typeof value.notes === "string" ? value.notes : "\u8ACB\u6838\u5C0D\u5F9E Garmin \u622A\u5716\u8B80\u53D6\u7684\u6578\u64DA\u3002"
+  };
+}
+
 // server/hkTime.ts
 var HK_OFFSET_MS = 8 * 60 * 60 * 1e3;
 function todayHK() {
@@ -2187,8 +2241,164 @@ function buildDateChunks(dates, maximumSpanDays = 31) {
   return chunks;
 }
 
-// server/routers.ts
+// server/garminFileImport.ts
+import { Decoder, Stream } from "@garmin/fitsdk";
 import Papa from "papaparse";
+var MAX_SAMPLES = 3e4;
+var asNumber = (value) => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : void 0;
+};
+var asDate = (value) => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+var toHKDate = (date2) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Hong_Kong", year: "numeric", month: "2-digit", day: "2-digit" }).format(date2);
+var toHKTime = (date2) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Hong_Kong", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date2);
+var decimalPace = (secondsPerKm) => secondsPerKm && secondsPerKm > 0 ? (secondsPerKm / 60).toFixed(2) : void 0;
+function metricFields(session, samples, sourceFormat) {
+  const first = samples[0];
+  const last = samples.at(-1);
+  const durationSec = asNumber(session.totalTimerTime) ?? (last ? last.elapsedSec : void 0);
+  const distanceM = asNumber(session.totalDistance);
+  const distanceKm = distanceM && distanceM > 100 ? distanceM / 1e3 : asNumber(session.distanceKm) ?? last?.distanceKm;
+  const avgSpeed = asNumber(session.avgSpeed) ?? asNumber(session.averageSpeed);
+  const maxSpeed = asNumber(session.maxSpeed) ?? asNumber(session.maximumSpeed);
+  const paceSeconds = distanceKm && durationSec ? durationSec / distanceKm : avgSpeed ? 1e3 / avgSpeed : void 0;
+  const bestPaceSeconds = maxSpeed ? 1e3 / maxSpeed : void 0;
+  const start = first ? new Date(first.timestamp) : asDate(session.startTime) ?? asDate(session.timestamp);
+  const fields = {};
+  if (start) {
+    fields.date = toHKDate(start);
+    fields.weatherTime = toHKTime(start);
+  }
+  if (distanceKm) fields.distanceKm = distanceKm.toFixed(2);
+  if (durationSec !== void 0) {
+    fields.hour = String(Math.floor(durationSec / 3600));
+    fields.minutes = String(Math.floor(durationSec % 3600 / 60));
+    fields.second = String(Math.round(durationSec % 60));
+  }
+  const averagePace = decimalPace(paceSeconds);
+  const bestPace = decimalPace(bestPaceSeconds);
+  if (averagePace) fields.averagePace = averagePace;
+  if (bestPace) fields.bestPace = bestPace;
+  const pairs = [
+    ["avgHeartRate", "averageHeartRate"],
+    ["maxHeartRate", "maximumHeartRate"],
+    ["avgRunningCadence", "averageCadence"],
+    ["maxRunningCadence", "maxCadence"],
+    ["totalCalories", "calories"],
+    ["avgStepLength", "avgStrideLengthM"],
+    ["avgVerticalRatio", "avgVerticalRatio"],
+    ["avgVerticalOscillation", "verticalOscillationCm"],
+    ["avgStanceTime", "avgGroundContactTimeMs"],
+    ["avgTemperature", "temperature"]
+  ];
+  for (const [source, target] of pairs) {
+    const value = asNumber(session[source]);
+    if (value !== void 0) fields[target] = String(value);
+  }
+  const warnings = [];
+  if (!samples.length) warnings.push("\u539F\u59CB\u6A94\u6C92\u6709\u53EF\u8B80\u53D6\u7684\u9010\u79D2 Record \u6A23\u672C\uFF1B\u5DF2\u53EA\u586B\u5165\u6D3B\u52D5\u6458\u8981\u3002");
+  if (samples.length >= MAX_SAMPLES) warnings.push(`\u70BA\u7DAD\u6301\u64CD\u4F5C\u6548\u80FD\uFF0C\u5DF2\u4FDD\u7559\u9996 ${MAX_SAMPLES.toLocaleString()} \u500B\u9010\u79D2\u6A23\u672C\u3002`);
+  return {
+    sourceFormat,
+    fields,
+    garminDetails: {
+      sourceFormat,
+      rawSampleCount: samples.length,
+      avgPowerW: asNumber(session.avgPower) ?? null,
+      maxPowerW: asNumber(session.maxPower) ?? null,
+      totalAscentM: asNumber(session.totalAscent) ?? null,
+      totalDescentM: asNumber(session.totalDescent) ?? null,
+      avgTemperatureC: asNumber(session.avgTemperature) ?? null,
+      totalMovingTimeSec: asNumber(session.totalMovingTime) ?? null
+    },
+    laps: [],
+    timeSeries: samples,
+    warnings
+  };
+}
+function mapFitRecord(record, startedAt) {
+  const timestamp2 = asDate(record.timestamp);
+  if (!timestamp2) return null;
+  const speed = asNumber(record.enhancedSpeed) ?? asNumber(record.speed);
+  const distanceM = asNumber(record.distance);
+  return {
+    elapsedSec: Math.max(0, Math.round((timestamp2.getTime() - startedAt.getTime()) / 1e3)),
+    timestamp: timestamp2.toISOString(),
+    ...distanceM !== void 0 ? { distanceKm: Number((distanceM / 1e3).toFixed(4)) } : {},
+    ...speed && speed > 0 ? { paceSecPerKm: Number((1e3 / speed).toFixed(2)) } : {},
+    ...asNumber(record.heartRate) !== void 0 ? { heartRate: asNumber(record.heartRate) } : {},
+    ...asNumber(record.cadence) !== void 0 ? { cadence: asNumber(record.cadence) } : {},
+    ...asNumber(record.power) !== void 0 ? { power: asNumber(record.power) } : {},
+    ...asNumber(record.enhancedAltitude) ?? asNumber(record.altitude) ? { altitudeM: asNumber(record.enhancedAltitude) ?? asNumber(record.altitude) } : {},
+    ...asNumber(record.temperature) !== void 0 ? { temperatureC: asNumber(record.temperature) } : {}
+  };
+}
+function parseGarminFit(buffer) {
+  const stream = Stream.fromBuffer(buffer);
+  if (!Decoder.isFIT(stream)) throw new Error("\u9019\u4E0D\u662F\u6709\u6548\u7684 Garmin FIT \u6A94\u6848");
+  const decoder = new Decoder(stream);
+  const { messages, errors } = decoder.read({ applyScaleAndOffset: true, expandComponents: true, convertDateTimesToDates: true, mergeHeartRates: true });
+  const recordMessages = messages.recordMesgs ?? [];
+  const firstTimestamp = recordMessages.map((record) => asDate(record.timestamp)).find((date2) => !!date2) ?? asDate(messages.sessionMesgs?.[0]?.startTime) ?? /* @__PURE__ */ new Date();
+  const samples = recordMessages.map((record) => mapFitRecord(record, firstTimestamp)).filter((sample) => !!sample).slice(0, MAX_SAMPLES);
+  const session = messages.sessionMesgs?.[0] ?? {};
+  const preview = metricFields(session, samples, "FIT");
+  preview.laps = (messages.lapMesgs ?? []).map((lap, index) => {
+    const distance = asNumber(lap.totalDistance);
+    const duration = asNumber(lap.totalTimerTime) ?? asNumber(lap.totalElapsedTime);
+    const speed = asNumber(lap.avgSpeed);
+    return { lap: index + 1, durationSec: duration ? Math.round(duration) : null, distanceKm: distance ? Number((distance / 1e3).toFixed(3)) : null, avgPace: decimalPace(speed ? 1e3 / speed : void 0) ?? null };
+  });
+  if (errors.length) preview.warnings.push(`FIT \u6A94\u6848\u6709 ${errors.length} \u9805\u53EF\u6062\u5FA9\u7684\u89E3\u6790\u63D0\u793A\uFF1B\u5DF2\u4FDD\u7559\u80FD\u5B89\u5168\u8B80\u53D6\u7684\u8CC7\u6599\u3002`);
+  return preview;
+}
+function valueFor(row, names) {
+  const lookup = {};
+  for (const [key, value] of Object.entries(row)) lookup[key.toLowerCase().replace(/[^a-z0-9]/g, "")] = value;
+  return names.map((name) => lookup[name]).find((value) => value !== void 0 && value !== "");
+}
+function parseGarminCsv(buffer) {
+  const parsed = Papa.parse(buffer.toString("utf8"), { header: true, skipEmptyLines: true });
+  if (parsed.errors.length && !parsed.data.length) throw new Error("CSV \u683C\u5F0F\u7121\u6CD5\u8B80\u53D6\uFF0C\u8ACB\u4F7F\u7528 Garmin \u532F\u51FA\u7684\u539F\u59CB CSV \u6A94");
+  const raw = parsed.data;
+  const timed = raw.map((row) => {
+    const timestampRaw = valueFor(row, ["timestamp", "time", "datetime"]);
+    const timestamp2 = timestampRaw ? new Date(timestampRaw) : null;
+    const distance = asNumber(valueFor(row, ["distance", "distancekm"]));
+    const speed = asNumber(valueFor(row, ["enhancedspeed", "speed"]));
+    return timestamp2 && !Number.isNaN(timestamp2.getTime()) ? { timestamp: timestamp2, distance, speed, row } : null;
+  }).filter(Boolean);
+  const start = timed[0]?.timestamp ?? /* @__PURE__ */ new Date();
+  const samples = timed.slice(0, MAX_SAMPLES).map((item) => ({
+    elapsedSec: Math.max(0, Math.round((item.timestamp.getTime() - start.getTime()) / 1e3)),
+    timestamp: item.timestamp.toISOString(),
+    ...item.distance !== void 0 ? { distanceKm: item.distance > 100 ? Number((item.distance / 1e3).toFixed(4)) : item.distance } : {},
+    ...item.speed && item.speed > 0 ? { paceSecPerKm: Number((1e3 / item.speed).toFixed(2)) } : {},
+    ...asNumber(valueFor(item.row, ["heartrate", "heart_rate"])) !== void 0 ? { heartRate: asNumber(valueFor(item.row, ["heartrate", "heart_rate"])) } : {},
+    ...asNumber(valueFor(item.row, ["cadence"])) !== void 0 ? { cadence: asNumber(valueFor(item.row, ["cadence"])) } : {},
+    ...asNumber(valueFor(item.row, ["power", "watts"])) !== void 0 ? { power: asNumber(valueFor(item.row, ["power", "watts"])) } : {},
+    ...asNumber(valueFor(item.row, ["altitude", "enhancedaltitude"])) !== void 0 ? { altitudeM: asNumber(valueFor(item.row, ["altitude", "enhancedaltitude"])) } : {},
+    ...asNumber(valueFor(item.row, ["temperature", "temp"])) !== void 0 ? { temperatureC: asNumber(valueFor(item.row, ["temperature", "temp"])) } : {}
+  }));
+  const last = samples.at(-1);
+  const session = { startTime: start, totalDistance: last?.distanceKm ? last.distanceKm * 1e3 : void 0, totalTimerTime: last?.elapsedSec };
+  const preview = metricFields(session, samples, "CSV");
+  preview.warnings.push("CSV \u6B04\u4F4D\u6703\u56E0 Garmin \u532F\u51FA\u8A2D\u5B9A\u800C\u4E0D\u540C\uFF1B\u8ACB\u5148\u6838\u5C0D\u6458\u8981\u8207\u9010\u79D2\u6A23\u672C\u6578\u91CF\u3002", ...!timed.length ? ["\u6B64 CSV \u672A\u5305\u542B\u53EF\u8B58\u5225\u7684 timestamp \u8A18\u9304\uFF0C\u56E0\u6B64\u672A\u4FDD\u5B58\u9010\u79D2\u66F2\u7DDA\u3002"] : []);
+  return preview;
+}
+function parseGarminRawFile(buffer, filename) {
+  if (buffer.length > 25 * 1024 * 1024) throw new Error("\u539F\u59CB Garmin \u6A94\u6848\u8D85\u904E 25MB \u9650\u5236");
+  if (/\.fit$/i.test(filename)) return parseGarminFit(buffer);
+  if (/\.csv$/i.test(filename)) return parseGarminCsv(buffer);
+  throw new Error("\u8ACB\u9078\u64C7 Garmin FIT \u6216 CSV \u539F\u59CB\u6A94");
+}
+
+// server/routers.ts
+import Papa2 from "papaparse";
 var OWNER_USER_ID = 2;
 var CARDIO_EXERCISE_NAMES = [
   "Stationary Bike",
@@ -3446,7 +3656,7 @@ var csvImportRouter = router({
     // 5 MB limit
     dataType: z2.enum(["body", "sleep", "heartrate", "workout", "nutrition", "running", "auto"]).default("auto")
   })).mutation(async ({ input }) => {
-    const parsed = Papa.parse(input.csvText, {
+    const parsed = Papa2.parse(input.csvText, {
       header: true,
       skipEmptyLines: true,
       transformHeader: (h) => h.trim()
@@ -3475,7 +3685,7 @@ var csvImportRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const parsed = Papa.parse(input.csvText, {
+    const parsed = Papa2.parse(input.csvText, {
       header: true,
       skipEmptyLines: true,
       transformHeader: (h) => h.trim()
@@ -4073,13 +4283,13 @@ For steps data: extract daily step count, floors climbed, distance, active minut
       mimeType: z2.string().default("image/jpeg")
     })).min(1).max(16)
   })).mutation(async ({ input }) => {
-    const imageUrls = await Promise.all(input.screenshots.map(async (screenshot, index) => {
+    const signedImageUrls = await Promise.all(input.screenshots.map(async (screenshot, index) => {
       const buffer = Buffer.from(screenshot.base64, "base64");
       if (buffer.length > 10 * 1024 * 1024) throw new Error(`\u7B2C ${index + 1} \u5F35\u622A\u5716\u8D85\u904E 10MB \u9650\u5236`);
       const ext = screenshot.mimeType.includes("png") ? "png" : "jpg";
       const key = `garmin-imports/${OWNER_USER_ID}/${nanoid()}.${ext}`;
-      const { url } = await storagePut(key, buffer, screenshot.mimeType);
-      return url;
+      const stored = await storagePut(key, buffer, screenshot.mimeType);
+      return storageGetSignedUrl(stored.key);
     }));
     const systemPrompt = `You extract Garmin Connect screenshots into exactly one running activity. Return only strict JSON. Do not invent values from a graph. Prefer explicit numbers on Overview/Stats/Laps; if screenshots conflict, choose the value from Overview or Stats and explain the conflict briefly in Traditional Chinese notes. A displayed day and month without a year must produce null date. All extracted metric labels and notes must be understandable to a Traditional Chinese user.`;
     const userPrompt = `These ${input.screenshots.length} screenshots belong to ONE Garmin running activity. Merge all visible values into a single reviewable record. Extract only visibly stated metrics. Convert duration into hour/minute/second and keep pace in MM:SS. Preserve every visible full-lap row (lap number, duration, distance and average pace); partial laps are valid. Screenshots cannot faithfully reconstruct second-by-second chart samples, so never fabricate curves. Return null for absent or unclear values.
@@ -4100,10 +4310,7 @@ Required JSON fields:
         content: systemPrompt
       }, {
         role: "user",
-        content: [
-          { type: "text", text: userPrompt },
-          ...imageUrls.map((url, index) => ({ type: "image_url", image_url: { url, detail: "high" }, name: `Garmin screenshot ${index + 1}` }))
-        ]
+        content: buildGarminVisionContent(signedImageUrls, userPrompt)
       }],
       response_format: {
         type: "json_schema",
@@ -4192,8 +4399,7 @@ Required JSON fields:
         }
       }
     });
-    const content = response.choices[0]?.message?.content;
-    return JSON.parse(typeof content === "string" ? content : "{}");
+    return parseGarminExtraction(response.choices[0]?.message?.content);
   }),
   /**
    * Save extracted image data to the database after user confirms.
@@ -4377,6 +4583,42 @@ var runningRouter = router({
       monthly: monthlyRows.rows ?? monthlyRows
     };
   }),
+  parseGarminRawFile: ownerProcedure.input(z2.object({
+    fileName: z2.string().trim().min(5).max(180),
+    mimeType: z2.string().trim().max(120),
+    base64: z2.string().min(16)
+  })).mutation(async ({ input }) => {
+    const buffer = Buffer.from(input.base64, "base64");
+    return parseGarminRawFile(buffer, input.fileName);
+  }),
+  saveGarminRawSource: ownerProcedure.input(z2.object({
+    runningLogId: z2.number().int().positive(),
+    fileName: z2.string().trim().min(1).max(180),
+    mimeType: z2.string().trim().max(120),
+    base64: z2.string().min(16),
+    sourceFormat: z2.enum(["FIT", "CSV"]),
+    sampleCount: z2.number().int().min(0).max(3e4)
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const buffer = Buffer.from(input.base64, "base64");
+    if (buffer.length > 25 * 1024 * 1024) throw new Error("\u539F\u59CB Garmin \u6A94\u6848\u8D85\u904E 25MB \u9650\u5236");
+    const extension = input.sourceFormat === "FIT" ? "fit" : "csv";
+    const stored = await storagePut(`garmin-originals/${OWNER_USER_ID}/${nanoid()}.${extension}`, buffer, input.mimeType || "application/octet-stream");
+    const metadata = JSON.stringify({
+      rawFileKey: stored.key,
+      rawFileUrl: stored.url,
+      rawFileName: input.fileName,
+      rawFileFormat: input.sourceFormat,
+      rawSampleCount: input.sampleCount
+    });
+    await db.execute(sql2`
+        UPDATE running_logs
+        SET garmin_details = COALESCE(garmin_details, '{}'::jsonb) || ${metadata}::jsonb
+        WHERE id = ${input.runningLogId}
+      `);
+    return { success: true, fileUrl: stored.url };
+  }),
   addLog: publicProcedure.input(z2.object({
     date: z2.string(),
     runningType: z2.string().optional(),
@@ -4414,6 +4656,17 @@ var runningRouter = router({
       distanceKm: z2.number().nullable(),
       avgPace: z2.string().nullable()
     })).optional(),
+    timeSeries: z2.array(z2.object({
+      elapsedSec: z2.number().int().nonnegative(),
+      timestamp: z2.string().min(1).max(40),
+      distanceKm: z2.number().optional(),
+      paceSecPerKm: z2.number().optional(),
+      heartRate: z2.number().optional(),
+      cadence: z2.number().optional(),
+      power: z2.number().optional(),
+      altitudeM: z2.number().optional(),
+      temperatureC: z2.number().optional()
+    })).max(3e4).optional(),
     notes: z2.string().optional()
   })).mutation(async ({ input }) => {
     const db = await getDb();
@@ -4431,7 +4684,7 @@ var runningRouter = router({
           average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
           vertical_oscillation_cm, avg_ground_contact_time_ms,
           calories, temperature, humidity, wind_speed, apparent_temp, precipitation,
-          weather_code, weather_condition, weather_location, weather_observed_at, weather_source, garmin_details, laps, notes
+          weather_code, weather_condition, weather_location, weather_observed_at, weather_source, garmin_details, laps, time_series, notes
         ) VALUES (
           ${input.date},
           ${input.runningType ?? null},
@@ -4465,6 +4718,7 @@ var runningRouter = router({
           ${input.weatherSource ?? null},
           ${input.garminDetails ? JSON.stringify(input.garminDetails) : null}::jsonb,
           ${input.laps ? JSON.stringify(input.laps) : null}::jsonb,
+          ${input.timeSeries ? JSON.stringify(input.timeSeries) : null}::jsonb,
           ${input.notes ?? null}
         ) RETURNING id
       `);
@@ -4516,6 +4770,17 @@ var runningRouter = router({
       distanceKm: z2.number().nullable(),
       avgPace: z2.string().nullable()
     })).optional(),
+    timeSeries: z2.array(z2.object({
+      elapsedSec: z2.number().int().nonnegative(),
+      timestamp: z2.string().min(1).max(40),
+      distanceKm: z2.number().optional(),
+      paceSecPerKm: z2.number().optional(),
+      heartRate: z2.number().optional(),
+      cadence: z2.number().optional(),
+      power: z2.number().optional(),
+      altitudeM: z2.number().optional(),
+      temperatureC: z2.number().optional()
+    })).max(3e4).optional(),
     notes: z2.string().optional()
   })).mutation(async ({ input }) => {
     const db = await getDb();
@@ -4528,7 +4793,7 @@ var runningRouter = router({
     }
     const setClauses = Object.entries(fields).filter(([, v]) => v !== void 0).map(([k, v]) => {
       const col = k.replace(/([A-Z])/g, "_$1").toLowerCase();
-      if (k === "garminDetails" || k === "laps") {
+      if (k === "garminDetails" || k === "laps" || k === "timeSeries") {
         return sql2`${sql2.raw(col)} = ${JSON.stringify(v)}::jsonb`;
       }
       return sql2`${sql2.raw(col)} = ${v}`;

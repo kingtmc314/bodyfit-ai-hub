@@ -20,6 +20,7 @@ import {
   Target,
   Footprints,
   Droplets,
+  History,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { cn } from "@/lib/utils";
@@ -64,8 +65,16 @@ const navGroups: NavGroup[] = [
     items: [
       { path: "/photos",   key: "photos",   icon: Camera,      badgeClass: "icon-badge-blue"   },
       { path: "/import",   key: "import",   icon: Upload,      badgeClass: "icon-badge-green"  },
+      { path: "/release-notes", key: "release_notes", icon: History, badgeClass: "icon-badge-purple" },
     ],
   },
+];
+
+const mobilePrimaryNav = [
+  { path: "/", key: "dashboard", icon: LayoutDashboard },
+  { path: "/nutrition", key: "nutrition", icon: Utensils },
+  { path: "/workout", key: "workout", icon: Dumbbell },
+  { path: "/running", key: "running", icon: Footprints },
 ];
 
 interface AppLayoutProps {
@@ -210,10 +219,61 @@ export default function AppLayout({ children }: AppLayoutProps) {
         </header>
 
         {/* Page content */}
-        <main className="app-main flex-1 overflow-y-auto">
+        <main className="app-main flex-1 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+5.75rem)] lg:pb-0">
           {children}
         </main>
       </div>
+
+      {/* Mobile primary navigation — secondary routes remain in the existing drawer. */}
+      <nav
+        className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 px-2 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-[0_-8px_24px_-18px_rgba(0,0,0,0.45)] backdrop-blur-xl lg:hidden"
+        aria-label={t("nav.mobile_navigation")}
+      >
+        <div className="mx-auto flex max-w-md items-stretch justify-between">
+          {mobilePrimaryNav.map((item) => {
+            const isActive = location === item.path;
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.path}
+                href={item.path}
+                aria-current={isActive ? "page" : undefined}
+                className={cn(
+                  "mobile-bottom-nav-item flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-[10px] font-bold transition-colors",
+                  isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span className={cn(
+                  "flex h-7 w-9 items-center justify-center rounded-xl transition-colors",
+                  isActive && "bg-primary/12"
+                )}>
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="truncate">{t(`nav.${item.key}`)}</span>
+              </Link>
+            );
+          })}
+          <Button
+            variant="ghost"
+            className={cn(
+              "mobile-bottom-nav-item h-auto min-w-0 flex-1 flex-col gap-1 rounded-xl px-1 py-1.5 text-[10px] font-bold",
+              !mobilePrimaryNav.some((item) => item.path === location) ? "text-primary" : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => setSidebarOpen(true)}
+            aria-label={t("nav.more")}
+            aria-expanded={sidebarOpen}
+          >
+            <span className={cn(
+              "flex h-7 w-9 items-center justify-center rounded-xl transition-colors",
+              !mobilePrimaryNav.some((item) => item.path === location) && "bg-primary/12"
+            )}>
+              <Menu className="h-4 w-4" />
+            </span>
+            <span className="truncate">{t("nav.more")}</span>
+          </Button>
+        </div>
+      </nav>
     </div>
   );
 }

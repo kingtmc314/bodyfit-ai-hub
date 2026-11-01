@@ -180,6 +180,129 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
+const ALL_HISTORY_PERIOD_VALUE = "all";
+const HK_HISTORY_MONTHS = [
+  { value: "01", label: "1 月" }, { value: "02", label: "2 月" }, { value: "03", label: "3 月" },
+  { value: "04", label: "4 月" }, { value: "05", label: "5 月" }, { value: "06", label: "6 月" },
+  { value: "07", label: "7 月" }, { value: "08", label: "8 月" }, { value: "09", label: "9 月" },
+  { value: "10", label: "10 月" }, { value: "11", label: "11 月" }, { value: "12", label: "12 月" },
+] as const;
+
+type HistoryPeriod = { year: string; month: string };
+type HistoryComparisonMode = "previous_month" | "prior_equivalent_period";
+
+/** Sessions are stored as timestamps, so derive every history filter date in Hong Kong time. */
+function getSessionHKDate(session: any): string {
+  return toHKDateString(session?.startTime);
+}
+
+function matchesHistoryPeriod(session: any, period: HistoryPeriod): boolean {
+  const hkDate = getSessionHKDate(session);
+  return Boolean(hkDate)
+    && (period.year === ALL_HISTORY_PERIOD_VALUE || hkDate.slice(0, 4) === period.year)
+    && (period.month === ALL_HISTORY_PERIOD_VALUE || hkDate.slice(5, 7) === period.month);
+}
+
+function formatHistoryPeriod(period: HistoryPeriod): string {
+  if (period.year === ALL_HISTORY_PERIOD_VALUE && period.month === ALL_HISTORY_PERIOD_VALUE) return "全部歷史記錄";
+  if (period.year === ALL_HISTORY_PERIOD_VALUE) return `所有年份 · ${Number(period.month)} 月`;
+  if (period.month === ALL_HISTORY_PERIOD_VALUE) return `${period.year} 年`;
+  return `${period.year} 年 ${Number(period.month)} 月`;
+}
+
+function getComparisonPeriod(period: HistoryPeriod, mode: HistoryComparisonMode): HistoryPeriod | null {
+  if (period.year === ALL_HISTORY_PERIOD_VALUE && period.month === ALL_HISTORY_PERIOD_VALUE) return null;
+
+  // 「上個月」只適用於一個明確選定的年月，才能維持相同的完整月份比較。
+  if (mode === "previous_month") {
+    if (period.year === ALL_HISTORY_PERIOD_VALUE || period.month === ALL_HISTORY_PERIOD_VALUE) return null;
+    const month = Number(period.month);
+    const isJanuary = month === 1;
+    return {
+      year: String(Number(period.year) - (isJanuary ? 1 : 0)),
+      month: String(isJanuary ? 12 : month - 1).padStart(2, "0"),
+    };
+  }
+
+  // 「上一個同等期間」保留已選擇的月份範圍，並往前推一年。
+  return period.year === ALL_HISTORY_PERIOD_VALUE
+    ? null
+    : { year: String(Number(period.year) - 1), month: period.month };
+}
+
+function summariseHistorySessions(historySessions: any[]) {
+  return historySessions.reduce(
+    (summary, session) => ({
+      sessions: summary.sessions + 1,
+      volume: summary.volume + (Number(session.totalVolume) || 0),
+      calories: summary.calories + (Number(session.caloriesBurned) || 0),
+      duration: summary.duration + (Number(session.duration) || 0),
+    }),
+    { sessions: 0, volume: 0, calories: 0, duration: 0 },
+  );
+}
+
+function HistorySummaryCard({
+  title,
+  periodLabel,
+  summary,
+  historyUnit,
+  unavailableMessage,
+}: {
+  title: string;
+  periodLabel: string;
+  summary: ReturnType<typeof summariseHistorySessions> | null;
+  historyUnit: "kg" | "lbs";
+  unavailableMessage?: string;
+}) {
+  const displayVolume = summary
+    ? historyUnit === "lbs"
+      ? Math.round(summary.volume * 2.20462).toLocaleString()
+      : Math.round(summary.volume).toLocaleString()
+    : "—";
+  const showCalories = Boolean(summary && summary.calories > 0);
+  const showDuration = Boolean(summary && summary.duration > 0);
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <h3 className="font-semibold text-foreground">{title}</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">{periodLabel}</p>
+        </div>
+        <BarChart2 className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+      </div>
+      {summary ? (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+          <div>
+            <p className="text-xs text-muted-foreground">課程次數</p>
+            <p className="font-bold text-foreground mt-0.5">{summary.sessions.toLocaleString()} <span className="text-xs font-medium text-muted-foreground">次</span></p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">總訓練量</p>
+            <p className="font-bold text-primary mt-0.5">{displayVolume} <span className="text-xs font-medium">{historyUnit}</span></p>
+          </div>
+          {showCalories && (
+            <div>
+              <p className="text-xs text-muted-foreground">消耗熱量</p>
+              <p className="font-semibold text-orange-500 mt-0.5">{Math.round(summary.calories).toLocaleString()} <span className="text-xs font-medium">kcal</span></p>
+            </div>
+          )}
+          {showDuration && (
+            <div>
+              <p className="text-xs text-muted-foreground">總時長</p>
+              <p className="font-semibold text-foreground mt-0.5">{Math.round(summary.duration).toLocaleString()} <span className="text-xs font-medium text-muted-foreground">分鐘</span></p>
+            </div>
+          )}
+          {!showCalories && !showDuration && <p className="col-span-2 text-xs text-muted-foreground">此期間沒有已記錄的熱量或時長。</p>}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground py-2">{unavailableMessage}</p>
+      )}
+    </div>
+  );
+}
+
 export default function Workout() {
   const { t } = useTranslation();
   const isOwner = useIsOwner();
@@ -204,6 +327,9 @@ export default function Workout() {
   const [exerciseLibMode, setExerciseLibMode] = useState<'strength'|'cardio'>('strength');
   const [weightUnit, setWeightUnit] = useState<'kg'|'lbs'>('kg');
   const [historyUnit, setHistoryUnit] = useState<'kg'|'lbs'>('kg');
+  const [historyYear, setHistoryYear] = useState(ALL_HISTORY_PERIOD_VALUE);
+  const [historyMonth, setHistoryMonth] = useState(ALL_HISTORY_PERIOD_VALUE);
+  const [historyComparisonMode, setHistoryComparisonMode] = useState<HistoryComparisonMode>('prior_equivalent_period');
   const [restSeconds, setRestSeconds] = useState(0);
   const [restPreset, setRestPreset] = useState(90);
   const [restIsActive, setRestIsActive] = useState(false);
@@ -533,6 +659,58 @@ export default function Workout() {
       };
     });
   }, [sessions]);
+
+  const historyPeriod = useMemo<HistoryPeriod>(
+    () => ({ year: historyYear, month: historyMonth }),
+    [historyYear, historyMonth],
+  );
+  const historyYearOptions = useMemo(() => Array.from(new Set(
+    sessions
+      .map((session: any) => getSessionHKDate(session).slice(0, 4))
+      .filter((year: string) => /^\d{4}$/.test(year)),
+  )).sort((a, b) => Number(b) - Number(a)), [sessions]);
+  const comparisonPeriod = useMemo(
+    () => getComparisonPeriod(historyPeriod, historyComparisonMode),
+    [historyPeriod, historyComparisonMode],
+  );
+  const sessionMatchesSearch = (session: any) => !sessionSearch.trim()
+    || (session.name || "").toLowerCase().includes(sessionSearch.trim().toLowerCase());
+  const selectedHistorySessions = useMemo(
+    () => sessions.filter((session: any) => matchesHistoryPeriod(session, historyPeriod) && sessionMatchesSearch(session)),
+    [sessions, historyPeriod, sessionSearch],
+  );
+  const comparisonHistorySessions = useMemo(
+    () => comparisonPeriod
+      ? sessions.filter((session: any) => matchesHistoryPeriod(session, comparisonPeriod) && sessionMatchesSearch(session))
+      : [],
+    [sessions, comparisonPeriod, sessionSearch],
+  );
+  const selectedHistorySummary = useMemo(
+    () => summariseHistorySessions(selectedHistorySessions),
+    [selectedHistorySessions],
+  );
+  const comparisonHistorySummary = useMemo(
+    () => comparisonPeriod ? summariseHistorySessions(comparisonHistorySessions) : null,
+    [comparisonPeriod, comparisonHistorySessions],
+  );
+  const sortedHistorySessions = useMemo(() => {
+    const sorted = [...selectedHistorySessions];
+    switch (sessionSort) {
+      case "date_asc":
+        sorted.sort((a: any, b: any) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+        break;
+      case "date_desc":
+        sorted.sort((a: any, b: any) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+        break;
+      case "volume_desc":
+        sorted.sort((a: any, b: any) => Number(b.totalVolume || 0) - Number(a.totalVolume || 0));
+        break;
+      case "duration_desc":
+        sorted.sort((a: any, b: any) => Number(b.duration || 0) - Number(a.duration || 0));
+        break;
+    }
+    return sorted;
+  }, [selectedHistorySessions, sessionSort]);
 
   const selectedDaySessions = useMemo(
     () => sessions.filter((session: any) => toHKDateString(new Date(session.startTime)) === selectedDate),
@@ -1067,10 +1245,65 @@ export default function Workout() {
 
         {/* History & Charts Tab */}
         <TabsContent value="history" className="mt-4 space-y-4">
+          <div className="bg-card border border-border rounded-2xl p-4 sm:p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="font-semibold text-foreground">訓練歷史篩選</h3>
+                <p className="text-xs text-muted-foreground mt-1">日期按香港時間（UTC+8）計算；搜尋文字亦會套用到下方比較摘要。</p>
+              </div>
+              <Badge variant="secondary" className="w-fit text-xs shrink-0">{formatHistoryPeriod(historyPeriod)}</Badge>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <Select value={historyYear} onValueChange={setHistoryYear}>
+                <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="選擇年份" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_HISTORY_PERIOD_VALUE}>所有年份</SelectItem>
+                  {historyYearOptions.map(year => <SelectItem key={year} value={year}>{year} 年</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={historyMonth} onValueChange={setHistoryMonth}>
+                <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="選擇月份" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_HISTORY_PERIOD_VALUE}>所有月份</SelectItem>
+                  {HK_HISTORY_MONTHS.map(month => <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={historyComparisonMode} onValueChange={value => setHistoryComparisonMode(value as HistoryComparisonMode)}>
+                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="prior_equivalent_period">比較：上一個同等期間</SelectItem>
+                  <SelectItem value="previous_month" disabled={historyYear === ALL_HISTORY_PERIOD_VALUE || historyMonth === ALL_HISTORY_PERIOD_VALUE}>比較：上個月</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {historyComparisonMode === "previous_month" && !comparisonPeriod && (
+              <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">請先選擇一個完整的年份及月份，才可與上個月比較。</p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <HistorySummaryCard
+              title="已選期間摘要"
+              periodLabel={formatHistoryPeriod(historyPeriod)}
+              summary={selectedHistorySummary}
+              historyUnit={historyUnit}
+            />
+            <HistorySummaryCard
+              title="比較期間摘要"
+              periodLabel={comparisonPeriod ? formatHistoryPeriod(comparisonPeriod) : "未能建立可比較期間"}
+              summary={comparisonHistorySummary}
+              historyUnit={historyUnit}
+              unavailableMessage="請選擇年份以比較上一個同等期間；如要比較上個月，請同時選擇年份及月份。"
+            />
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Weekly Volume */}
             <div className="bg-card border border-border rounded-2xl p-5">
-              <h3 className="font-semibold text-foreground mb-4">Weekly Training Volume</h3>
+              <div className="mb-4">
+                <h3 className="font-semibold text-foreground">最近 7 天訓練量</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">按香港時間計算</p>
+              </div>
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={weeklyVolume}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.24 0.018 240)" vertical={false} />
@@ -1085,7 +1318,10 @@ export default function Workout() {
             {/* Session History */}
             <div className="bg-card border border-border rounded-2xl p-5">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-foreground">All Sessions</h3>
+                <div>
+                  <h3 className="font-semibold text-foreground">訓練記錄</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">{sortedHistorySessions.length} 次符合目前篩選</p>
+                </div>
                 <div className="flex items-center border border-border rounded-lg overflow-hidden text-xs">
                   <button className={`px-2 py-0.5 transition-colors ${historyUnit === 'kg' ? 'bg-primary text-primary-foreground' : 'bg-transparent text-muted-foreground hover:bg-muted'}`} onClick={() => setHistoryUnit('kg')}>kg</button>
                   <button className={`px-2 py-0.5 transition-colors ${historyUnit === 'lbs' ? 'bg-primary text-primary-foreground' : 'bg-transparent text-muted-foreground hover:bg-muted'}`} onClick={() => setHistoryUnit('lbs')}>lbs</button>
@@ -1103,18 +1339,8 @@ export default function Workout() {
                   </SelectContent>
                 </Select>
               </div>
-              {(() => {
-                let sList = [...sessions];
-                if (sessionSearch.trim()) sList = sList.filter((s: any) => (s.name||'').toLowerCase().includes(sessionSearch.toLowerCase()));
-                switch (sessionSort) {
-                  case 'date_asc': sList.sort((a: any,b: any)=>new Date(a.startTime).getTime()-new Date(b.startTime).getTime()); break;
-                  case 'date_desc': sList.sort((a: any,b: any)=>new Date(b.startTime).getTime()-new Date(a.startTime).getTime()); break;
-                  case 'volume_desc': sList.sort((a: any,b: any)=>Number(b.totalVolume||0)-Number(a.totalVolume||0)); break;
-                  case 'duration_desc': sList.sort((a: any,b: any)=>Number(b.duration||0)-Number(a.duration||0)); break;
-                }
-                return (
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {sList.map((s: any) => (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {sortedHistorySessions.map((s: any) => (
                   <div key={s.id} className="flex items-center gap-3 py-2 border-b border-border last:border-0">
                     <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center shrink-0">
                       <Dumbbell className="w-4 h-4 text-purple-400" />
@@ -1141,10 +1367,8 @@ export default function Workout() {
                     </div>
                   </div>
                 ))}
-                    {sList.length === 0 && <p className="text-muted-foreground text-sm text-center py-4">{t('common.no_records')}</p>}
-                  </div>
-                );
-              })()}
+                {sortedHistorySessions.length === 0 && <p className="text-muted-foreground text-sm text-center py-4">{t('common.no_records')}</p>}
+              </div>
             </div>
           </div>
         </TabsContent>

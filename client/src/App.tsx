@@ -27,6 +27,7 @@ const Goals = lazy(() => import("./pages/Goals"));
 const Running = lazy(() => import("./pages/Running"));
 const Steps = lazy(() => import("./pages/Steps"));
 const BloodPressure = lazy(() => import("./pages/BloodPressure"));
+const ReleaseNotes = lazy(() => import("./pages/ReleaseNotes"));
 
 const PageLoader = () => (
   <div className="p-6 space-y-4">
@@ -62,6 +63,7 @@ function Router() {
       <Route path="/running" component={() => <AppLayout><Lazy><Running /></Lazy></AppLayout>} />
       <Route path="/steps" component={() => <AppLayout><Lazy><Steps /></Lazy></AppLayout>} />
       <Route path="/blood-pressure" component={() => <AppLayout><Lazy><BloodPressure /></Lazy></AppLayout>} />
+      <Route path="/release-notes" component={() => <AppLayout><Lazy><ReleaseNotes /></Lazy></AppLayout>} />
       <Route path="/login" component={Login} />
       <Route path="/auth/callback" component={AuthCallback} />
       <Route path="/404" component={NotFound} />

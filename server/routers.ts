@@ -15,12 +15,14 @@ import { eq, and, desc, gte, lte, like, or, sql, inArray } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
 import { storagePut, storageGetSignedUrl } from "./storage";
 import { nanoid } from "nanoid";
+import { buildGarminVisionContent, parseGarminExtraction } from "./garminImport";
 import { todayHK, daysAgoHK, toHKDateString } from "./hkTime";
 import { parseRows, detectDataType, type ImportDataType } from "./csvImport";
 import { ensureSheetHeaders, writeRowToSheet } from "./sheetsService";
 import { buildProgressionSuggestion } from "@shared/progression";
 import { buildHistoricalBackfillCandidates, summariseHistoricalBackfill, type BackfillScope } from "@shared/runningBackfill";
 import { buildDateChunks, fetchHistoricalWeatherForDate, fetchHistoricalWeatherRange, HONG_KONG_WEATHER_LOCATION, resolveWeatherLocation } from "./weatherService";
+import { parseGarminRawFile } from "./garminFileImport";
 import Papa from "papaparse";
 // Fixed owner user ID - no login required
 const OWNER_USER_ID = 2;
@@ -2248,13 +2250,13 @@ For steps data: extract daily step count, floors climbed, distance, active minut
       })).min(1).max(16),
     }))
     .mutation(async ({ input }) => {
-      const imageUrls = await Promise.all(input.screenshots.map(async (screenshot, index) => {
+      const signedImageUrls = await Promise.all(input.screenshots.map(async (screenshot, index) => {
         const buffer = Buffer.from(screenshot.base64, "base64");
         if (buffer.length > 10 * 1024 * 1024) throw new Error(`第 ${index + 1} 張截圖超過 10MB 限制`);
         const ext = screenshot.mimeType.includes("png") ? "png" : "jpg";
         const key = `garmin-imports/${OWNER_USER_ID}/${nanoid()}.${ext}`;
-        const { url } = await storagePut(key, buffer, screenshot.mimeType);
-        return url;
+        const stored = await storagePut(key, buffer, screenshot.mimeType);
+        return storageGetSignedUrl(stored.key);
       }));
 
       const systemPrompt = `You extract Garmin Connect screenshots into exactly one running activity. Return only strict JSON. Do not invent values from a graph. Prefer explicit numbers on Overview/Stats/Laps; if screenshots conflict, choose the value from Overview or Stats and explain the conflict briefly in Traditional Chinese notes. A displayed day and month without a year must produce null date. All extracted metric labels and notes must be understandable to a Traditional Chinese user.`;
@@ -2277,10 +2279,7 @@ Required JSON fields:
           content: systemPrompt,
         }, {
           role: "user",
-          content: [
-            { type: "text", text: userPrompt },
-            ...imageUrls.map((url, index) => ({ type: "image_url" as const, image_url: { url, detail: "high" as const }, name: `Garmin screenshot ${index + 1}` })),
-          ],
+          content: buildGarminVisionContent(signedImageUrls, userPrompt),
         }],
         response_format: {
           type: "json_schema",
@@ -2321,8 +2320,7 @@ Required JSON fields:
           },
         },
       });
-      const content = response.choices[0]?.message?.content;
-      return JSON.parse(typeof content === "string" ? content : "{}");
+      return parseGarminExtraction(response.choices[0]?.message?.content);
     }),
 
   /**
@@ -2528,6 +2526,48 @@ const runningRouter = router({
       };
     }),
 
+  parseGarminRawFile: ownerProcedure
+    .input(z.object({
+      fileName: z.string().trim().min(5).max(180),
+      mimeType: z.string().trim().max(120),
+      base64: z.string().min(16),
+    }))
+    .mutation(async ({ input }) => {
+      const buffer = Buffer.from(input.base64, "base64");
+      return parseGarminRawFile(buffer, input.fileName);
+    }),
+
+  saveGarminRawSource: ownerProcedure
+    .input(z.object({
+      runningLogId: z.number().int().positive(),
+      fileName: z.string().trim().min(1).max(180),
+      mimeType: z.string().trim().max(120),
+      base64: z.string().min(16),
+      sourceFormat: z.enum(["FIT", "CSV"]),
+      sampleCount: z.number().int().min(0).max(30000),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const buffer = Buffer.from(input.base64, "base64");
+      if (buffer.length > 25 * 1024 * 1024) throw new Error("原始 Garmin 檔案超過 25MB 限制");
+      const extension = input.sourceFormat === "FIT" ? "fit" : "csv";
+      const stored = await storagePut(`garmin-originals/${OWNER_USER_ID}/${nanoid()}.${extension}`, buffer, input.mimeType || "application/octet-stream");
+      const metadata = JSON.stringify({
+        rawFileKey: stored.key,
+        rawFileUrl: stored.url,
+        rawFileName: input.fileName,
+        rawFileFormat: input.sourceFormat,
+        rawSampleCount: input.sampleCount,
+      });
+      await db.execute(sql`
+        UPDATE running_logs
+        SET garmin_details = COALESCE(garmin_details, '{}'::jsonb) || ${metadata}::jsonb
+        WHERE id = ${input.runningLogId}
+      `);
+      return { success: true, fileUrl: stored.url };
+    }),
+
   addLog: publicProcedure
     .input(z.object({
       date: z.string(),
@@ -2566,6 +2606,17 @@ const runningRouter = router({
         distanceKm: z.number().nullable(),
         avgPace: z.string().nullable(),
       })).optional(),
+      timeSeries: z.array(z.object({
+        elapsedSec: z.number().int().nonnegative(),
+        timestamp: z.string().min(1).max(40),
+        distanceKm: z.number().optional(),
+        paceSecPerKm: z.number().optional(),
+        heartRate: z.number().optional(),
+        cadence: z.number().optional(),
+        power: z.number().optional(),
+        altitudeM: z.number().optional(),
+        temperatureC: z.number().optional(),
+      })).max(30000).optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
@@ -2585,7 +2636,7 @@ const runningRouter = router({
           average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
           vertical_oscillation_cm, avg_ground_contact_time_ms,
           calories, temperature, humidity, wind_speed, apparent_temp, precipitation,
-          weather_code, weather_condition, weather_location, weather_observed_at, weather_source, garmin_details, laps, notes
+          weather_code, weather_condition, weather_location, weather_observed_at, weather_source, garmin_details, laps, time_series, notes
         ) VALUES (
           ${input.date},
           ${input.runningType ?? null},
@@ -2619,6 +2670,7 @@ const runningRouter = router({
           ${input.weatherSource ?? null},
           ${input.garminDetails ? JSON.stringify(input.garminDetails) : null}::jsonb,
           ${input.laps ? JSON.stringify(input.laps) : null}::jsonb,
+          ${input.timeSeries ? JSON.stringify(input.timeSeries) : null}::jsonb,
           ${input.notes ?? null}
         ) RETURNING id
       `);
@@ -2672,6 +2724,17 @@ const runningRouter = router({
         distanceKm: z.number().nullable(),
         avgPace: z.string().nullable(),
       })).optional(),
+      timeSeries: z.array(z.object({
+        elapsedSec: z.number().int().nonnegative(),
+        timestamp: z.string().min(1).max(40),
+        distanceKm: z.number().optional(),
+        paceSecPerKm: z.number().optional(),
+        heartRate: z.number().optional(),
+        cadence: z.number().optional(),
+        power: z.number().optional(),
+        altitudeM: z.number().optional(),
+        temperatureC: z.number().optional(),
+      })).max(30000).optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
@@ -2688,7 +2751,7 @@ const runningRouter = router({
         .filter(([, v]) => v !== undefined)
         .map(([k, v]) => {
           const col = k.replace(/([A-Z])/g, '_$1').toLowerCase();
-          if (k === "garminDetails" || k === "laps") {
+          if (k === "garminDetails" || k === "laps" || k === "timeSeries") {
             return sql`${sql.raw(col)} = ${JSON.stringify(v)}::jsonb`;
           }
           return sql`${sql.raw(col)} = ${v}`;

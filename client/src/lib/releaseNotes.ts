@@ -1,0 +1,75 @@
+export type ReleaseNoteStatus = "released" | "in-progress";
+
+export type ReleaseNote = {
+  version: string;
+  status: ReleaseNoteStatus;
+  title: string;
+  summary: string;
+  highlights: readonly string[];
+};
+
+/**
+ * Customer-facing release notes. Keep in-progress entries limited to changes
+ * currently present in the product; published versions should contain only
+ * confirmed release highlights.
+ */
+export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: "3.14.4",
+    status: "released",
+    title: "資料匯入、歷史比較與行動導覽",
+    summary: "已發布：讓 Garmin 原始資料、長期健身比較與手機操作更容易追蹤。",
+    highlights: [
+      "修復 Garmin 多截圖分析的安全圖片網址與回應格式容錯，保留先核對再儲存的流程。",
+      "新增 Garmin FIT／CSV 原始檔匯入，保存可用的逐秒配速、心率、步頻、功率與海拔樣本。",
+      "健身歷史新增香港年月篩選，以及與上一個同等期間或上個月的訓練量比較。",
+      "行動裝置新增固定底部主導覽，快速前往儀表板、飲食、健身與跑步。",
+      "保留「更多」選單與原有側欄抽屜，集中存取其他健康紀錄及工具。",
+      "新增本頁版本歷程，讓你隨時了解產品功能更新。",
+    ],
+  },
+  {
+    version: "3.14.3",
+    status: "released",
+    title: "介面可讀性與歷史訓練紀錄",
+    summary: "已發布：提升操作介面的清晰度，並確保完整顯示過往訓練紀錄。",
+    highlights: [
+      "強化淺色模式的表面、邊框、標籤、控制項與鍵盤焦點對比。",
+      "改善側欄選取狀態，並維持暖橙與青綠的 BodyFit 視覺風格及深色模式支援。",
+      "移除用戶端 90 天顯示限制，讓完整的歷史健身課程與組數可在訓練歷史中查看。",
+    ],
+  },
+  {
+    version: "3.14.2",
+    status: "released",
+    title: "跑步天氣與 Garmin 匯入",
+    summary: "已發布：讓跑步紀錄保留更完整的環境、配速與訓練細節。",
+    highlights: [
+      "跑步紀錄與賽事支援香港天氣資訊及路線／天氣回填預覽。",
+      "加入 Garmin 多張截圖匯入，可合併總覽、統計、分段與圖表後再確認。",
+      "擴充跑步資料同步、能量實驗室個人化，以及跑鞋效能與鞋櫃篩選工具。",
+    ],
+  },
+  {
+    version: "3.14.1",
+    status: "released",
+    title: "跑鞋效能與訓練規劃",
+    summary: "已發布：改善跑鞋分析，並加強健身課程與跑步情境規劃。",
+    highlights: [
+      "跑鞋效能可按距離區間及路線類型篩選，並支援完整匯出同步。",
+      "新增推、拉、腿與全身訓練範本，以及一鍵漸進超負荷建議。",
+      "跑步能量實驗室可儲存具名的香港天氣情境比較快照。",
+    ],
+  },
+  {
+    version: "3.14.0",
+    status: "released",
+    title: "核心健康與訓練體驗更新",
+    summary: "已發布：聚焦飲食、健身與跑步追蹤，同時保留既有健康紀錄。",
+    highlights: [
+      "飲食改為相片優先的擷取、覆核與記錄流程，方便由餐點相片開始。",
+      "健身加入下一組預填與休息計時，讓課程記錄更流暢。",
+      "跑步加入跑鞋效能圖與互動能量實驗室，支援不同距離與天氣因素。",
+    ],
+  },
+];

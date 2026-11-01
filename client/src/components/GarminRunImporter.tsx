@@ -95,7 +95,15 @@ export default function GarminRunImporter({ onExtracted }: GarminRunImporterProp
       setPreview({ fields, confidence: result.confidence, notes: result.notes, lapCount: result.laps?.length ?? 0, screenshotCount: files.length });
       setApplied(false);
     },
-    onError: (error) => toast.error(`Garmin 截圖分析失敗：${error.message}`),
+    onError: (error) => {
+      const raw = error.message || "";
+      const guidance = /expected pattern|invalid url|image_url|url/i.test(raw)
+        ? "截圖傳送格式已自動修正；請直接再按一次「合併分析」。若仍失敗，先保留總覽、Stats、Laps 這 3–8 張最清晰畫面。"
+        : /json|format|parse/i.test(raw)
+          ? "分析服務回傳格式不完整；請重試或減少至 6–8 張最清晰的 Garmin 畫面。"
+          : "請重試；你目前已選取的截圖會保留在這個視窗。";
+      toast.error("Garmin 截圖分析暫時未完成", { description: guidance });
+    },
   });
 
   const chooseFiles = (selected: FileList | null) => {

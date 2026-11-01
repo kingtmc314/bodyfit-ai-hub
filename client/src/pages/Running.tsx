@@ -14,6 +14,7 @@ import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Spark
 import LogPhotoUploader, { LogPhotoUploaderRef } from "@/components/LogPhotoUploader";
 import ScreenshotImporter from "@/components/ScreenshotImporter";
 import GarminRunImporter from "@/components/GarminRunImporter";
+import GarminRawFileImporter from "@/components/GarminRawFileImporter";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart, Area
@@ -129,6 +130,7 @@ const defaultForm = {
   weatherTime: "07:00",
   garminDetails: {},
   laps: [],
+  timeSeries: [],
   notes: "",
 };
 
@@ -140,6 +142,7 @@ export default function Running() {
   const [showDialog, setShowDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
+  const [garminRawFile, setGarminRawFile] = useState<{ file: File; sourceFormat: "FIT" | "CSV"; sampleCount: number } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [aiWeeks, setAiWeeks] = useState(12);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
@@ -279,28 +282,60 @@ export default function Running() {
   const photoUploaderRef = useRef<LogPhotoUploaderRef>(null);
 
   // ─── Mutations ───────────────────────────────────────────────────────────────
+  const saveGarminRawSourceMutation = trpc.running.saveGarminRawSource.useMutation();
+  const persistGarminRawSource = async (runningLogId: number) => {
+    if (!garminRawFile) return;
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("無法讀取 Garmin 原始檔"));
+      reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+      reader.readAsDataURL(garminRawFile.file);
+    });
+    await saveGarminRawSourceMutation.mutateAsync({
+      runningLogId,
+      fileName: garminRawFile.file.name,
+      mimeType: garminRawFile.file.type || "application/octet-stream",
+      base64,
+      sourceFormat: garminRawFile.sourceFormat,
+      sampleCount: garminRawFile.sampleCount,
+    });
+  };
   const addMutation = trpc.running.addLog.useMutation({
     onSuccess: async (newRecord) => {
       if (photoUploaderRef.current?.hasStagedFiles()) {
         await photoUploaderRef.current.uploadStagedFiles(newRecord.id);
+      }
+      try {
+        await persistGarminRawSource(newRecord.id);
+      } catch (error) {
+        toast.error("跑步已儲存，但 Garmin 原始檔未能保存", { description: error instanceof Error ? error.message : "可重新編輯這筆跑步後再上載。" });
       }
       utils.running.getLogs.invalidate();
       utils.running.getStats.invalidate();
       toast.success(t("running.add_record"));
       setShowDialog(false);
       setForm(defaultForm);
+      setGarminRawFile(null);
     },
     onError: (e) => toast.error(t("common.error") + ": " + e.message),
   });
 
   const updateMutation = trpc.running.updateLog.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
+      if (editEntry?.id) {
+        try {
+          await persistGarminRawSource(Number(editEntry.id));
+        } catch (error) {
+          toast.error("跑步已更新，但 Garmin 原始檔未能保存", { description: error instanceof Error ? error.message : "可再試一次上載。" });
+        }
+      }
       utils.running.getLogs.invalidate();
       utils.running.getStats.invalidate();
       toast.success(t("common.success"));
       setEditEntry(null);
       setShowDialog(false);
       setForm(defaultForm);
+      setGarminRawFile(null);
     },
     onError: (e) => toast.error(t("common.error") + ": " + e.message),
   });
@@ -367,6 +402,7 @@ export default function Running() {
   const openAdd = () => {
     setEditEntry(null);
     setForm(defaultForm);
+    setGarminRawFile(null);
     setShowDialog(true);
   };
 
@@ -405,8 +441,10 @@ export default function Running() {
       weatherTime: row.weather_observed_at?.split("T")[1] ?? "07:00",
       garminDetails: row.garmin_details ?? {},
       laps: row.laps ?? [],
+      timeSeries: row.time_series ?? [],
       notes: row.notes ?? "",
     });
+    setGarminRawFile(null);
     setShowDialog(true);
   };
 
@@ -443,6 +481,7 @@ export default function Running() {
       weatherSource: form.weatherSource || undefined,
       garminDetails: Object.keys(form.garminDetails ?? {}).length ? form.garminDetails : undefined,
       laps: Array.isArray(form.laps) && form.laps.length ? form.laps : undefined,
+      timeSeries: Array.isArray(form.timeSeries) && form.timeSeries.length ? form.timeSeries : undefined,
       notes: form.notes || undefined,
     };
     if (editEntry) {
@@ -1744,7 +1783,7 @@ export default function Running() {
       </Tabs>
 
       {/* Add / Edit Dialog */}
-      <Dialog open={showDialog} onOpenChange={(o) => { setShowDialog(o); if (!o) { setEditEntry(null); setForm(defaultForm); } }}>
+      <Dialog open={showDialog} onOpenChange={(o) => { setShowDialog(o); if (!o) { setEditEntry(null); setForm(defaultForm); setGarminRawFile(null); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editEntry ? t("running.edit_record") : t("running.add_record")}</DialogTitle>
@@ -1759,6 +1798,18 @@ export default function Running() {
                 onExtracted={(fields, sourceFiles) => {
                   setForm((previous: any) => ({ ...previous, ...fields }));
                   if (!editEntry) photoUploaderRef.current?.stageFiles(sourceFiles);
+                }}
+              />
+              <GarminRawFileImporter
+                onExtracted={(preview, sourceFile) => {
+                  setForm((previous: any) => ({
+                    ...previous,
+                    ...preview.fields,
+                    garminDetails: { ...previous.garminDetails, ...preview.garminDetails },
+                    laps: preview.laps,
+                    timeSeries: preview.timeSeries,
+                  }));
+                  setGarminRawFile({ file: sourceFile, sourceFormat: preview.sourceFormat, sampleCount: preview.timeSeries.length });
                 }}
               />
             </div>

@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.14.3");
+    expect(APP_VERSION).toBe("3.14.4");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -139,8 +139,8 @@ describe("v3.14.2 complete running record workflow", () => {
     expect(runningSource).toContain("GarminRunImporter");
     expect(importerSource).toContain("要保留逐秒配速／心率／功率曲線");
     expect(routerSource).toContain("extractGarminRun");
-    expect(schemaSource).toContain('garminDetails: json("garmin_details")');
-    expect(schemaSource).toContain('laps: json("laps")');
+    expect(schemaSource).toContain('garminDetails: jsonb("garmin_details")');
+    expect(schemaSource).toContain('laps: jsonb("laps")');
   });
 
   it("consolidates shoe analysis under trends, supports combined locker filters, and themes the lab", () => {
@@ -169,5 +169,38 @@ describe("v3.14.3 colour contrast and surface clarity", () => {
   it("does not exclude older owner workout sessions through a client-side 90-day query window", () => {
     expect(workoutSource).toContain("trpc.workout.getSessions.useQuery();");
     expect(workoutSource).not.toContain("Date.now() - 90 * 86400000");
+  });
+});
+
+describe("v3.14.4 complete import and history workflow", () => {
+  const appSource = readFileSync(new URL("../client/src/App.tsx", import.meta.url), "utf8");
+  const layoutSource = readFileSync(new URL("../client/src/components/AppLayout.tsx", import.meta.url), "utf8");
+  const releaseNotesSource = readFileSync(new URL("../client/src/lib/releaseNotes.ts", import.meta.url), "utf8");
+  const workoutSource = readFileSync(new URL("../client/src/pages/Workout.tsx", import.meta.url), "utf8");
+  const runningSource = readFileSync(new URL("../client/src/pages/Running.tsx", import.meta.url), "utf8");
+  const routerSource = readFileSync(new URL("../server/routers.ts", import.meta.url), "utf8");
+  const schemaSource = readFileSync(new URL("../drizzle/schema.ts", import.meta.url), "utf8");
+
+  it("keeps Garmin FIT/CSV source parsing and per-sample data in the same reviewed running record", () => {
+    expect(runningSource).toContain("GarminRawFileImporter");
+    expect(runningSource).toContain("timeSeries");
+    expect(routerSource).toContain("parseGarminRawFile");
+    expect(routerSource).toContain("saveGarminRawSource");
+    expect(schemaSource).toContain('timeSeries: jsonb("time_series")');
+  });
+
+  it("offers Hong Kong calendar history filters and comparable training summaries", () => {
+    expect(workoutSource).toContain("historyYear");
+    expect(workoutSource).toContain("historyMonth");
+    expect(workoutSource).toContain("HistorySummaryCard");
+    expect(workoutSource).toContain("Asia/Hong_Kong");
+  });
+
+  it("exposes fixed mobile navigation and a user-facing release history", () => {
+    expect(appSource).toContain('path="/release-notes"');
+    expect(layoutSource).toContain("mobile-bottom-nav");
+    expect(layoutSource).toContain("safe-area-inset-bottom");
+    expect(releaseNotesSource).toContain('version: "3.14.4"');
+    expect(releaseNotesSource).toContain('status: "released"');
   });
 });

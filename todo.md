@@ -486,3 +486,12 @@
 - [x] Refine card, panel, table and focus treatments for clearer hierarchy across light and dark modes
 - [x] Restore historical workout visibility by removing the accidental 90-day client query limit while retaining server-side owner isolation
 - [x] Verify desktop/mobile colour contrast, automated tests, production build, checkpoint, GitHub push and Vercel release
+
+## v3.14.4 Garmin Multi-Screenshot Import Reliability
+- [x] Repair Garmin multi-screenshot vision input URLs and remove unsupported content metadata that causes provider pattern validation errors
+- [x] Add resilient response parsing and user-friendly retry guidance while retaining source screenshots and review-before-save workflow
+- [x] Add Hong Kong month/year quick filters and comparable training-volume summaries to the complete workout history
+- [x] Add Garmin original FIT/CSV upload support that preserves available per-second samples alongside the reviewed running record
+- [x] Add an in-app version history and release notes view for clear, user-facing change tracking
+- [x] Move the mobile primary navigation to a fixed bottom bar with safe-area spacing and retain access to secondary routes
+- [ ] Verify with a structured multi-screenshot request test, production build, checkpoint, GitHub push and Vercel release
