@@ -18,6 +18,15 @@ interface RunningEnergyLabProps {
   baselinePaceSecPerKm?: number;
   maxHeartRate?: number;
   restingHeartRate?: number;
+  profile?: {
+    heightCm?: number | null;
+    weightKg?: number | null;
+    bodyFatPct?: number | null;
+    muscleMassKg?: number | null;
+    recordedDate?: string | null;
+  } | null;
+  runTypeDistribution?: Array<{ type: string; count: number }>;
+  historicalRunCount?: number;
 }
 
 const SCENARIOS: Array<{ id: RunningScenario; label: string; detail: string }> = [
@@ -46,7 +55,7 @@ const ChartTooltip = ({ active, payload, label }: any) => {
   );
 };
 
-export default function RunningEnergyLab({ baselinePaceSecPerKm, maxHeartRate, restingHeartRate }: RunningEnergyLabProps) {
+export default function RunningEnergyLab({ baselinePaceSecPerKm, maxHeartRate, restingHeartRate, profile, runTypeDistribution, historicalRunCount }: RunningEnergyLabProps) {
   const isOwner = useIsOwner();
   const utils = trpc.useUtils();
   const [scenario, setScenario] = useState<RunningScenario>("800m");
@@ -81,10 +90,16 @@ export default function RunningEnergyLab({ baselinePaceSecPerKm, maxHeartRate, r
     baselinePaceSecPerKm,
     maxHeartRate,
     restingHeartRate,
+    heightCm: profile?.heightCm ?? undefined,
+    weightKg: profile?.weightKg ?? undefined,
+    bodyFatPct: profile?.bodyFatPct ?? undefined,
+    muscleMassKg: profile?.muscleMassKg ?? undefined,
+    runTypeDistribution,
+    historicalRunCount,
     temperatureC,
     humidityPct,
     windKph,
-  }), [scenario, easyRunDistance, baselinePaceSecPerKm, maxHeartRate, restingHeartRate, temperatureC, humidityPct, windKph]);
+  }), [scenario, easyRunDistance, baselinePaceSecPerKm, maxHeartRate, restingHeartRate, profile, runTypeDistribution, historicalRunCount, temperatureC, humidityPct, windKph]);
 
   useEffect(() => {
     setFrame(40);
@@ -109,9 +124,11 @@ export default function RunningEnergyLab({ baselinePaceSecPerKm, maxHeartRate, r
   const currentPoint = simulation.timeline[Math.min(frame, 40)];
   const liveTimeline = simulation.timeline.slice(0, Math.max(2, frame + 1)).map(point => ({ ...point, elapsed: Math.round(point.elapsedSeconds) }));
   const progress = (frame / 40) * 100;
-  const simulationHint = baselinePaceSecPerKm
-    ? `已套用你的歷史平均配速 ${formatPace(baselinePaceSecPerKm)} 作個人化校準。`
-    : "尚未有足夠的歷史配速，暫以 6:00/km 參考值估算。";
+  const simulationHint = simulation.calibration.level === "個人化"
+    ? `已依你的身體成分、${historicalRunCount ?? 0} 次跑步樣本與同類型訓練比重校準。`
+    : baselinePaceSecPerKm
+      ? `已套用你的歷史平均配速 ${formatPace(baselinePaceSecPerKm)} 作部分個人化校準。`
+      : "尚未有足夠的歷史配速，暫以 6:00/km 參考值估算。";
 
   const replay = () => {
     setFrame(0);
@@ -188,7 +205,12 @@ export default function RunningEnergyLab({ baselinePaceSecPerKm, maxHeartRate, r
             <div className="running-lab-track relative h-9 overflow-hidden rounded-lg border border-white/10 bg-slate-900"><div className="absolute inset-y-0 left-0 rounded-lg bg-gradient-to-r from-emerald-500/35 to-cyan-400/30 transition-all duration-150" style={{ width: `${Math.max(3, progress)}%` }} /><div className="absolute inset-y-0 left-0 right-0 opacity-40" style={{ backgroundImage: "repeating-linear-gradient(90deg, transparent 0 35px, rgba(255,255,255,.18) 36px 38px)" }} /><Footprints className="absolute top-2 h-5 w-5 text-white drop-shadow-[0_2px_8px_rgba(16,185,129,.9)] transition-all duration-150" style={{ left: `calc(${Math.min(progress, 96)}% - 0.65rem)` }} /></div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><Metric label="估算完賽時間" value={formatSeconds(simulation.weatherFinishSeconds)} sub={`基準 ${formatSeconds(simulation.baselineFinishSeconds)}`} accent="text-emerald-300" /><Metric label="天氣後配速" value={formatPace(simulation.weatherPaceSecPerKm)} sub={`環境負荷 +${simulation.weatherLoadPercent}%`} accent="text-cyan-300" /><Metric label="能量系統" value={`${Math.round(currentPoint.aerobic)}% 有氧`} sub={`ATP-PCr ${Math.round(currentPoint.atpPcr)}% · 糖酵解 ${Math.round(currentPoint.glycolytic)}%`} accent="text-violet-300" /></div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric label="估算完賽時間" value={formatSeconds(simulation.weatherFinishSeconds)} sub={`基準 ${formatSeconds(simulation.baselineFinishSeconds)}`} accent="text-emerald-300" /><Metric label="天氣後配速" value={formatPace(simulation.weatherPaceSecPerKm)} sub={`環境負荷 +${simulation.weatherLoadPercent}%`} accent="text-cyan-300" /><Metric label="能量系統" value={`${Math.round(currentPoint.aerobic)}% 有氧`} sub={`ATP-PCr ${Math.round(currentPoint.atpPcr)}% · 糖酵解 ${Math.round(currentPoint.glycolytic)}%`} accent="text-violet-300" /><Metric label="個人資料校準" value={simulation.calibration.level} sub={simulation.calibration.notes.length ? simulation.calibration.notes.slice(0, 2).join(" · ") : "使用參考值"} accent="text-amber-300" /></div>
+
+          <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.035] p-4 sm:p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-sm font-bold">個人化校準資料</p><p className="mt-0.5 text-xs text-slate-400">使用你最近儲存的身體狀況與跑步歷史調整估算；缺少項目時會維持保守參考值。</p></div><span className="w-fit rounded-full border border-cyan-300/20 bg-cyan-300/10 px-2.5 py-1 text-[11px] font-bold text-cyan-200">{simulation.calibration.level}</span></div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4"><CalibrationItem label="身體狀況" value={[profile?.heightCm ? `${profile.heightCm.toFixed(0)} cm` : null, profile?.weightKg ? `${profile.weightKg.toFixed(1)} kg` : null].filter(Boolean).join(" · ") || "待補充"} /><CalibrationItem label="體組成" value={[profile?.bodyFatPct ? `體脂 ${profile.bodyFatPct.toFixed(1)}%` : null, profile?.muscleMassKg ? `肌肉 ${profile.muscleMassKg.toFixed(1)} kg` : null].filter(Boolean).join(" · ") || "待補充"} /><CalibrationItem label="歷史配速" value={baselinePaceSecPerKm ? formatPace(baselinePaceSecPerKm) : "待補充"} /><CalibrationItem label="跑步類型" value={(runTypeDistribution ?? []).slice(0, 2).map(item => `${item.type} ${item.count}`).join(" · ") || "待補充"} /></div>
+          </div>
 
           {isOwner && <div className="mt-5 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.06] p-3.5"><div className="flex flex-col gap-2 sm:flex-row"><Input value={scenarioName} onChange={event => setScenarioName(event.target.value)} maxLength={80} placeholder={`命名此情境，例如：${temperatureC}°C 潮濕 10K`} className="h-9 border-white/15 bg-slate-950/40 text-sm text-white placeholder:text-slate-500" /><Button type="button" onClick={saveCurrentScenario} disabled={saveScenario.isPending} className="h-9 shrink-0 bg-cyan-300 text-slate-950 hover:bg-cyan-200">{saveScenario.isPending ? <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}儲存比較</Button></div><p className="mt-2 text-[11px] text-cyan-100/75">會保存項目、天氣與預估結果；日後的歷史跑步更新不會覆蓋此比較快照。</p></div>}
 
@@ -214,6 +236,10 @@ export default function RunningEnergyLab({ baselinePaceSecPerKm, maxHeartRate, r
 
 function Metric({ label, value, sub, accent }: { label: string; value: string; sub: string; accent: string }) {
   return <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p><p className={`mt-1 text-lg font-bold ${accent}`}>{value}</p><p className="mt-0.5 text-[11px] text-slate-400">{sub}</p></div>;
+}
+
+function CalibrationItem({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-xl border border-white/10 bg-slate-950/35 px-3 py-2.5"><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 truncate text-xs font-medium text-slate-200" title={value}>{value}</p></div>;
 }
 
 function LiveMetric({ label, value, unit, tone }: { label: string; value: string; unit: string; tone: "cyan" | "rose" | "violet" | "sky" | "amber" | "emerald" }) {

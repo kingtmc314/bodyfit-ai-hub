@@ -15,6 +15,12 @@ export interface EnergyModelInput {
   baselinePaceSecPerKm?: number;
   maxHeartRate?: number;
   restingHeartRate?: number;
+  heightCm?: number;
+  weightKg?: number;
+  bodyFatPct?: number;
+  muscleMassKg?: number;
+  runTypeDistribution?: Array<{ type: string; count: number }>;
+  historicalRunCount?: number;
   temperatureC: number;
   humidityPct: number;
   windKph: number;
@@ -45,10 +51,30 @@ export interface RunningEnergySimulation {
   peakVo2: number;
   peakHeartRate: number;
   recovery: { after1MinHr: number; after3MinHr: number; after5MinHr: number; oxygenDebtClearPct: number };
+  calibration: { level: "個人化" | "部分個人化" | "參考值"; notes: string[] };
   timeline: EnergyPoint[];
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const hasNumber = (value: number | undefined): value is number => value !== undefined && Number.isFinite(value);
+
+function getScenarioExperience(input: EnergyModelInput): number {
+  const entries = input.runTypeDistribution ?? [];
+  const total = entries.reduce((sum, entry) => sum + Math.max(0, entry.count || 0), 0);
+  if (!total) return 0;
+  const scenarioTerms = input.scenario === "easy"
+    ? ["easy", "long", "recovery", "trail"]
+    : input.scenario === "100m" || input.scenario === "200m"
+      ? ["sprint", "interval", "time trial"]
+      : input.scenario === "400m" || input.scenario === "800m"
+        ? ["interval", "tempo", "race", "fartlek"]
+        : ["tempo", "race", "long", "interval"];
+  const matching = entries
+    .filter(entry => scenarioTerms.some(term => entry.type.toLowerCase().includes(term)))
+    .reduce((sum, entry) => sum + Math.max(0, entry.count || 0), 0);
+  return clamp(matching / total, 0, 1);
+}
 
 const profileFor = (scenario: RunningScenario, easyRunDistance: EasyRunDistance) => {
   if (scenario === "easy") {
@@ -87,16 +113,40 @@ export function buildRunningEnergySimulation(input: EnergyModelInput): RunningEn
   const maxHr = clamp(input.maxHeartRate || 185, 150, 220);
   const restingHr = clamp(input.restingHeartRate || 58, 38, 100);
   const enduranceFactor = clamp(360 / baselinePace, 0.72, 1.28);
+  const scenarioExperience = getScenarioExperience(input);
+  const weightAdjustment = hasNumber(input.weightKg) ? clamp((input.weightKg - 70) * 0.055, -1.4, 3.2) : 0;
+  const bodyFatAdjustment = hasNumber(input.bodyFatPct) ? clamp((input.bodyFatPct - 18) * 0.06, -0.7, 2.2) : 0;
+  const muscleRatio = hasNumber(input.muscleMassKg) && hasNumber(input.weightKg) && input.weightKg > 0
+    ? input.muscleMassKg / input.weightKg
+    : null;
+  const muscleEfficiency = muscleRatio === null ? 0 : clamp((muscleRatio - 0.7) * 4.5, -0.7, 0.7);
+  const heightAdjustment = hasNumber(input.heightCm) ? clamp((input.heightCm - 172) * -0.008, -0.25, 0.25) : 0;
+  const historyConfidence = clamp((input.historicalRunCount ?? 0) / 24, 0, 1);
+  const personalPerformanceAdjustment = clamp(
+    (weightAdjustment + bodyFatAdjustment - muscleEfficiency + heightAdjustment) * (0.45 + historyConfidence * 0.55)
+      - scenarioExperience * 0.7,
+    -2.5,
+    4.5,
+  );
+  const calibrationNotes: string[] = [];
+  if (hasNumber(input.heightCm)) calibrationNotes.push(`身高 ${input.heightCm.toFixed(0)} cm`);
+  if (hasNumber(input.weightKg)) calibrationNotes.push(`體重 ${input.weightKg.toFixed(1)} kg`);
+  if (hasNumber(input.bodyFatPct)) calibrationNotes.push(`體脂 ${input.bodyFatPct.toFixed(1)}%`);
+  if (hasNumber(input.muscleMassKg)) calibrationNotes.push(`肌肉量 ${input.muscleMassKg.toFixed(1)} kg`);
+  if ((input.historicalRunCount ?? 0) > 0) calibrationNotes.push(`${input.historicalRunCount} 次近期跑步記錄`);
+  if (scenarioExperience > 0) calibrationNotes.push(`${Math.round(scenarioExperience * 100)}% 同類型訓練比重`);
+  const calibrationLevel = calibrationNotes.length >= 4 ? "個人化" : calibrationNotes.length >= 2 ? "部分個人化" : "參考值";
 
   const baselineFinishSeconds = input.scenario === "easy"
-    ? profile.distanceKm * baselinePace
-    : profile.referenceSeconds / enduranceFactor;
+    ? profile.distanceKm * baselinePace * (1 + personalPerformanceAdjustment / 100)
+    : (profile.referenceSeconds / enduranceFactor) * (1 + personalPerformanceAdjustment / 100);
 
   // Conservative weather load: temperature has the largest weight, then humidity and wind.
   const heatLoad = Math.max(0, input.temperatureC - 12) * 0.16 + Math.max(0, 8 - input.temperatureC) * 0.06;
   const humidityLoad = Math.max(0, input.humidityPct - 55) * Math.max(0, input.temperatureC - 14) * 0.004;
   const windLoad = Math.max(0, input.windKph - 6) * 0.065;
-  const weatherLoadPercent = clamp(heatLoad + humidityLoad + windLoad, 0, 18);
+  const bodyHeatLoad = Math.max(0, weightAdjustment + bodyFatAdjustment - muscleEfficiency) * 0.28;
+  const weatherLoadPercent = clamp(heatLoad + humidityLoad + windLoad + bodyHeatLoad, 0, 18);
   const weatherFinishSeconds = baselineFinishSeconds * (1 + weatherLoadPercent / 100);
   const weatherPaceSecPerKm = weatherFinishSeconds / profile.distanceKm;
 
@@ -119,7 +169,7 @@ export function buildRunningEnergySimulation(input: EnergyModelInput): RunningEn
     const glycolytic = (glycolyticRaw / totalEnergy) * 100;
     const aerobic = (aerobicRaw / totalEnergy) * 100;
     const exertion = clamp(0.22 + intensity * (0.78 - 0.23 * Math.exp(-progress * 4)), 0, 1);
-    const vo2 = clamp(8 + 58 * exertion * (1 - Math.exp(-progress * 5.4)), 0, 72);
+    const vo2 = clamp(8 + 58 * exertion * (1 - Math.exp(-progress * 5.4)) + muscleEfficiency * 1.8 - bodyFatAdjustment * 0.7, 0, 72);
     const heartRate = clamp(restingHr + (maxHr - restingHr) * exertion * (1 - Math.exp(-progress * 4.2)) + weatherLoadPercent * 0.2, restingHr, maxHr);
     const respirationRate = clamp(13 + 45 * exertion * (1 - Math.exp(-progress * 3.8)), 10, 64);
     const breathDepth = clamp(0.25 + 0.72 * exertion * (1 - Math.exp(-progress * 3.2)), 0, 1);
@@ -158,6 +208,7 @@ export function buildRunningEnergySimulation(input: EnergyModelInput): RunningEn
       after5MinHr: Math.round(clamp(finalPoint.heartRate - recoveryDrop * 2.05, restingHr, maxHr)),
       oxygenDebtClearPct: Math.round(clamp(58 + durationFactor * 22 - weatherLoadPercent * 0.4, 35, 86)),
     },
+    calibration: { level: calibrationLevel, notes: calibrationNotes },
     timeline,
   };
 }

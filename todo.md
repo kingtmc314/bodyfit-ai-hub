@@ -466,3 +466,16 @@
 - [x] Add deterministic progressive-overload recommendations based on existing completed workout sets
 - [x] Persist named running-weather simulation scenarios and show a Hong Kong-time comparison view
 - [x] Verify schema migration, historical-record preservation, desktop/mobile UX, tests, production build, checkpoint and Vercel release
+
+## v3.14.2 Historical Route & Weather Backfill
+- [x] Add complete weather conditions to running logs and race records, including condition, place, Hong Kong time, feels-like temperature, humidity, wind, and precipitation
+- [x] Add one-record historical weather lookup for past running and race entries, while retaining manual weather editing
+- [x] Build a preview-first batch backfill tool for missing route types and weather, with date range, scope, location, and overwrite controls
+- [x] Extend CSV templates/imports and Google Sheets running synchronization for the complete running weather and existing biomechanics fields
+- [x] Personalize the running energy lab with historical height, body composition, running-type distribution and performance records
+- [x] Add a continuous Garmin multi-screenshot import flow that merges Overview, Stats, Laps, and Charts into one reviewable running record and retains every source screenshot
+- [x] Preserve structured Garmin metrics and per-lap values for one run; surface a clear limitation that per-second chart curves need an original FIT/CSV export rather than screenshots
+- [x] Move shoe-performance comparisons into the running trends experience and consolidate running charts into a coherent analytics view
+- [x] Add Shoe Locker multi-select status, brand, usage-count, mileage and retirement filters with compatible sorting
+- [x] Make the running energy laboratory surface follow the app light/dark theme without changing its simulation interactions
+- [x] Apply a non-destructive Supabase migration and validate record preservation, desktop/mobile UX, tests, production build, checkpoint and Vercel release

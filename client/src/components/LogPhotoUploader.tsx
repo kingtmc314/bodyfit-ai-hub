@@ -17,6 +17,8 @@ export interface LogPhotoUploaderRef {
   /** Upload all staged files to the newly created log. Returns true on success. */
   uploadStagedFiles: (logId: number) => Promise<boolean>;
   hasStagedFiles: () => boolean;
+  /** Add files selected by a structured importer before the parent record is saved. */
+  stageFiles: (files: File[]) => void;
 }
 
 interface LogPhotoUploaderProps {
@@ -98,6 +100,14 @@ const LogPhotoUploader = forwardRef<LogPhotoUploaderRef, LogPhotoUploaderProps>(
         }
       },
       hasStagedFiles: () => staged.length > 0,
+      stageFiles: (files: File[]) => {
+        const eligible = files.filter(file => file.type.startsWith("image/") && file.size <= 10 * 1024 * 1024);
+        if (!eligible.length) return;
+        setStaged(previous => [
+          ...previous,
+          ...eligible.map(file => ({ file, previewUrl: URL.createObjectURL(file) })),
+        ]);
+      },
     }));
 
     const handleFiles = async (files: FileList | null) => {

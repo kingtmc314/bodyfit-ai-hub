@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.14.1");
+    expect(APP_VERSION).toBe("3.14.2");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -115,5 +115,40 @@ describe("v3.14.1 performance workflow", () => {
     expect(labSource).toContain("已儲存的天氣比較");
     expect(routerSource).toContain("saveLabScenario");
     expect(schemaSource).toContain("runningLabScenarios");
+  });
+});
+
+describe("v3.14.2 complete running record workflow", () => {
+  const runningSource = readFileSync(new URL("../client/src/pages/Running.tsx", import.meta.url), "utf8");
+  const labSource = readFileSync(new URL("../client/src/components/RunningEnergyLab.tsx", import.meta.url), "utf8");
+  const importerSource = readFileSync(new URL("../client/src/components/GarminRunImporter.tsx", import.meta.url), "utf8");
+  const routerSource = readFileSync(new URL("../server/routers.ts", import.meta.url), "utf8");
+  const schemaSource = readFileSync(new URL("../drizzle/schema.ts", import.meta.url), "utf8");
+  const stylesheetSource = readFileSync(new URL("../client/src/index.css", import.meta.url), "utf8");
+
+  it("keeps complete weather context and preview-first backfill available for both runs and races", () => {
+    expect(runningSource).toContain("比賽天氣狀況");
+    expect(runningSource).toContain("RunningHistoricalBackfill");
+    expect(routerSource).toContain("lookupHistoricalWeather");
+    expect(routerSource).toContain("applyHistoricalBackfill");
+    expect(schemaSource).toContain('weatherCondition: text("weather_condition")');
+    expect(schemaSource).toContain('weatherObservedAt: text("weather_observed_at")');
+  });
+
+  it("merges reviewed Garmin screenshots into one traceable record with per-lap values", () => {
+    expect(runningSource).toContain("GarminRunImporter");
+    expect(importerSource).toContain("要保留逐秒配速／心率／功率曲線");
+    expect(routerSource).toContain("extractGarminRun");
+    expect(schemaSource).toContain('garminDetails: json("garmin_details")');
+    expect(schemaSource).toContain('laps: json("laps")');
+  });
+
+  it("consolidates shoe analysis under trends, supports combined locker filters, and themes the lab", () => {
+    expect(runningSource).toContain("ShoePerformanceTrendPanel");
+    expect(runningSource).toContain("跑步數據趨勢");
+    expect(runningSource).toContain("shoeStatusFilters");
+    expect(runningSource).toContain("shoeBrandFilters");
+    expect(stylesheetSource).toContain(".running-lab");
+    expect(labSource).toContain("running-lab");
   });
 });

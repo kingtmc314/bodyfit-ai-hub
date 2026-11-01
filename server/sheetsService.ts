@@ -14,7 +14,7 @@ const SHEET_TABS = {
 const BODY_COLUMNS = ["Date", "Weight (kg)", "BMI", "Body Fat %", "Fat Mass (kg)", "Muscle Mass (kg)", "BMR", "Visceral Fat", "Source", "Notes"];
 const SLEEP_COLUMNS = ["Date", "Sleep Score", "Resting HR", "Body Battery", "Pulse Ox (%)", "Respiration", "HRV", "Quality", "Duration (h)", "Source"];
 const HR_COLUMNS = ["Date", "Resting HR", "High HR", "HRV", "Source", "Notes"];
-const RUNNING_COLUMNS = ["Date", "Running Type", "Route Type", "Running Shoes", "Distance (km)", "Duration (h)", "Duration (min)", "Duration (sec)", "Avg Pace", "Best Pace", "Avg HR", "Max HR", "Avg Cadence", "Max Cadence", "Avg Stride Length (m)", "Avg Vertical Ratio", "Vertical Oscillation (cm)", "Avg Ground Contact Time (ms)", "Calories", "Temperature (°C)", "Humidity (%)", "Notes"];
+const RUNNING_COLUMNS = ["Date", "Running Type", "Route Type", "Running Shoes", "Distance (km)", "Duration (h)", "Duration (min)", "Duration (sec)", "Avg Pace", "Best Pace", "Avg HR", "Max HR", "Avg Cadence", "Max Cadence", "Avg Stride Length (m)", "Avg Vertical Ratio", "Vertical Oscillation (cm)", "Avg Ground Contact Time (ms)", "Calories", "Temperature (°C)", "Humidity (%)", "Notes", "Wind Speed (km/h)", "Feels Like (°C)", "Precipitation (mm)", "Weather Condition", "Weather Location", "Weather Observed At (HK)", "Weather Source", "Garmin Details", "Laps"];
 
 function getAuth() {
   const credJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -164,6 +164,15 @@ export async function writeRowToSheet(type: keyof typeof SHEET_TABS, rowData: Re
         rowData.temperature !== undefined ? Number(rowData.temperature) : "",
         rowData.humidity !== undefined ? Number(rowData.humidity) : "",
         String(rowData.notes ?? ""),
+        rowData.windSpeed !== undefined ? Number(rowData.windSpeed) : "",
+        rowData.apparentTemp !== undefined ? Number(rowData.apparentTemp) : "",
+        rowData.precipitation !== undefined ? Number(rowData.precipitation) : "",
+        String(rowData.weatherCondition ?? ""),
+        String(rowData.weatherLocation ?? ""),
+        String(rowData.weatherObservedAt ?? ""),
+        String(rowData.weatherSource ?? ""),
+        rowData.garminDetails ? JSON.stringify(rowData.garminDetails) : "",
+        rowData.laps ? JSON.stringify(rowData.laps) : "",
       ];
     }
 
@@ -190,10 +199,22 @@ export async function ensureSheetHeaders(type: keyof typeof SHEET_TABS): Promise
     try {
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${sheetName}!A1:Z1`,
+        range: `${sheetName}!A1:ZZ1`,
       });
       const firstRow = response.data.values?.[0];
-      if (firstRow && firstRow.length > 0) return;
+      if (firstRow && firstRow.length > 0) {
+        // Running weather/Garmin columns are appended after the historical Notes column,
+        // so rewriting row 1 never shifts any existing running values.
+        if (type === "running" && firstRow.length < RUNNING_COLUMNS.length) {
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${sheetName}!A1`,
+            valueInputOption: "USER_ENTERED",
+            requestBody: { values: [RUNNING_COLUMNS] },
+          });
+        }
+        return;
+      }
     } catch {
       // The Running tab is created on demand, so a new app install can begin
       // synchronizing full running metrics without manual Sheet preparation.

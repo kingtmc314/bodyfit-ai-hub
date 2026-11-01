@@ -10,15 +10,17 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot, Trophy, Star, MapPin, Calendar, Clock, Award, Flag, Zap, Package, Camera, ImageIcon, ArrowUpDown, Thermometer, Wind, Droplets, Download } from "lucide-react";
+import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot, Trophy, Star, MapPin, Calendar, Clock, Award, Flag, Zap, Package, Camera, ImageIcon, ArrowUpDown, Thermometer, Wind, Droplets, Download, CloudSun } from "lucide-react";
 import LogPhotoUploader, { LogPhotoUploaderRef } from "@/components/LogPhotoUploader";
 import ScreenshotImporter from "@/components/ScreenshotImporter";
+import GarminRunImporter from "@/components/GarminRunImporter";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart, Area
 } from "recharts";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import RunningEnergyLab from "@/components/RunningEnergyLab";
+import RunningHistoricalBackfill from "@/components/RunningHistoricalBackfill";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const formatPace = (secPerKm: number | null | undefined): string => {
@@ -70,6 +72,29 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
+function ShoePerformanceTrendPanel({
+  data,
+  distanceBand,
+  routeType,
+  onDistanceBandChange,
+  onRouteTypeChange,
+  compact = false,
+}: {
+  data: Array<any>;
+  distanceBand: "all" | "short" | "medium" | "long" | "ultra";
+  routeType: string;
+  onDistanceBandChange: (value: "all" | "short" | "medium" | "long" | "ultra") => void;
+  onRouteTypeChange: (value: string) => void;
+  compact?: boolean;
+}) {
+  const routeLabel = (route: string) => route === "Road" ? "公路" : route === "Track" ? "跑道" : route === "Trail" ? "越野" : route === "Treadmill" ? "跑步機" : "混合路線";
+  return <section className={`rounded-2xl border border-orange-200/60 bg-gradient-to-br from-orange-50/80 via-card to-amber-50/40 p-4 shadow-sm dark:border-orange-500/15 dark:from-orange-950/20 dark:via-card dark:to-amber-950/10 ${compact ? "" : ""}`}>
+    <div className="mb-4 flex flex-wrap items-end justify-between gap-2"><div><p className="text-xs font-bold uppercase tracking-wider text-orange-600 dark:text-orange-400">Shoe Intelligence</p><h3 className="mt-0.5 font-bold text-foreground">各跑鞋效能統計</h3><p className="mt-0.5 text-xs text-muted-foreground">比較每雙跑鞋的累積里數、配速、心率與步頻表現。</p></div><Badge variant="outline" className="border-orange-300/60 text-orange-700 dark:text-orange-300">{data.length} 雙有紀錄</Badge></div>
+    <div className="mb-4 grid grid-cols-1 gap-2 rounded-xl border border-orange-200/60 bg-white/65 p-2.5 sm:grid-cols-2 dark:border-orange-400/15 dark:bg-slate-950/25"><label className="min-w-0"><span className="mb-1 block text-[11px] font-semibold text-muted-foreground">距離區間</span><Select value={distanceBand} onValueChange={(value) => onDistanceBandChange(value as typeof distanceBand)}><SelectTrigger className="h-8 bg-card text-xs"><SelectValue /></SelectTrigger><SelectContent>{DISTANCE_BANDS.map(band => <SelectItem key={band.value} value={band.value}>{band.label}</SelectItem>)}</SelectContent></Select></label><label className="min-w-0"><span className="mb-1 block text-[11px] font-semibold text-muted-foreground">路線類型</span><Select value={routeType} onValueChange={onRouteTypeChange}><SelectTrigger className="h-8 bg-card text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">全部路線</SelectItem>{ROUTE_TYPES.map(route => <SelectItem key={route} value={route}>{routeLabel(route)}</SelectItem>)}</SelectContent></Select></label></div>
+    {data.length === 0 ? <div className="rounded-xl border border-dashed border-orange-300/50 py-8 text-center text-sm text-muted-foreground">此篩選條件下暫無跑鞋紀錄；可調整篩選或在跑步紀錄填入跑鞋及路線類型。</div> : <div className="grid grid-cols-1 gap-4 xl:grid-cols-2"><div className="rounded-xl border border-border/70 bg-card/75 p-3"><p className="mb-2 text-xs font-semibold text-foreground">累積距離（km）</p><ResponsiveContainer width="100%" height={compact ? 175 : 210}><BarChart data={data} layout="vertical" margin={{ left: 10, right: 12 }}><CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} /><XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} /><YAxis type="category" dataKey="shoe" width={105} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} /><Tooltip content={<CustomTooltip />} /><Bar dataKey="距離" fill="#f97316" radius={[0, 5, 5, 0]} /></BarChart></ResponsiveContainer></div><div className="rounded-xl border border-border/70 bg-card/75 p-3"><p className="mb-2 text-xs font-semibold text-foreground">平均配速（秒／km，數值較低較快）</p><ResponsiveContainer width="100%" height={compact ? 175 : 210}><BarChart data={data} layout="vertical" margin={{ left: 10, right: 12 }}><CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} /><XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} /><YAxis type="category" dataKey="shoe" width={105} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} /><Tooltip formatter={(value: number) => [formatPace(Number(value)), "平均配速"]} /><Bar dataKey="配速秒" fill="#8b5cf6" radius={[0, 5, 5, 0]} /></BarChart></ResponsiveContainer></div><div className="xl:col-span-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">{data.map(item => <div key={item.shoe} className="rounded-xl border border-border/70 bg-card/75 px-3 py-2.5"><p className="truncate text-xs font-semibold text-foreground">{item.shoe}</p><div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground"><span><b className="text-foreground">{item.次數}</b> 次</span><span><b className="text-foreground">{item.距離}</b> km</span>{item.平均心率 && <span><b className="text-foreground">{item.平均心率}</b> bpm</span>}{item.平均步頻 && <span><b className="text-foreground">{item.平均步頻}</b> spm</span>}</div></div>)}</div></div>}
+  </section>;
+}
+
 // ─── Default form ─────────────────────────────────────────────────────────────
 const defaultForm = {
   date: todayHKString(),
@@ -91,6 +116,19 @@ const defaultForm = {
   verticalOscillationCm: "",
   avgGroundContactTimeMs: "",
   calories: "",
+  temperature: "",
+  humidity: "",
+  windSpeed: "",
+  apparentTemp: "",
+  precipitation: "",
+  weatherCode: "",
+  weatherCondition: "",
+  weatherLocation: "香港",
+  weatherObservedAt: "",
+  weatherSource: "",
+  weatherTime: "07:00",
+  garminDetails: {},
+  laps: [],
   notes: "",
 };
 
@@ -115,6 +153,11 @@ export default function Running() {
   const [logSearch, setLogSearch] = useState('');
   const [shoeDistanceBand, setShoeDistanceBand] = useState<'all' | 'short' | 'medium' | 'long' | 'ultra'>('all');
   const [shoeRouteType, setShoeRouteType] = useState('all');
+  const [shoeStatusFilters, setShoeStatusFilters] = useState<string[]>([]);
+  const [shoeBrandFilters, setShoeBrandFilters] = useState<string[]>([]);
+  const [shoeUsageFilter, setShoeUsageFilter] = useState<'all' | 'unused' | 'starter' | 'regular' | 'frequent'>('all');
+  const [shoeMileageFilter, setShoeMileageFilter] = useState<'all' | 'fresh' | 'building' | 'high' | 'service'>('all');
+  const [shoeSearch, setShoeSearch] = useState('');
 
   // Shoe Locker state
   const [showShoeDialog, setShowShoeDialog] = useState(false);
@@ -125,7 +168,7 @@ export default function Running() {
   // Race Events state
   const [showRaceDialog, setShowRaceDialog] = useState(false);
   const [editRace, setEditRace] = useState<any>(null);
-  const [raceForm, setRaceForm] = useState<any>({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', finishHr: '', finishMin: '', finishSec: '', targetHr: '', targetMin: '', targetSec: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', notes: '' });
+  const [raceForm, setRaceForm] = useState<any>({ raceName: '', date: todayHKString(), distanceKm: '', location: '', registration: '', bibNo: '', isPb: false, finishTime: '', finishHr: '', finishMin: '', finishSec: '', targetHr: '', targetMin: '', targetSec: '', overallPlace: '', ageGroupPlace: '', genderGroupPlace: '', runningShoes: '', temperature: '', humidity: '', windSpeed: '', apparentTemp: '', precipitation: '', weatherCode: '', weatherCondition: '', weatherLocation: '', weatherObservedAt: '', weatherSource: '', weatherTime: '07:00', notes: '' });
   const [deleteRaceConfirm, setDeleteRaceConfirm] = useState<number | null>(null);
 
   // Hoisted so both PB cards and race list can call it
@@ -150,12 +193,24 @@ export default function Running() {
       ageGroupPlace: race.age_group_place != null ? String(race.age_group_place) : '',
       genderGroupPlace: race.gender_group_place != null ? String(race.gender_group_place) : '',
       runningShoes: race.running_shoes || '',
+      temperature: race.temperature != null ? String(race.temperature) : '',
+      humidity: race.humidity != null ? String(race.humidity) : '',
+      windSpeed: race.wind_speed != null ? String(race.wind_speed) : '',
+      apparentTemp: race.apparent_temp != null ? String(race.apparent_temp) : '',
+      precipitation: race.precipitation != null ? String(race.precipitation) : '',
+      weatherCode: race.weather_code != null ? String(race.weather_code) : '',
+      weatherCondition: race.weather_condition || '',
+      weatherLocation: race.weather_location || race.location || '',
+      weatherObservedAt: race.weather_observed_at || '',
+      weatherSource: race.weather_source || '',
+      weatherTime: race.weather_observed_at?.split('T')[1] ?? '07:00',
       notes: race.notes || '',
     });
     setShowRaceDialog(true);
   };
 
   const utils = trpc.useUtils();
+  const [weatherLookupTarget, setWeatherLookupTarget] = useState<"log" | "race" | null>(null);
   const { data: logs = [], isLoading } = trpc.running.getLogs.useQuery({ limit: 200 });
   const { data: filteredShoePerformance = [] } = trpc.running.getShoePerformance.useQuery({
     distanceBand: shoeDistanceBand,
@@ -169,6 +224,28 @@ export default function Running() {
   const { data: pbs = [] } = trpc.running.getPBs.useQuery();
   const { data: hrLogs = [] } = trpc.heartRate.getAll.useQuery({ limit: 30 });
   const { data: maxHrData } = trpc.heartRate.getMaxHr.useQuery();
+  const { data: labPersonalization } = trpc.running.getLabPersonalization.useQuery();
+  const historicalWeatherMutation = trpc.running.lookupHistoricalWeather.useMutation({
+    onSuccess: (weather) => {
+      const weatherFields = {
+        temperature: weather.temperature != null ? String(weather.temperature) : "",
+        humidity: weather.humidity != null ? String(weather.humidity) : "",
+        windSpeed: weather.windSpeed != null ? String(weather.windSpeed) : "",
+        apparentTemp: weather.apparentTemp != null ? String(weather.apparentTemp) : "",
+        precipitation: weather.precipitation != null ? String(weather.precipitation) : "",
+        weatherCode: weather.weatherCode != null ? String(weather.weatherCode) : "",
+        weatherCondition: weather.weatherCondition ?? "",
+        weatherLocation: weather.weatherLocation ?? "",
+        weatherObservedAt: weather.weatherObservedAt ?? "",
+        weatherSource: weather.weatherSource ?? "",
+      };
+      if (weatherLookupTarget === "race") setRaceForm((previous: any) => ({ ...previous, ...weatherFields }));
+      else setForm((previous: any) => ({ ...previous, ...weatherFields }));
+      toast.success("已載入香港時間的歷史天氣資料");
+      setWeatherLookupTarget(null);
+    },
+    onError: (error) => { toast.error(`無法取得歷史天氣：${error.message}`); setWeatherLookupTarget(null); },
+  });
 
   // Shoe run history modal state
   const [shoeHistoryModal, setShoeHistoryModal] = useState<{ shoe: any; runs: any[] } | null>(null);
@@ -315,6 +392,19 @@ export default function Running() {
       verticalOscillationCm: row.vertical_oscillation_cm != null ? String(row.vertical_oscillation_cm) : "",
       avgGroundContactTimeMs: row.avg_ground_contact_time_ms != null ? String(row.avg_ground_contact_time_ms) : "",
       calories: row.calories != null ? String(row.calories) : "",
+      temperature: row.temperature != null ? String(row.temperature) : "",
+      humidity: row.humidity != null ? String(row.humidity) : "",
+      windSpeed: row.wind_speed != null ? String(row.wind_speed) : "",
+      apparentTemp: row.apparent_temp != null ? String(row.apparent_temp) : "",
+      precipitation: row.precipitation != null ? String(row.precipitation) : "",
+      weatherCode: row.weather_code != null ? String(row.weather_code) : "",
+      weatherCondition: row.weather_condition ?? "",
+      weatherLocation: row.weather_location ?? "香港",
+      weatherObservedAt: row.weather_observed_at ?? "",
+      weatherSource: row.weather_source ?? "",
+      weatherTime: row.weather_observed_at?.split("T")[1] ?? "07:00",
+      garminDetails: row.garmin_details ?? {},
+      laps: row.laps ?? [],
       notes: row.notes ?? "",
     });
     setShowDialog(true);
@@ -341,6 +431,18 @@ export default function Running() {
       verticalOscillationCm: form.verticalOscillationCm ? parseFloat(form.verticalOscillationCm) : undefined,
       avgGroundContactTimeMs: form.avgGroundContactTimeMs ? parseFloat(form.avgGroundContactTimeMs) : undefined,
       calories: form.calories ? parseInt(form.calories) : undefined,
+      temperature: form.temperature ? parseFloat(form.temperature) : undefined,
+      humidity: form.humidity ? parseFloat(form.humidity) : undefined,
+      windSpeed: form.windSpeed ? parseFloat(form.windSpeed) : undefined,
+      apparentTemp: form.apparentTemp ? parseFloat(form.apparentTemp) : undefined,
+      precipitation: form.precipitation ? parseFloat(form.precipitation) : undefined,
+      weatherCode: form.weatherCode ? parseInt(form.weatherCode) : undefined,
+      weatherCondition: form.weatherCondition || undefined,
+      weatherLocation: form.weatherLocation || undefined,
+      weatherObservedAt: form.weatherObservedAt || undefined,
+      weatherSource: form.weatherSource || undefined,
+      garminDetails: Object.keys(form.garminDetails ?? {}).length ? form.garminDetails : undefined,
+      laps: Array.isArray(form.laps) && form.laps.length ? form.laps : undefined,
       notes: form.notes || undefined,
     };
     if (editEntry) {
@@ -351,6 +453,17 @@ export default function Running() {
   };
 
   const f = (key: string, val: string) => setForm((p: any) => ({ ...p, [key]: val }));
+  const lookupFormWeather = (target: "log" | "race") => {
+    const source = target === "log" ? form : raceForm;
+    if (!source.date) return toast.error("請先選擇日期");
+    if (source.date > todayHKString()) return toast.error("尚未發生的日期沒有歷史天氣資料");
+    setWeatherLookupTarget(target);
+    historicalWeatherMutation.mutate({
+      date: source.date,
+      time: source.weatherTime || "07:00",
+      location: target === "race" ? (source.location || source.weatherLocation || "香港") : (source.weatherLocation || "香港"),
+    });
+  };
 
   // ─── Chart data ──────────────────────────────────────────────────────────────
   const monthlyData = useMemo(() => {
@@ -386,8 +499,20 @@ export default function Running() {
 
   // ─── Sorted shoes and races ─────────────────────────────────────────────────
   const sortedShoes = useMemo(() => {
-    const shoes = [...(allShoes as any[])];
+    let shoes = [...(allShoes as any[])];
     const statusOrder: Record<string, number> = { 'Active': 0, 'Not Yet Opened': 1, 'Retired': 2 };
+    shoes = shoes.filter((shoe: any) => {
+      const status = shoe.retirement_date ? 'Retired' : shoe.firstusedate ? 'Active' : 'Not Yet Opened';
+      const totalKm = Number(shoe.total_km || 0) + Number(shoe.initial_km || 0);
+      const runCount = Number(shoe.run_count || 0);
+      const matchesStatus = shoeStatusFilters.length === 0 || shoeStatusFilters.includes(status);
+      const matchesBrand = shoeBrandFilters.length === 0 || shoeBrandFilters.includes(shoe.brand || '未標示品牌');
+      const matchesUsage = shoeUsageFilter === 'all' || (shoeUsageFilter === 'unused' && runCount === 0) || (shoeUsageFilter === 'starter' && runCount >= 1 && runCount <= 10) || (shoeUsageFilter === 'regular' && runCount >= 11 && runCount <= 30) || (shoeUsageFilter === 'frequent' && runCount >= 31);
+      const matchesMileage = shoeMileageFilter === 'all' || (shoeMileageFilter === 'fresh' && totalKm < 100) || (shoeMileageFilter === 'building' && totalKm >= 100 && totalKm < 400) || (shoeMileageFilter === 'high' && totalKm >= 400 && totalKm < 700) || (shoeMileageFilter === 'service' && totalKm >= 700);
+      const query = shoeSearch.trim().toLowerCase();
+      const matchesSearch = !query || [shoe.shoes_name, shoe.brand, shoe.model].some(value => String(value || '').toLowerCase().includes(query));
+      return matchesStatus && matchesBrand && matchesUsage && matchesMileage && matchesSearch;
+    });
     switch (shoeSort) {
       case 'status': return shoes.sort((a, b) => {
         const aStatus = a.retirement_date ? 'Retired' : a.firstusedate ? 'Active' : 'Not Yet Opened';
@@ -407,7 +532,9 @@ export default function Running() {
       });
       default: return shoes;
     }
-  }, [allShoes, shoeSort]);
+  }, [allShoes, shoeSort, shoeStatusFilters, shoeBrandFilters, shoeUsageFilter, shoeMileageFilter, shoeSearch]);
+
+  const shoeBrands = useMemo(() => Array.from(new Set((allShoes as any[]).map((shoe: any) => shoe.brand || '未標示品牌'))).sort((a, b) => a.localeCompare(b)), [allShoes]);
 
   const sortedRacesList = useMemo(() => {
     const raceList = [...(races as any[])];
@@ -619,6 +746,15 @@ export default function Running() {
 
         {/* Charts tab */}
         <TabsContent value="charts" className="space-y-6">
+          <ShoePerformanceTrendPanel
+            data={shoePerformanceData}
+            distanceBand={shoeDistanceBand}
+            routeType={shoeRouteType}
+            onDistanceBandChange={setShoeDistanceBand}
+            onRouteTypeChange={setShoeRouteType}
+          />
+          <div className="grid gap-5 xl:grid-cols-2">
+          <div className="xl:col-span-2 flex flex-wrap items-end justify-between gap-2 px-1"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-orange-600 dark:text-orange-400">RUNNING ANALYTICS</p><h3 className="mt-0.5 text-lg font-bold text-foreground">跑步數據趨勢</h3><p className="mt-1 text-xs text-muted-foreground">將訓練量、配速、心率、步頻與強度區間放在同一個對照視圖。</p></div><span className="rounded-full border border-border bg-card px-2.5 py-1 text-xs font-semibold text-muted-foreground">最近 {recentData.length} 次 · 全部 {totalRuns} 次</span></div>
           {/* Monthly distance */}
           <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
             <h3 className="font-semibold text-foreground mb-4">每月跑步距離 (km)</h3>
@@ -757,10 +893,12 @@ export default function Running() {
               </div>
             );
           })()}
+          </div>
         </TabsContent>
 
         {/* Log tab */}
         <TabsContent value="log" className="space-y-3">
+          {isOwner && <RunningHistoricalBackfill />}
           {/* Sort/Filter bar */}
           <div className="flex flex-wrap items-center gap-2">
             <Input
@@ -911,67 +1049,8 @@ export default function Running() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-orange-200/60 bg-gradient-to-br from-orange-50/80 via-card to-amber-50/40 p-4 shadow-sm dark:border-orange-500/15 dark:from-orange-950/20 dark:via-card dark:to-amber-950/10">
-            <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-orange-600 dark:text-orange-400">Shoe Intelligence</p>
-                <h4 className="mt-0.5 font-bold text-foreground">各跑鞋效能統計</h4>
-                <p className="mt-0.5 text-xs text-muted-foreground">比較每雙跑鞋的累積里數、配速、心率與步頻表現。</p>
-              </div>
-              <Badge variant="outline" className="border-orange-300/60 text-orange-700 dark:text-orange-300">{shoePerformanceData.length} 雙有紀錄</Badge>
-            </div>
-            <div className="mb-4 grid grid-cols-1 gap-2 rounded-xl border border-orange-200/60 bg-white/65 p-2.5 sm:grid-cols-2 dark:border-orange-400/15 dark:bg-slate-950/25">
-              <label className="min-w-0">
-                <span className="mb-1 block text-[11px] font-semibold text-muted-foreground">距離區間</span>
-                <Select value={shoeDistanceBand} onValueChange={(value) => setShoeDistanceBand(value as typeof shoeDistanceBand)}>
-                  <SelectTrigger className="h-8 bg-card text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>{DISTANCE_BANDS.map(band => <SelectItem key={band.value} value={band.value}>{band.label}</SelectItem>)}</SelectContent>
-                </Select>
-              </label>
-              <label className="min-w-0">
-                <span className="mb-1 block text-[11px] font-semibold text-muted-foreground">路線類型</span>
-                <Select value={shoeRouteType} onValueChange={setShoeRouteType}>
-                  <SelectTrigger className="h-8 bg-card text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">全部路線</SelectItem>
-                    {ROUTE_TYPES.map(route => <SelectItem key={route} value={route}>{route === "Road" ? "公路" : route === "Track" ? "跑道" : route === "Trail" ? "越野" : route === "Treadmill" ? "跑步機" : "混合路線"}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </label>
-            </div>
-            {shoePerformanceData.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-orange-300/50 py-8 text-center text-sm text-muted-foreground">此篩選條件下暫無跑鞋紀錄；可調整篩選或在跑步紀錄填入跑鞋及路線類型。</div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                <div className="rounded-xl border border-border/70 bg-card/75 p-3">
-                  <p className="mb-2 text-xs font-semibold text-foreground">累積距離（km）</p>
-                  <ResponsiveContainer width="100%" height={190}>
-                    <BarChart data={shoePerformanceData} layout="vertical" margin={{ left: 10, right: 12 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                      <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis type="category" dataKey="shoe" width={105} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Bar dataKey="距離" fill="#f97316" radius={[0, 5, 5, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="rounded-xl border border-border/70 bg-card/75 p-3">
-                  <p className="mb-2 text-xs font-semibold text-foreground">平均配速（秒／km，數值較低較快）</p>
-                  <ResponsiveContainer width="100%" height={190}>
-                    <BarChart data={shoePerformanceData} layout="vertical" margin={{ left: 10, right: 12 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                      <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <YAxis type="category" dataKey="shoe" width={105} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                      <Tooltip formatter={(value: number) => [formatPace(Number(value)), '平均配速']} />
-                      <Bar dataKey="配速秒" fill="#8b5cf6" radius={[0, 5, 5, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="xl:col-span-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {shoePerformanceData.map(item => <div key={item.shoe} className="rounded-xl border border-border/70 bg-card/75 px-3 py-2.5"><p className="truncate text-xs font-semibold text-foreground">{item.shoe}</p><div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground"><span><b className="text-foreground">{item.次數}</b> 次</span><span><b className="text-foreground">{item.距離}</b> km</span>{item.平均心率 && <span><b className="text-foreground">{item.平均心率}</b> bpm</span>}{item.平均步頻 && <span><b className="text-foreground">{item.平均步頻}</b> spm</span>}</div></div>)}
-                </div>
-              </div>
-            )}
+          <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex flex-col gap-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-bold text-foreground">組合篩選</p><p className="mt-0.5 text-xs text-muted-foreground">同時疊加狀態、品牌、使用次數、里數與關鍵字。</p></div><span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">顯示 {sortedShoes.length} / {(allShoes as any[]).length} 雙</span></div><Input value={shoeSearch} onChange={(event) => setShoeSearch(event.target.value)} placeholder="搜尋鞋名、品牌或型號…" className="h-9 max-w-md text-sm" /><div className="grid gap-3 lg:grid-cols-3"><div><p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">狀態（可多選）</p><div className="flex flex-wrap gap-1.5">{[{ value: 'Active', label: '使用中' }, { value: 'Not Yet Opened', label: '未開封' }, { value: 'Retired', label: '已退役' }].map(option => <button key={option.value} type="button" onClick={() => setShoeStatusFilters(current => current.includes(option.value) ? current.filter(value => value !== option.value) : [...current, option.value])} className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${shoeStatusFilters.includes(option.value) ? 'border-orange-400 bg-orange-500 text-white' : 'border-border bg-background text-muted-foreground hover:border-orange-300'}`}>{option.label}</button>)}</div></div><div><p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">品牌（可多選）</p><div className="flex max-h-16 flex-wrap gap-1.5 overflow-y-auto pr-1">{shoeBrands.length ? shoeBrands.map(brand => <button key={brand} type="button" onClick={() => setShoeBrandFilters(current => current.includes(brand) ? current.filter(value => value !== brand) : [...current, brand])} className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${shoeBrandFilters.includes(brand) ? 'border-violet-400 bg-violet-500 text-white' : 'border-border bg-background text-muted-foreground hover:border-violet-300'}`}>{brand}</button>) : <span className="text-xs text-muted-foreground">暫無品牌資料</span>}</div></div><div className="grid grid-cols-2 gap-2"><label><span className="mb-1.5 block text-[11px] font-semibold text-muted-foreground">使用次數</span><Select value={shoeUsageFilter} onValueChange={(value) => setShoeUsageFilter(value as typeof shoeUsageFilter)}><SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">全部次數</SelectItem><SelectItem value="unused">0 次</SelectItem><SelectItem value="starter">1–10 次</SelectItem><SelectItem value="regular">11–30 次</SelectItem><SelectItem value="frequent">31 次以上</SelectItem></SelectContent></Select></label><label><span className="mb-1.5 block text-[11px] font-semibold text-muted-foreground">累積里數</span><Select value={shoeMileageFilter} onValueChange={(value) => setShoeMileageFilter(value as typeof shoeMileageFilter)}><SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">全部里數</SelectItem><SelectItem value="fresh">少於 100 km</SelectItem><SelectItem value="building">100–399 km</SelectItem><SelectItem value="high">400–699 km</SelectItem><SelectItem value="service">700 km 或以上</SelectItem></SelectContent></Select></label></div></div><div className="flex justify-end"><Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setShoeStatusFilters([]); setShoeBrandFilters([]); setShoeUsageFilter('all'); setShoeMileageFilter('all'); setShoeSearch(''); }}>清除所有篩選</Button></div></div>
           </div>
 
           {/* Shoe cards */}
@@ -981,6 +1060,8 @@ export default function Running() {
               <p className="font-medium">{t('running.no_shoes_yet')}</p>
               <p className="text-sm mt-1">{t('running.add_first_shoe')}</p>
             </div>
+          ) : sortedShoes.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border py-14 text-center text-muted-foreground"><Footprints className="mx-auto mb-3 h-9 w-9 opacity-30" /><p className="font-medium">沒有符合所有篩選條件的跑鞋</p><p className="mt-1 text-xs">可清除或放寬狀態、品牌、使用次數或里數篩選。</p></div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {sortedShoes.map((shoe: any) => {
@@ -1652,9 +1733,12 @@ export default function Running() {
 
         <TabsContent value="lab" className="space-y-4">
           <RunningEnergyLab
-            baselinePaceSecPerKm={avgPaceSec || undefined}
-            maxHeartRate={maxHrForZones || undefined}
-            restingHeartRate={restingHr || undefined}
+            baselinePaceSecPerKm={labPersonalization?.baselinePaceSecPerKm ?? (avgPaceSec || undefined)}
+            maxHeartRate={labPersonalization?.maxHeartRate ?? (maxHrForZones || undefined)}
+            restingHeartRate={labPersonalization?.restingHeartRate ?? (restingHr || undefined)}
+            profile={labPersonalization?.body}
+            runTypeDistribution={labPersonalization?.runTypeDistribution}
+            historicalRunCount={labPersonalization?.recentRunCount}
           />
         </TabsContent>
       </Tabs>
@@ -1670,6 +1754,12 @@ export default function Running() {
               <ScreenshotImporter
                 dataType="running"
                 onExtracted={(fields) => setForm((p: any) => ({ ...p, ...fields }))}
+              />
+              <GarminRunImporter
+                onExtracted={(fields, sourceFiles) => {
+                  setForm((previous: any) => ({ ...previous, ...fields }));
+                  if (!editEntry) photoUploaderRef.current?.stageFiles(sourceFiles);
+                }}
               />
             </div>
             <div className="col-span-2">
@@ -1788,6 +1878,11 @@ export default function Running() {
                   })}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="col-span-2 rounded-xl border border-sky-200/80 bg-sky-50/60 p-3 dark:border-sky-400/15 dark:bg-sky-400/5">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-semibold text-foreground">天氣狀況</p><p className="text-[11px] text-muted-foreground">可手動修訂，或按日期、地點與香港時段讀取歷史天氣。</p></div><Button type="button" size="sm" variant="outline" onClick={() => lookupFormWeather("log")} disabled={historicalWeatherMutation.isPending} className="border-sky-200 bg-white text-sky-700 hover:bg-sky-50 dark:border-sky-400/20 dark:bg-slate-950/40 dark:text-sky-200"><CloudSun className="mr-1.5 h-3.5 w-3.5" />{historicalWeatherMutation.isPending && weatherLookupTarget === "log" ? "讀取中" : "讀取歷史天氣"}</Button></div>
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3"><div className="col-span-2 sm:col-span-1"><label className="text-[11px] font-medium text-muted-foreground">地點</label><Input className="mt-1 h-9" value={form.weatherLocation} onChange={(event) => f("weatherLocation", event.target.value)} placeholder="香港" /></div><div><label className="text-[11px] font-medium text-muted-foreground">香港時段</label><Input className="mt-1 h-9" type="time" value={form.weatherTime} onChange={(event) => f("weatherTime", event.target.value)} /></div><div><label className="text-[11px] font-medium text-muted-foreground">狀況</label><Input className="mt-1 h-9" value={form.weatherCondition} onChange={(event) => f("weatherCondition", event.target.value)} placeholder="晴朗／小雨" /></div><div><label className="text-[11px] font-medium text-muted-foreground">氣溫 °C</label><Input className="mt-1 h-9" type="number" step="0.1" value={form.temperature} onChange={(event) => f("temperature", event.target.value)} /></div><div><label className="text-[11px] font-medium text-muted-foreground">體感 °C</label><Input className="mt-1 h-9" type="number" step="0.1" value={form.apparentTemp} onChange={(event) => f("apparentTemp", event.target.value)} /></div><div><label className="text-[11px] font-medium text-muted-foreground">濕度 %</label><Input className="mt-1 h-9" type="number" step="1" value={form.humidity} onChange={(event) => f("humidity", event.target.value)} /></div><div><label className="text-[11px] font-medium text-muted-foreground">風速 km/h</label><Input className="mt-1 h-9" type="number" step="0.1" value={form.windSpeed} onChange={(event) => f("windSpeed", event.target.value)} /></div><div><label className="text-[11px] font-medium text-muted-foreground">降雨 mm</label><Input className="mt-1 h-9" type="number" step="0.1" value={form.precipitation} onChange={(event) => f("precipitation", event.target.value)} /></div></div>
+              {form.weatherSource && <p className="mt-2 text-[10px] text-sky-700/80 dark:text-sky-200/70">來源：{form.weatherSource} · {form.weatherObservedAt}</p>}
             </div>
             <div className="col-span-2">
               <label className="text-xs font-medium text-muted-foreground mb-1 block">{t("running.notes")}</label>
@@ -1994,6 +2089,7 @@ export default function Running() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="col-span-2 rounded-xl border border-sky-200/80 bg-sky-50/60 p-3 dark:border-sky-400/15 dark:bg-sky-400/5"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-semibold text-foreground">比賽天氣狀況</p><p className="text-[11px] text-muted-foreground">按賽事日期、地點及香港時段讀取歷史天氣，仍可手動修訂。</p></div><Button type="button" size="sm" variant="outline" onClick={() => lookupFormWeather("race")} disabled={historicalWeatherMutation.isPending} className="border-sky-200 bg-white text-sky-700 hover:bg-sky-50 dark:border-sky-400/20 dark:bg-slate-950/40 dark:text-sky-200"><CloudSun className="mr-1.5 h-3.5 w-3.5" />{historicalWeatherMutation.isPending && weatherLookupTarget === "race" ? "讀取中" : "讀取歷史天氣"}</Button></div><div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3"><div><label className="text-[11px] text-muted-foreground">香港時段</label><Input className="mt-1 h-9" type="time" value={raceForm.weatherTime} onChange={(event) => setRaceForm((previous: any) => ({ ...previous, weatherTime: event.target.value }))} /></div><div><label className="text-[11px] text-muted-foreground">狀況</label><Input className="mt-1 h-9" value={raceForm.weatherCondition} onChange={(event) => setRaceForm((previous: any) => ({ ...previous, weatherCondition: event.target.value }))} placeholder="晴朗／小雨" /></div><div><label className="text-[11px] text-muted-foreground">氣溫 °C</label><Input className="mt-1 h-9" type="number" step="0.1" value={raceForm.temperature} onChange={(event) => setRaceForm((previous: any) => ({ ...previous, temperature: event.target.value }))} /></div><div><label className="text-[11px] text-muted-foreground">體感 °C</label><Input className="mt-1 h-9" type="number" step="0.1" value={raceForm.apparentTemp} onChange={(event) => setRaceForm((previous: any) => ({ ...previous, apparentTemp: event.target.value }))} /></div><div><label className="text-[11px] text-muted-foreground">濕度 %</label><Input className="mt-1 h-9" type="number" value={raceForm.humidity} onChange={(event) => setRaceForm((previous: any) => ({ ...previous, humidity: event.target.value }))} /></div><div><label className="text-[11px] text-muted-foreground">風速 km/h</label><Input className="mt-1 h-9" type="number" step="0.1" value={raceForm.windSpeed} onChange={(event) => setRaceForm((previous: any) => ({ ...previous, windSpeed: event.target.value }))} /></div></div>{raceForm.weatherSource && <p className="mt-2 text-[10px] text-sky-700/80 dark:text-sky-200/70">來源：{raceForm.weatherSource} · {raceForm.weatherObservedAt}</p>}</div>
             <div className="flex items-center gap-2 col-span-2">
               <input type="checkbox" id="isPb" checked={raceForm.isPb} onChange={(e) => setRaceForm((p: any) => ({ ...p, isPb: e.target.checked }))} className="w-4 h-4" />
               <label htmlFor="isPb" className="text-sm font-medium text-foreground">標記為個人PB</label>
@@ -2027,6 +2123,16 @@ export default function Running() {
                   ageGroupPlace: raceForm.ageGroupPlace ? parseInt(raceForm.ageGroupPlace) : undefined,
                   genderGroupPlace: raceForm.genderGroupPlace ? parseInt(raceForm.genderGroupPlace) : undefined,
                   runningShoes: raceForm.runningShoes || undefined,
+                  temperature: raceForm.temperature ? parseFloat(raceForm.temperature) : undefined,
+                  humidity: raceForm.humidity ? parseFloat(raceForm.humidity) : undefined,
+                  windSpeed: raceForm.windSpeed ? parseFloat(raceForm.windSpeed) : undefined,
+                  apparentTemp: raceForm.apparentTemp ? parseFloat(raceForm.apparentTemp) : undefined,
+                  precipitation: raceForm.precipitation ? parseFloat(raceForm.precipitation) : undefined,
+                  weatherCode: raceForm.weatherCode ? parseInt(raceForm.weatherCode) : undefined,
+                  weatherCondition: raceForm.weatherCondition || undefined,
+                  weatherLocation: raceForm.weatherLocation || undefined,
+                  weatherObservedAt: raceForm.weatherObservedAt || undefined,
+                  weatherSource: raceForm.weatherSource || undefined,
                   notes: raceForm.notes || undefined,
                 };
                 if (editRace) {

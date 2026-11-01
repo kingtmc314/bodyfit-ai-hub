@@ -83,9 +83,9 @@ export const CSV_TEMPLATES: Record<string, { filename: string; content: string }
   running: {
     filename: "template_running.csv",
     content: [
-      "date,running_type,route_type,running_shoes,distance_km,hour,minutes,second,average_pace,best_pace,average_heart_rate,maximum_heart_rate,average_cadence,max_cadence,avg_stride_length_m,avg_vertical_ratio,vertical_oscillation_cm,avg_ground_contact_time_ms,calories,temperature,humidity,notes",
-      "2026-01-15,Easy,Road,,10.5,0,55,30,5:29,4:45,145,168,172,185,1.08,8.2,9.1,245,520,18,65,Morning easy run",
-      "2026-01-16,Interval,Track,,8.0,0,38,15,4:47,3:55,162,182,180,195,1.15,7.8,8.5,228,420,17,60,Track intervals",
+      "date,running_type,route_type,running_shoes,distance_km,hour,minutes,second,average_pace,best_pace,average_heart_rate,maximum_heart_rate,average_cadence,max_cadence,avg_stride_length_m,avg_vertical_ratio,vertical_oscillation_cm,avg_ground_contact_time_ms,calories,temperature,humidity,wind_speed,apparent_temp,precipitation,weather_code,weather_condition,weather_location,weather_observed_at,weather_source,notes",
+      "2026-01-15,Easy,Road,,10.5,0,55,30,5:29,4:45,145,168,172,185,1.08,8.2,9.1,245,520,18,65,12,17,0,1,Mostly clear,香港,2026-01-15T07:00:00+08:00,Open-Meteo Historical Weather API,Morning easy run",
+      "2026-01-16,Interval,Track,,8.0,0,38,15,4:47,3:55,162,182,180,195,1.15,7.8,8.5,228,420,17,60,10,16,0,2,Partly cloudy,香港,2026-01-16T07:00:00+08:00,Open-Meteo Historical Weather API,Track intervals",
     ].join("\n"),
   },
 };

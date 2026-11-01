@@ -256,6 +256,14 @@ var runningLogs = pgTable("running_logs", {
   humidity: real("humidity"),
   windSpeed: real("wind_speed"),
   apparentTemp: real("apparent_temp"),
+  precipitation: real("precipitation"),
+  weatherCode: integer("weather_code"),
+  weatherCondition: text("weather_condition"),
+  weatherLocation: text("weather_location"),
+  weatherObservedAt: text("weather_observed_at"),
+  weatherSource: text("weather_source"),
+  garminDetails: json("garmin_details").$type(),
+  laps: json("laps").$type(),
   status: text("status"),
   notes: text("notes"),
   routeType: text("route_type"),
@@ -339,6 +347,16 @@ var races = pgTable("races", {
   genderGroupPlace: integer("gender_group_place"),
   runningShoes: text("running_shoes"),
   shoesId: bigint("shoes_id", { mode: "number" }),
+  temperature: real("temperature"),
+  humidity: real("humidity"),
+  windSpeed: real("wind_speed"),
+  apparentTemp: real("apparent_temp"),
+  precipitation: real("precipitation"),
+  weatherCode: integer("weather_code"),
+  weatherCondition: text("weather_condition"),
+  weatherLocation: text("weather_location"),
+  weatherObservedAt: text("weather_observed_at"),
+  weatherSource: text("weather_source"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow()
@@ -1259,6 +1277,7 @@ var normalizeResponseFormat = ({
 async function invokeLLM(params) {
   assertApiKey();
   const {
+    model,
     messages,
     tools,
     toolChoice,
@@ -1266,10 +1285,16 @@ async function invokeLLM(params) {
     outputSchema,
     output_schema,
     responseFormat,
-    response_format
+    response_format,
+    maxTokens,
+    max_tokens,
+    reasoning,
+    thinking
   } = params;
+  const selectedModel = model || "gemini-2.5-flash";
+  const usesOpenAiTokenShape = selectedModel.startsWith("gpt-");
   const payload = {
-    model: "gemini-2.5-flash",
+    model: selectedModel,
     messages: messages.map(normalizeMessage)
   };
   if (tools && tools.length > 0) {
@@ -1282,10 +1307,13 @@ async function invokeLLM(params) {
   if (normalizedToolChoice) {
     payload.tool_choice = normalizedToolChoice;
   }
-  payload.max_tokens = 32768;
-  payload.thinking = {
-    "budget_tokens": 128
-  };
+  if (usesOpenAiTokenShape) {
+    payload.max_completion_tokens = maxTokens ?? max_tokens ?? 32768;
+    if (reasoning) payload.reasoning = reasoning;
+  } else {
+    payload.max_tokens = maxTokens ?? max_tokens ?? 32768;
+    payload.thinking = thinking ?? { budget_tokens: 128 };
+  }
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
     response_format,
@@ -1680,6 +1708,14 @@ function parseRunningRow(row) {
     calories: toNum(keys["calories"] ?? keys["activekilocalories"] ?? keys["totalcalories"]) !== void 0 ? Math.round(toNum(keys["calories"] ?? keys["activekilocalories"] ?? keys["totalcalories"])) : void 0,
     temperature: toNum(keys["mintemp"] ?? keys["temperature"] ?? keys["avgtemperature"]),
     humidity: toNum(keys["humidity"]),
+    windSpeed: toNum(keys["windspeed"] ?? keys["windspeedkmh"]),
+    apparentTemp: toNum(keys["apparenttemp"] ?? keys["feelslike"] ?? keys["feelsliketemperature"]),
+    precipitation: toNum(keys["precipitation"] ?? keys["rain"]),
+    weatherCode: toNum(keys["weathercode"] ?? keys["wmocode"]),
+    weatherCondition: keys["weathercondition"] ?? keys["conditions"] ?? keys["weather"] ?? void 0,
+    weatherLocation: keys["weatherlocation"] ?? keys["location"] ?? void 0,
+    weatherObservedAt: keys["weatherobservedat"] ?? keys["weatherdatetime"] ?? void 0,
+    weatherSource: keys["weathersource"] ?? void 0,
     notes: keys["title"] ?? void 0
   };
 }
@@ -1736,7 +1772,7 @@ var SHEET_TABS = {
 var BODY_COLUMNS = ["Date", "Weight (kg)", "BMI", "Body Fat %", "Fat Mass (kg)", "Muscle Mass (kg)", "BMR", "Visceral Fat", "Source", "Notes"];
 var SLEEP_COLUMNS = ["Date", "Sleep Score", "Resting HR", "Body Battery", "Pulse Ox (%)", "Respiration", "HRV", "Quality", "Duration (h)", "Source"];
 var HR_COLUMNS = ["Date", "Resting HR", "High HR", "HRV", "Source", "Notes"];
-var RUNNING_COLUMNS = ["Date", "Running Type", "Route Type", "Running Shoes", "Distance (km)", "Duration (h)", "Duration (min)", "Duration (sec)", "Avg Pace", "Best Pace", "Avg HR", "Max HR", "Avg Cadence", "Max Cadence", "Avg Stride Length (m)", "Avg Vertical Ratio", "Vertical Oscillation (cm)", "Avg Ground Contact Time (ms)", "Calories", "Temperature (\xB0C)", "Humidity (%)", "Notes"];
+var RUNNING_COLUMNS = ["Date", "Running Type", "Route Type", "Running Shoes", "Distance (km)", "Duration (h)", "Duration (min)", "Duration (sec)", "Avg Pace", "Best Pace", "Avg HR", "Max HR", "Avg Cadence", "Max Cadence", "Avg Stride Length (m)", "Avg Vertical Ratio", "Vertical Oscillation (cm)", "Avg Ground Contact Time (ms)", "Calories", "Temperature (\xB0C)", "Humidity (%)", "Notes", "Wind Speed (km/h)", "Feels Like (\xB0C)", "Precipitation (mm)", "Weather Condition", "Weather Location", "Weather Observed At (HK)", "Weather Source", "Garmin Details", "Laps"];
 function getAuth() {
   const credJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (!credJson) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON not set");
@@ -1810,7 +1846,16 @@ async function writeRowToSheet(type, rowData) {
         rowData.calories !== void 0 ? Number(rowData.calories) : "",
         rowData.temperature !== void 0 ? Number(rowData.temperature) : "",
         rowData.humidity !== void 0 ? Number(rowData.humidity) : "",
-        String(rowData.notes ?? "")
+        String(rowData.notes ?? ""),
+        rowData.windSpeed !== void 0 ? Number(rowData.windSpeed) : "",
+        rowData.apparentTemp !== void 0 ? Number(rowData.apparentTemp) : "",
+        rowData.precipitation !== void 0 ? Number(rowData.precipitation) : "",
+        String(rowData.weatherCondition ?? ""),
+        String(rowData.weatherLocation ?? ""),
+        String(rowData.weatherObservedAt ?? ""),
+        String(rowData.weatherSource ?? ""),
+        rowData.garminDetails ? JSON.stringify(rowData.garminDetails) : "",
+        rowData.laps ? JSON.stringify(rowData.laps) : ""
       ];
     }
     await sheets.spreadsheets.values.append({
@@ -1834,10 +1879,20 @@ async function ensureSheetHeaders(type) {
     try {
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${sheetName}!A1:Z1`
+        range: `${sheetName}!A1:ZZ1`
       });
       const firstRow = response.data.values?.[0];
-      if (firstRow && firstRow.length > 0) return;
+      if (firstRow && firstRow.length > 0) {
+        if (type === "running" && firstRow.length < RUNNING_COLUMNS.length) {
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${sheetName}!A1`,
+            valueInputOption: "USER_ENTERED",
+            requestBody: { values: [RUNNING_COLUMNS] }
+          });
+        }
+        return;
+      }
     } catch {
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
@@ -1893,6 +1948,243 @@ function buildProgressionSuggestion(rawSets) {
     targetReps: Math.min(12, latest.reps + 1),
     detail: `\u7DAD\u6301 ${latest.weight} kg\uFF0C\u4E0B\u4E00\u7D44\u76EE\u6A19\u591A\u5B8C\u6210 1 \u6B21\uFF1B\u9054\u5230 10\u201312 \u6B21\u5F8C\u518D\u5C0F\u5E45\u52A0\u91CD\u3002`
   };
+}
+
+// shared/runningBackfill.ts
+function normaliseDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const valueString = String(value);
+  const matched = valueString.match(/^\d{4}-\d{2}-\d{2}/);
+  return matched?.[0] ?? null;
+}
+function hasValue(value) {
+  return value !== null && value !== void 0 && value !== "";
+}
+function recordHasWeather(record) {
+  return [
+    record.weather_condition,
+    record.weather_code,
+    record.temperature,
+    record.humidity,
+    record.wind_speed,
+    record.apparent_temp,
+    record.precipitation
+  ].some(hasValue);
+}
+function buildHistoricalBackfillCandidates(runningLogs2, races3, options, todayHK2) {
+  const includeLogs = options.scope === "logs" || options.scope === "both";
+  const includeRaces = options.scope === "races" || options.scope === "both";
+  const candidates = [];
+  let skippedFuture = 0;
+  const collect = (records, kind) => {
+    for (const record of records) {
+      const date2 = normaliseDate(record.date);
+      if (!date2 || date2 < options.startDate || date2 > options.endDate) continue;
+      if (date2 > todayHK2) {
+        skippedFuture += 1;
+        continue;
+      }
+      const needsRouteType = kind === "log" && Boolean(options.routeType) && (options.overwriteRouteType || !record.route_type);
+      const needsWeather = options.overwriteWeather || !recordHasWeather(record);
+      if (!needsRouteType && !needsWeather) continue;
+      candidates.push({ id: Number(record.id), date: date2, kind, needsRouteType, needsWeather });
+    }
+  };
+  if (includeLogs) collect(runningLogs2, "log");
+  if (includeRaces) collect(races3, "race");
+  return { candidates, skippedFuture };
+}
+function summariseHistoricalBackfill(candidates, skippedFuture) {
+  const logs = candidates.filter((candidate) => candidate.kind === "log");
+  const races3 = candidates.filter((candidate) => candidate.kind === "race");
+  return {
+    selectedLogs: logs.length,
+    selectedRaces: races3.length,
+    routeTypeUpdates: logs.filter((candidate) => candidate.needsRouteType).length,
+    weatherUpdates: candidates.filter((candidate) => candidate.needsWeather).length,
+    skippedFuture,
+    total: candidates.length
+  };
+}
+
+// server/weatherService.ts
+var HONG_KONG_WEATHER_LOCATION = {
+  label: "\u9999\u6E2F",
+  latitude: 22.3193,
+  longitude: 114.1694
+};
+var WEATHER_CONDITIONS = {
+  0: "\u6674\u6717",
+  1: "\u5927\u81F4\u6674\u6717",
+  2: "\u5C40\u90E8\u591A\u96F2",
+  3: "\u591A\u96F2",
+  45: "\u9727",
+  48: "\u971C\u9727",
+  51: "\u5FAE\u96E8",
+  53: "\u4E2D\u5EA6\u6BDB\u6BDB\u96E8",
+  55: "\u6FC3\u6BDB\u6BDB\u96E8",
+  56: "\u5FAE\u51CD\u96E8",
+  57: "\u6FC3\u51CD\u96E8",
+  61: "\u5C0F\u96E8",
+  63: "\u4E2D\u96E8",
+  65: "\u5927\u96E8",
+  66: "\u5FAE\u51CD\u96E8",
+  67: "\u5927\u51CD\u96E8",
+  71: "\u5C0F\u96EA",
+  73: "\u4E2D\u96EA",
+  75: "\u5927\u96EA",
+  77: "\u7C73\u96EA",
+  80: "\u9663\u96E8",
+  81: "\u4E2D\u5EA6\u9663\u96E8",
+  82: "\u5F37\u9663\u96E8",
+  85: "\u9663\u96EA",
+  86: "\u5F37\u9663\u96EA",
+  95: "\u96F7\u66B4",
+  96: "\u96F7\u66B4\u4F34\u5C0F\u51B0\u96F9",
+  97: "\u5F37\u96F7\u66B4",
+  99: "\u5F37\u96F7\u66B4\u4F34\u5927\u51B0\u96F9"
+};
+function weatherConditionFromCode(code) {
+  if (code === null || code === void 0 || !Number.isFinite(code)) return null;
+  return WEATHER_CONDITIONS[code] ?? `WMO ${code}`;
+}
+function isHongKongDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+function normaliseTime(value) {
+  return /^\d{2}:\d{2}$/.test(value ?? "") ? value : "07:00";
+}
+function safeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+function dayKey(date2, time) {
+  return `${date2}T${time}`;
+}
+function nearestHourIndex(times, date2, time) {
+  const exact = times.indexOf(dayKey(date2, time));
+  if (exact >= 0) return exact;
+  const dayMatches = times.map((candidate, index) => ({ candidate, index })).filter(({ candidate }) => candidate.startsWith(`${date2}T`));
+  if (!dayMatches.length) return -1;
+  const [targetHour, targetMinute] = time.split(":").map(Number);
+  const targetMinutes = targetHour * 60 + targetMinute;
+  return dayMatches.reduce((best, item) => {
+    const [, rawTime = "00:00"] = item.candidate.split("T");
+    const [hour, minute] = rawTime.split(":").map(Number);
+    const delta = Math.abs(hour * 60 + minute - targetMinutes);
+    return delta < best.delta ? { index: item.index, delta } : best;
+  }, { index: dayMatches[0].index, delta: Number.POSITIVE_INFINITY }).index;
+}
+function selectHourlyWeather(hourly, date2, time, coordinates) {
+  const index = nearestHourIndex(hourly.time ?? [], date2, normaliseTime(time));
+  if (index < 0) return null;
+  const code = safeNumber(hourly.weather_code?.[index]);
+  const observedAt = hourly.time?.[index] ?? dayKey(date2, normaliseTime(time));
+  return {
+    weatherCode: code,
+    weatherCondition: weatherConditionFromCode(code),
+    temperature: safeNumber(hourly.temperature_2m?.[index]),
+    humidity: safeNumber(hourly.relative_humidity_2m?.[index]),
+    apparentTemp: safeNumber(hourly.apparent_temperature?.[index]),
+    windSpeed: safeNumber(hourly.wind_speed_10m?.[index]),
+    precipitation: safeNumber(hourly.precipitation?.[index]),
+    weatherLocation: coordinates.label,
+    weatherObservedAt: observedAt,
+    weatherSource: "Open-Meteo \u6B77\u53F2\u5929\u6C23\uFF08\u9010\u5C0F\u6642\uFF09"
+  };
+}
+async function resolveWeatherLocation(input) {
+  const latitude = input.latitude;
+  const longitude = input.longitude;
+  if (latitude !== null && latitude !== void 0 && longitude !== null && longitude !== void 0) {
+    return {
+      label: input.location?.trim() || HONG_KONG_WEATHER_LOCATION.label,
+      latitude,
+      longitude
+    };
+  }
+  const location = input.location?.trim();
+  if (!location || location === "\u9999\u6E2F" || location.toLowerCase() === "hong kong") {
+    return HONG_KONG_WEATHER_LOCATION;
+  }
+  try {
+    const url = new URL("https://geocoding-api.open-meteo.com/v1/search");
+    url.searchParams.set("name", location);
+    url.searchParams.set("count", "1");
+    url.searchParams.set("language", "zh");
+    url.searchParams.set("format", "json");
+    const response = await fetch(url, { signal: AbortSignal.timeout(1e4) });
+    if (!response.ok) throw new Error(`Geocoding request failed (${response.status})`);
+    const result = await response.json();
+    const match = result.results?.[0];
+    if (!match || !Number.isFinite(match.latitude) || !Number.isFinite(match.longitude)) {
+      throw new Error("Location not found");
+    }
+    const label = [match.name, match.admin1, match.country].filter(Boolean).join(" \xB7 ") || location;
+    return { label, latitude: Number(match.latitude), longitude: Number(match.longitude) };
+  } catch {
+    return { ...HONG_KONG_WEATHER_LOCATION, label: location };
+  }
+}
+async function fetchHistoricalWeatherRange(input) {
+  if (!isHongKongDate(input.startDate) || !isHongKongDate(input.endDate)) {
+    throw new Error("\u6B77\u53F2\u5929\u6C23\u67E5\u8A62\u9700\u8981\u6709\u6548\u7684 YYYY-MM-DD \u65E5\u671F");
+  }
+  if (input.startDate > input.endDate) {
+    throw new Error("\u958B\u59CB\u65E5\u671F\u4E0D\u53EF\u665A\u65BC\u7D50\u675F\u65E5\u671F");
+  }
+  const url = new URL("https://archive-api.open-meteo.com/v1/archive");
+  url.searchParams.set("latitude", String(input.coordinates.latitude));
+  url.searchParams.set("longitude", String(input.coordinates.longitude));
+  url.searchParams.set("start_date", input.startDate);
+  url.searchParams.set("end_date", input.endDate);
+  url.searchParams.set("hourly", "weather_code,temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,wind_speed_10m");
+  url.searchParams.set("timezone", "Asia/Hong_Kong");
+  url.searchParams.set("wind_speed_unit", "kmh");
+  const response = await fetch(url, { signal: AbortSignal.timeout(3e4) });
+  if (!response.ok) throw new Error(`\u6B77\u53F2\u5929\u6C23\u8CC7\u6599\u66AB\u6642\u7121\u6CD5\u53D6\u5F97\uFF08${response.status}\uFF09`);
+  const payload = await response.json();
+  if (!payload.hourly?.time?.length) throw new Error("\u6B77\u53F2\u5929\u6C23\u4F86\u6E90\u6C92\u6709\u50B3\u56DE\u9010\u5C0F\u6642\u8CC7\u6599");
+  const result = /* @__PURE__ */ new Map();
+  const dates = Array.from(new Set(payload.hourly.time.map((value) => value.slice(0, 10))));
+  for (const date2 of dates) {
+    const observation = selectHourlyWeather(payload.hourly, date2, normaliseTime(input.time), input.coordinates);
+    if (observation) result.set(date2, observation);
+  }
+  return result;
+}
+async function fetchHistoricalWeatherForDate(input) {
+  const observations = await fetchHistoricalWeatherRange({
+    coordinates: input.coordinates,
+    startDate: input.date,
+    endDate: input.date,
+    time: input.time
+  });
+  const observation = observations.get(input.date);
+  if (!observation) throw new Error("\u627E\u4E0D\u5230\u6307\u5B9A\u65E5\u671F\u53CA\u6642\u9593\u7684\u5929\u6C23\u8CC7\u6599");
+  return observation;
+}
+function buildDateChunks(dates, maximumSpanDays = 31) {
+  const ordered = Array.from(new Set(dates.filter(isHongKongDate))).sort();
+  if (!ordered.length) return [];
+  const chunks = [];
+  let startDate = ordered[0];
+  let selected = [ordered[0]];
+  for (const date2 of ordered.slice(1)) {
+    const start = (/* @__PURE__ */ new Date(`${startDate}T00:00:00Z`)).getTime();
+    const current = (/* @__PURE__ */ new Date(`${date2}T00:00:00Z`)).getTime();
+    const spanDays = Math.floor((current - start) / 864e5);
+    if (spanDays >= maximumSpanDays) {
+      chunks.push({ startDate, endDate: selected[selected.length - 1], dates: selected });
+      startDate = date2;
+      selected = [date2];
+    } else {
+      selected.push(date2);
+    }
+  }
+  chunks.push({ startDate, endDate: selected[selected.length - 1], dates: selected });
+  return chunks;
 }
 
 // server/routers.ts
@@ -3305,7 +3597,8 @@ var csvImportRouter = router({
                 average_pace, best_pace, average_heart_rate, maximum_heart_rate,
                 average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
                 vertical_oscillation_cm, avg_ground_contact_time_ms, calories,
-                temperature, humidity, notes
+                temperature, humidity, wind_speed, apparent_temp, precipitation,
+                weather_code, weather_condition, weather_location, weather_observed_at, weather_source, notes
               ) VALUES (
                 ${r.date},
                 ${r.runningType ?? null},
@@ -3328,6 +3621,14 @@ var csvImportRouter = router({
                 ${r.calories ?? null},
                 ${r.temperature ?? null},
                 ${r.humidity ?? null},
+                ${r.windSpeed ?? null},
+                ${r.apparentTemp ?? null},
+                ${r.precipitation ?? null},
+                ${r.weatherCode ?? null},
+                ${r.weatherCondition ?? null},
+                ${r.weatherLocation ?? null},
+                ${r.weatherObservedAt ?? null},
+                ${r.weatherSource ?? null},
                 ${r.notes ?? null}
               )
               ON CONFLICT DO NOTHING
@@ -3762,6 +4063,139 @@ For steps data: extract daily step count, floors climbed, distance, active minut
     return { ...extracted, imageUrl };
   }),
   /**
+   * Merge a sequence of Garmin overview, statistics, laps, and chart screenshots
+   * into one reviewable running record. It deliberately does not persist the run:
+   * the user confirms values in the form and keeps original screenshots on save.
+   */
+  extractGarminRun: ownerProcedure.input(z2.object({
+    screenshots: z2.array(z2.object({
+      base64: z2.string(),
+      mimeType: z2.string().default("image/jpeg")
+    })).min(1).max(16)
+  })).mutation(async ({ input }) => {
+    const imageUrls = await Promise.all(input.screenshots.map(async (screenshot, index) => {
+      const buffer = Buffer.from(screenshot.base64, "base64");
+      if (buffer.length > 10 * 1024 * 1024) throw new Error(`\u7B2C ${index + 1} \u5F35\u622A\u5716\u8D85\u904E 10MB \u9650\u5236`);
+      const ext = screenshot.mimeType.includes("png") ? "png" : "jpg";
+      const key = `garmin-imports/${OWNER_USER_ID}/${nanoid()}.${ext}`;
+      const { url } = await storagePut(key, buffer, screenshot.mimeType);
+      return url;
+    }));
+    const systemPrompt = `You extract Garmin Connect screenshots into exactly one running activity. Return only strict JSON. Do not invent values from a graph. Prefer explicit numbers on Overview/Stats/Laps; if screenshots conflict, choose the value from Overview or Stats and explain the conflict briefly in Traditional Chinese notes. A displayed day and month without a year must produce null date. All extracted metric labels and notes must be understandable to a Traditional Chinese user.`;
+    const userPrompt = `These ${input.screenshots.length} screenshots belong to ONE Garmin running activity. Merge all visible values into a single reviewable record. Extract only visibly stated metrics. Convert duration into hour/minute/second and keep pace in MM:SS. Preserve every visible full-lap row (lap number, duration, distance and average pace); partial laps are valid. Screenshots cannot faithfully reconstruct second-by-second chart samples, so never fabricate curves. Return null for absent or unclear values.
+
+Required JSON fields:
+- date: YYYY-MM-DD only if a full date including year is visible, else null
+- time: local activity start HH:MM if visible, else null
+- running: distance, time, pace, heart rate, cadence, calories, running dynamics, temperature, activity type, and route name
+- garminDetails: Stats values such as moving/elapsed/run/walk/idle time, ascent/descent/elevation, speed, calories, sweat loss, intensity, Body Battery, training effect/load, power and performance condition
+- laps: each visible split row
+- confidence and concise Traditional Chinese notes.`;
+    const response = await invokeLLM({
+      model: "gpt-6.1-sol",
+      maxTokens: 12e3,
+      reasoning: { effort: "medium" },
+      messages: [{
+        role: "system",
+        content: systemPrompt
+      }, {
+        role: "user",
+        content: [
+          { type: "text", text: userPrompt },
+          ...imageUrls.map((url, index) => ({ type: "image_url", image_url: { url, detail: "high" }, name: `Garmin screenshot ${index + 1}` }))
+        ]
+      }],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "garmin_run_sequence",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              date: { type: ["string", "null"] },
+              time: { type: ["string", "null"] },
+              running: {
+                type: "object",
+                properties: {
+                  distanceKm: { type: ["number", "null"] },
+                  durationHour: { type: ["number", "null"] },
+                  durationMin: { type: ["number", "null"] },
+                  durationSec: { type: ["number", "null"] },
+                  avgPace: { type: ["string", "null"] },
+                  bestPace: { type: ["string", "null"] },
+                  avgHr: { type: ["number", "null"] },
+                  maxHr: { type: ["number", "null"] },
+                  avgCadence: { type: ["number", "null"] },
+                  maxCadence: { type: ["number", "null"] },
+                  calories: { type: ["number", "null"] },
+                  avgStrideLengthM: { type: ["number", "null"] },
+                  avgVerticalRatio: { type: ["number", "null"] },
+                  verticalOscillationCm: { type: ["number", "null"] },
+                  avgGroundContactTimeMs: { type: ["number", "null"] },
+                  temperatureC: { type: ["number", "null"] },
+                  runningType: { type: ["string", "null"] },
+                  routeName: { type: ["string", "null"] }
+                },
+                required: ["distanceKm", "durationHour", "durationMin", "durationSec", "avgPace", "bestPace", "avgHr", "maxHr", "avgCadence", "maxCadence", "calories", "avgStrideLengthM", "avgVerticalRatio", "verticalOscillationCm", "avgGroundContactTimeMs", "temperatureC", "runningType", "routeName"],
+                additionalProperties: false
+              },
+              garminDetails: {
+                type: "object",
+                properties: {
+                  avgMovingPace: { type: ["string", "null"] },
+                  avgGradeAdjustedPace: { type: ["string", "null"] },
+                  maxSpeedKph: { type: ["number", "null"] },
+                  avgSpeedKph: { type: ["number", "null"] },
+                  avgMovingSpeedKph: { type: ["number", "null"] },
+                  avgGradeAdjustedSpeedKph: { type: ["number", "null"] },
+                  movingTimeSec: { type: ["number", "null"] },
+                  elapsedTimeSec: { type: ["number", "null"] },
+                  runTimeSec: { type: ["number", "null"] },
+                  walkTimeSec: { type: ["number", "null"] },
+                  idleTimeSec: { type: ["number", "null"] },
+                  totalAscentM: { type: ["number", "null"] },
+                  totalDescentM: { type: ["number", "null"] },
+                  minElevationM: { type: ["number", "null"] },
+                  maxElevationM: { type: ["number", "null"] },
+                  restingCalories: { type: ["number", "null"] },
+                  activeCalories: { type: ["number", "null"] },
+                  sweatLossMl: { type: ["number", "null"] },
+                  moderateIntensityMinutes: { type: ["number", "null"] },
+                  vigorousIntensityMinutes: { type: ["number", "null"] },
+                  bodyBatteryImpact: { type: ["number", "null"] },
+                  aerobicTrainingEffect: { type: ["number", "null"] },
+                  anaerobicTrainingEffect: { type: ["number", "null"] },
+                  exerciseLoad: { type: ["number", "null"] },
+                  avgPowerW: { type: ["number", "null"] },
+                  maxPowerW: { type: ["number", "null"] },
+                  performanceCondition: { type: ["number", "null"] }
+                },
+                required: ["avgMovingPace", "avgGradeAdjustedPace", "maxSpeedKph", "avgSpeedKph", "avgMovingSpeedKph", "avgGradeAdjustedSpeedKph", "movingTimeSec", "elapsedTimeSec", "runTimeSec", "walkTimeSec", "idleTimeSec", "totalAscentM", "totalDescentM", "minElevationM", "maxElevationM", "restingCalories", "activeCalories", "sweatLossMl", "moderateIntensityMinutes", "vigorousIntensityMinutes", "bodyBatteryImpact", "aerobicTrainingEffect", "anaerobicTrainingEffect", "exerciseLoad", "avgPowerW", "maxPowerW", "performanceCondition"],
+                additionalProperties: false
+              },
+              laps: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: { lap: { type: "number" }, durationSec: { type: ["number", "null"] }, distanceKm: { type: ["number", "null"] }, avgPace: { type: ["string", "null"] } },
+                  required: ["lap", "durationSec", "distanceKm", "avgPace"],
+                  additionalProperties: false
+                }
+              },
+              confidence: { type: "string" },
+              notes: { type: "string" }
+            },
+            required: ["date", "time", "running", "garminDetails", "laps", "confidence", "notes"],
+            additionalProperties: false
+          }
+        }
+      }
+    });
+    const content = response.choices[0]?.message?.content;
+    return JSON.parse(typeof content === "string" ? content : "{}");
+  }),
+  /**
    * Save extracted image data to the database after user confirms.
    */
   save: publicProcedure.input(z2.object({
@@ -3965,6 +4399,21 @@ var runningRouter = router({
     calories: z2.number().optional(),
     temperature: z2.number().optional(),
     humidity: z2.number().optional(),
+    windSpeed: z2.number().optional(),
+    apparentTemp: z2.number().optional(),
+    precipitation: z2.number().optional(),
+    weatherCode: z2.number().int().optional(),
+    weatherCondition: z2.string().max(120).optional(),
+    weatherLocation: z2.string().max(160).optional(),
+    weatherObservedAt: z2.string().max(40).optional(),
+    weatherSource: z2.string().max(160).optional(),
+    garminDetails: z2.record(z2.string(), z2.union([z2.string(), z2.number(), z2.null()])).optional(),
+    laps: z2.array(z2.object({
+      lap: z2.number(),
+      durationSec: z2.number().nullable(),
+      distanceKm: z2.number().nullable(),
+      avgPace: z2.string().nullable()
+    })).optional(),
     notes: z2.string().optional()
   })).mutation(async ({ input }) => {
     const db = await getDb();
@@ -3981,7 +4430,8 @@ var runningRouter = router({
           average_pace, best_pace, average_heart_rate, maximum_heart_rate,
           average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
           vertical_oscillation_cm, avg_ground_contact_time_ms,
-          calories, temperature, humidity, notes
+          calories, temperature, humidity, wind_speed, apparent_temp, precipitation,
+          weather_code, weather_condition, weather_location, weather_observed_at, weather_source, garmin_details, laps, notes
         ) VALUES (
           ${input.date},
           ${input.runningType ?? null},
@@ -4005,6 +4455,16 @@ var runningRouter = router({
           ${input.calories ?? null},
           ${input.temperature ?? null},
           ${input.humidity ?? null},
+          ${input.windSpeed ?? null},
+          ${input.apparentTemp ?? null},
+          ${input.precipitation ?? null},
+          ${input.weatherCode ?? null},
+          ${input.weatherCondition ?? null},
+          ${input.weatherLocation ?? null},
+          ${input.weatherObservedAt ?? null},
+          ${input.weatherSource ?? null},
+          ${input.garminDetails ? JSON.stringify(input.garminDetails) : null}::jsonb,
+          ${input.laps ? JSON.stringify(input.laps) : null}::jsonb,
           ${input.notes ?? null}
         ) RETURNING id
       `);
@@ -4041,6 +4501,21 @@ var runningRouter = router({
     calories: z2.number().optional(),
     temperature: z2.number().optional(),
     humidity: z2.number().optional(),
+    windSpeed: z2.number().optional(),
+    apparentTemp: z2.number().optional(),
+    precipitation: z2.number().optional(),
+    weatherCode: z2.number().int().optional(),
+    weatherCondition: z2.string().max(120).optional(),
+    weatherLocation: z2.string().max(160).optional(),
+    weatherObservedAt: z2.string().max(40).optional(),
+    weatherSource: z2.string().max(160).optional(),
+    garminDetails: z2.record(z2.string(), z2.union([z2.string(), z2.number(), z2.null()])).optional(),
+    laps: z2.array(z2.object({
+      lap: z2.number(),
+      durationSec: z2.number().nullable(),
+      distanceKm: z2.number().nullable(),
+      avgPace: z2.string().nullable()
+    })).optional(),
     notes: z2.string().optional()
   })).mutation(async ({ input }) => {
     const db = await getDb();
@@ -4053,6 +4528,9 @@ var runningRouter = router({
     }
     const setClauses = Object.entries(fields).filter(([, v]) => v !== void 0).map(([k, v]) => {
       const col = k.replace(/([A-Z])/g, "_$1").toLowerCase();
+      if (k === "garminDetails" || k === "laps") {
+        return sql2`${sql2.raw(col)} = ${JSON.stringify(v)}::jsonb`;
+      }
       return sql2`${sql2.raw(col)} = ${v}`;
     });
     if (!setClauses.length) return { success: true };
@@ -4064,6 +4542,201 @@ var runningRouter = router({
     if (!db) throw new Error("DB unavailable");
     await db.execute(sql2`DELETE FROM running_logs WHERE id = ${input.id}`);
     return { success: true };
+  }),
+  getLabPersonalization: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return { body: null, baselinePaceSecPerKm: null, maxHeartRate: null, restingHeartRate: null, runTypeDistribution: [], recentRunCount: 0 };
+    const [profileRows, bodyRows, heartRows, runningRows, typeRows] = await Promise.all([
+      db.execute(sql2`SELECT height FROM user_profile WHERE user_id = ${OWNER_USER_ID} LIMIT 1`),
+      db.execute(sql2`SELECT weight, body_fat_pct, muscle_mass, date FROM body_composition WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
+      db.execute(sql2`SELECT resting_hr, high_hr FROM heart_rate_logs WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
+      db.execute(sql2`
+          SELECT average_pace, average_heart_rate, maximum_heart_rate, date
+          FROM running_logs
+          WHERE average_pace ~ '^[0-9]+(\\.[0-9]+)?$'
+            AND COALESCE(distance_km::numeric, 0) >= 3
+          ORDER BY date DESC
+          LIMIT 24
+        `),
+      db.execute(sql2`
+          SELECT COALESCE(running_type, '未分類') AS running_type, COUNT(*) AS count
+          FROM running_logs
+          WHERE date >= (${todayHK()}::date - interval '180 days')::text
+          GROUP BY COALESCE(running_type, '未分類')
+          ORDER BY count DESC, running_type ASC
+        `)
+    ]);
+    const profile = (profileRows.rows ?? profileRows)[0] ?? null;
+    const body = (bodyRows.rows ?? bodyRows)[0] ?? null;
+    const heart = (heartRows.rows ?? heartRows)[0] ?? null;
+    const running = runningRows.rows ?? runningRows;
+    const types = typeRows.rows ?? typeRows;
+    const paces = running.map((row) => Number(row.average_pace) * 60).filter(Number.isFinite);
+    const maxFromRuns = running.map((row) => Number(row.maximum_heart_rate)).filter(Number.isFinite);
+    const restFromRuns = running.map((row) => Number(row.average_heart_rate)).filter(Number.isFinite);
+    const baselinePaceSecPerKm = paces.length ? paces.reduce((sum, pace) => sum + pace, 0) / paces.length : null;
+    const maxHeartRate = Number.isFinite(Number(heart?.high_hr)) ? Number(heart.high_hr) : maxFromRuns.length ? Math.max(...maxFromRuns) : null;
+    const restingHeartRate = Number.isFinite(Number(heart?.resting_hr)) ? Number(heart.resting_hr) : restFromRuns.length ? Math.min(...restFromRuns) : null;
+    return {
+      body: body || profile ? {
+        heightCm: profile?.height ? Number(profile.height) : null,
+        weightKg: body?.weight ? Number(body.weight) : null,
+        bodyFatPct: body?.body_fat_pct ? Number(body.body_fat_pct) : null,
+        muscleMassKg: body?.muscle_mass ? Number(body.muscle_mass) : null,
+        recordedDate: body?.date ?? null
+      } : null,
+      baselinePaceSecPerKm,
+      maxHeartRate,
+      restingHeartRate,
+      runTypeDistribution: types.map((row) => ({ type: row.running_type, count: Number(row.count) })),
+      recentRunCount: running.length
+    };
+  }),
+  lookupHistoricalWeather: ownerProcedure.input(z2.object({
+    date: z2.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    time: z2.string().regex(/^\d{2}:\d{2}$/).optional(),
+    location: z2.string().trim().max(160).optional(),
+    latitude: z2.number().min(-90).max(90).optional(),
+    longitude: z2.number().min(-180).max(180).optional()
+  })).mutation(async ({ input }) => {
+    if (input.date > todayHK()) throw new Error("\u5C1A\u672A\u767C\u751F\u7684\u65E5\u671F\u6C92\u6709\u6B77\u53F2\u5929\u6C23\u8CC7\u6599");
+    const coordinates = await resolveWeatherLocation(input);
+    return fetchHistoricalWeatherForDate({ coordinates, date: input.date, time: input.time });
+  }),
+  previewHistoricalBackfill: ownerProcedure.input(z2.object({
+    scope: z2.enum(["logs", "races", "both"]),
+    startDate: z2.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    endDate: z2.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    routeType: z2.enum(["Road", "Track", "Trail", "Treadmill", "Mixed"]).optional(),
+    overwriteRouteType: z2.boolean().default(false),
+    overwriteWeather: z2.boolean().default(false)
+  })).mutation(async ({ input }) => {
+    if (input.startDate > input.endDate) throw new Error("\u958B\u59CB\u65E5\u671F\u4E0D\u53EF\u665A\u65BC\u7D50\u675F\u65E5\u671F");
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const [logRows, raceRows] = await Promise.all([
+      input.scope === "races" ? Promise.resolve([]) : db.execute(sql2`
+          SELECT id, date, route_type, temperature, humidity, wind_speed, apparent_temp, precipitation,
+                 weather_code, weather_condition, weather_location
+          FROM running_logs WHERE date BETWEEN ${input.startDate} AND ${input.endDate} ORDER BY date DESC
+        `),
+      input.scope === "logs" ? Promise.resolve([]) : db.execute(sql2`
+          SELECT id, date, temperature, humidity, wind_speed, apparent_temp, precipitation,
+                 weather_code, weather_condition, weather_location
+          FROM races WHERE date BETWEEN ${input.startDate} AND ${input.endDate} ORDER BY date DESC
+        `)
+    ]);
+    const logs = logRows.rows ?? logRows;
+    const races3 = raceRows.rows ?? raceRows;
+    const { candidates, skippedFuture } = buildHistoricalBackfillCandidates(logs, races3, input, todayHK());
+    return { ...summariseHistoricalBackfill(candidates, skippedFuture), samples: candidates.slice(0, 8) };
+  }),
+  applyHistoricalBackfill: ownerProcedure.input(z2.object({
+    scope: z2.enum(["logs", "races", "both"]),
+    startDate: z2.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    endDate: z2.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    routeType: z2.enum(["Road", "Track", "Trail", "Treadmill", "Mixed"]).optional(),
+    overwriteRouteType: z2.boolean().default(false),
+    overwriteWeather: z2.boolean().default(false),
+    location: z2.string().trim().max(160).optional(),
+    latitude: z2.number().min(-90).max(90).optional(),
+    longitude: z2.number().min(-180).max(180).optional(),
+    time: z2.string().regex(/^\d{2}:\d{2}$/).default("07:00"),
+    useRecordLocation: z2.boolean().default(true)
+  })).mutation(async ({ input }) => {
+    if (input.startDate > input.endDate) throw new Error("\u958B\u59CB\u65E5\u671F\u4E0D\u53EF\u665A\u65BC\u7D50\u675F\u65E5\u671F");
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const [logRows, raceRows] = await Promise.all([
+      input.scope === "races" ? Promise.resolve([]) : db.execute(sql2`
+          SELECT id, date, route_type, temperature, humidity, wind_speed, apparent_temp, precipitation,
+                 weather_code, weather_condition, weather_location
+          FROM running_logs WHERE date BETWEEN ${input.startDate} AND ${input.endDate} ORDER BY date ASC
+        `),
+      input.scope === "logs" ? Promise.resolve([]) : db.execute(sql2`
+          SELECT id, date, location, temperature, humidity, wind_speed, apparent_temp, precipitation,
+                 weather_code, weather_condition, weather_location
+          FROM races WHERE date BETWEEN ${input.startDate} AND ${input.endDate} ORDER BY date ASC
+        `)
+    ]);
+    const logs = logRows.rows ?? logRows;
+    const races3 = raceRows.rows ?? raceRows;
+    const { candidates, skippedFuture } = buildHistoricalBackfillCandidates(logs, races3, input, todayHK());
+    const rowsByKey = /* @__PURE__ */ new Map();
+    logs.forEach((row) => rowsByKey.set(`log:${row.id}`, row));
+    races3.forEach((row) => rowsByKey.set(`race:${row.id}`, row));
+    const coordinatesByKey = /* @__PURE__ */ new Map();
+    const datesByLocation = /* @__PURE__ */ new Map();
+    for (const candidate of candidates.filter((candidate2) => candidate2.needsWeather)) {
+      const row = rowsByKey.get(`${candidate.kind}:${candidate.id}`);
+      const explicitLocation = input.useRecordLocation ? candidate.kind === "race" ? row?.location : row?.weather_location : void 0;
+      const coordinates = await resolveWeatherLocation({
+        location: explicitLocation || input.location || HONG_KONG_WEATHER_LOCATION.label,
+        latitude: input.latitude,
+        longitude: input.longitude
+      });
+      const locationKey = `${coordinates.latitude},${coordinates.longitude},${coordinates.label}`;
+      coordinatesByKey.set(`${candidate.kind}:${candidate.id}`, coordinates);
+      if (!datesByLocation.has(locationKey)) datesByLocation.set(locationKey, /* @__PURE__ */ new Set());
+      datesByLocation.get(locationKey).add(candidate.date);
+    }
+    const weatherByLocationDate = /* @__PURE__ */ new Map();
+    for (const [locationKey, dateSet] of Array.from(datesByLocation.entries())) {
+      const [latitude, longitude, label] = locationKey.split(",");
+      const coordinates = { latitude: Number(latitude), longitude: Number(longitude), label };
+      for (const chunk of buildDateChunks(Array.from(dateSet))) {
+        const weatherByDate = await fetchHistoricalWeatherRange({ coordinates, startDate: chunk.startDate, endDate: chunk.endDate, time: input.time });
+        weatherByDate.forEach((weather, date2) => weatherByLocationDate.set(`${locationKey}|${date2}`, weather));
+      }
+    }
+    let routeTypeUpdates = 0;
+    let weatherUpdates = 0;
+    let skippedNoData = 0;
+    const failures = [];
+    for (const candidate of candidates) {
+      try {
+        const sets = [];
+        if (candidate.needsRouteType && input.routeType) {
+          sets.push(sql2`route_type = ${input.routeType}`);
+          routeTypeUpdates += 1;
+        }
+        if (candidate.needsWeather) {
+          const coordinates = coordinatesByKey.get(`${candidate.kind}:${candidate.id}`);
+          const locationKey = coordinates ? `${coordinates.latitude},${coordinates.longitude},${coordinates.label}` : "";
+          const weather = weatherByLocationDate.get(`${locationKey}|${candidate.date}`);
+          if (!weather) {
+            skippedNoData += 1;
+          } else {
+            sets.push(
+              sql2`temperature = ${weather.temperature}`,
+              sql2`humidity = ${weather.humidity}`,
+              sql2`wind_speed = ${weather.windSpeed}`,
+              sql2`apparent_temp = ${weather.apparentTemp}`,
+              sql2`precipitation = ${weather.precipitation}`,
+              sql2`weather_code = ${weather.weatherCode}`,
+              sql2`weather_condition = ${weather.weatherCondition}`,
+              sql2`weather_location = ${weather.weatherLocation}`,
+              sql2`weather_observed_at = ${weather.weatherObservedAt}`,
+              sql2`weather_source = ${weather.weatherSource}`
+            );
+            weatherUpdates += 1;
+          }
+        }
+        if (!sets.length) continue;
+        sets.push(sql2`updated_at = NOW()`);
+        const table = candidate.kind === "log" ? "running_logs" : "races";
+        await db.execute(sql2`UPDATE ${sql2.raw(table)} SET ${sql2.join(sets, sql2`, `)} WHERE id = ${candidate.id}`);
+      } catch (error) {
+        failures.push({ id: candidate.id, kind: candidate.kind, message: error instanceof Error ? error.message : "\u66F4\u65B0\u5931\u6557" });
+      }
+    }
+    return {
+      ...summariseHistoricalBackfill(candidates, skippedFuture),
+      routeTypeUpdates,
+      weatherUpdates,
+      skippedNoData,
+      failures
+    };
   }),
   getLabScenarios: publicProcedure.query(async () => {
     const db = await getDb();
@@ -4554,7 +5227,9 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
     const rows = await db.execute(sql2`
         SELECT id, race_name, date, distance_km, location, registration, bib_no, is_pb,
           finish_time, finish_hr, finish_min, finish_sec, target_hr, target_min, target_sec,
-          overall_place, age_group_place, gender_group_place, running_shoes, shoes_id, notes,
+          overall_place, age_group_place, gender_group_place, running_shoes, shoes_id,
+          temperature, humidity, wind_speed, apparent_temp, precipitation,
+          weather_code, weather_condition, weather_location, weather_observed_at, weather_source, notes,
           created_at, updated_at
         FROM races ORDER BY date DESC
       `);
@@ -4580,6 +5255,16 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
     genderGroupPlace: z2.number().optional(),
     runningShoes: z2.string().optional(),
     shoesId: z2.number().optional(),
+    temperature: z2.number().optional(),
+    humidity: z2.number().optional(),
+    windSpeed: z2.number().optional(),
+    apparentTemp: z2.number().optional(),
+    precipitation: z2.number().optional(),
+    weatherCode: z2.number().int().optional(),
+    weatherCondition: z2.string().max(120).optional(),
+    weatherLocation: z2.string().max(160).optional(),
+    weatherObservedAt: z2.string().max(40).optional(),
+    weatherSource: z2.string().max(160).optional(),
     notes: z2.string().optional()
   })).mutation(async ({ input }) => {
     const db = await getDb();
@@ -4587,13 +5272,19 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
     await db.execute(sql2`
         INSERT INTO races (race_name, date, distance_km, location, registration, bib_no, is_pb, finish_time,
           finish_hr, finish_min, finish_sec, target_hr, target_min, target_sec,
-          overall_place, age_group_place, gender_group_place, running_shoes, shoes_id, notes)
+          overall_place, age_group_place, gender_group_place, running_shoes, shoes_id,
+          temperature, humidity, wind_speed, apparent_temp, precipitation,
+          weather_code, weather_condition, weather_location, weather_observed_at, weather_source, notes)
         VALUES (${input.raceName}, ${input.date}, ${input.distanceKm ?? null}, ${input.location ?? null},
           ${input.registration ?? null}, ${input.bibNo ?? null}, ${input.isPb ?? false}, ${input.finishTime ?? null},
           ${input.finishHr ?? null}, ${input.finishMin ?? null}, ${input.finishSec ?? null},
           ${input.targetHr ?? null}, ${input.targetMin ?? null}, ${input.targetSec ?? null},
           ${input.overallPlace ?? null}, ${input.ageGroupPlace ?? null}, ${input.genderGroupPlace ?? null},
-          ${input.runningShoes ?? null}, ${input.shoesId ?? null}, ${input.notes ?? null})
+          ${input.runningShoes ?? null}, ${input.shoesId ?? null},
+          ${input.temperature ?? null}, ${input.humidity ?? null}, ${input.windSpeed ?? null},
+          ${input.apparentTemp ?? null}, ${input.precipitation ?? null},
+          ${input.weatherCode ?? null}, ${input.weatherCondition ?? null}, ${input.weatherLocation ?? null},
+          ${input.weatherObservedAt ?? null}, ${input.weatherSource ?? null}, ${input.notes ?? null})
       `);
     return { success: true };
   }),
@@ -4618,6 +5309,16 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
     genderGroupPlace: z2.number().optional(),
     runningShoes: z2.string().optional(),
     shoesId: z2.number().optional(),
+    temperature: z2.number().optional(),
+    humidity: z2.number().optional(),
+    windSpeed: z2.number().optional(),
+    apparentTemp: z2.number().optional(),
+    precipitation: z2.number().optional(),
+    weatherCode: z2.number().int().optional(),
+    weatherCondition: z2.string().max(120).optional(),
+    weatherLocation: z2.string().max(160).optional(),
+    weatherObservedAt: z2.string().max(40).optional(),
+    weatherSource: z2.string().max(160).optional(),
     notes: z2.string().optional()
   })).mutation(async ({ input }) => {
     const db = await getDb();
@@ -4700,6 +5401,46 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
     if (f.shoesId !== void 0) {
       sets.push(`shoes_id = $${sets.length + 1}`);
       vals.push(f.shoesId);
+    }
+    if (f.temperature !== void 0) {
+      sets.push(`temperature = $${sets.length + 1}`);
+      vals.push(f.temperature);
+    }
+    if (f.humidity !== void 0) {
+      sets.push(`humidity = $${sets.length + 1}`);
+      vals.push(f.humidity);
+    }
+    if (f.windSpeed !== void 0) {
+      sets.push(`wind_speed = $${sets.length + 1}`);
+      vals.push(f.windSpeed);
+    }
+    if (f.apparentTemp !== void 0) {
+      sets.push(`apparent_temp = $${sets.length + 1}`);
+      vals.push(f.apparentTemp);
+    }
+    if (f.precipitation !== void 0) {
+      sets.push(`precipitation = $${sets.length + 1}`);
+      vals.push(f.precipitation);
+    }
+    if (f.weatherCode !== void 0) {
+      sets.push(`weather_code = $${sets.length + 1}`);
+      vals.push(f.weatherCode);
+    }
+    if (f.weatherCondition !== void 0) {
+      sets.push(`weather_condition = $${sets.length + 1}`);
+      vals.push(f.weatherCondition);
+    }
+    if (f.weatherLocation !== void 0) {
+      sets.push(`weather_location = $${sets.length + 1}`);
+      vals.push(f.weatherLocation);
+    }
+    if (f.weatherObservedAt !== void 0) {
+      sets.push(`weather_observed_at = $${sets.length + 1}`);
+      vals.push(f.weatherObservedAt);
+    }
+    if (f.weatherSource !== void 0) {
+      sets.push(`weather_source = $${sets.length + 1}`);
+      vals.push(f.weatherSource);
     }
     if (f.notes !== void 0) {
       sets.push(`notes = $${sets.length + 1}`);

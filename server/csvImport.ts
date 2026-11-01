@@ -86,6 +86,14 @@ export interface ParsedRunningRow {
   calories?: number;
   temperature?: number;
   humidity?: number;
+  windSpeed?: number;
+  apparentTemp?: number;
+  precipitation?: number;
+  weatherCode?: number;
+  weatherCondition?: string;
+  weatherLocation?: string;
+  weatherObservedAt?: string;
+  weatherSource?: string;
   notes?: string;
 }
 
@@ -544,6 +552,14 @@ export function parseRunningRow(row: Record<string, string>): ParsedRunningRow |
       : undefined,
     temperature: toNum(keys["mintemp"] ?? keys["temperature"] ?? keys["avgtemperature"]),
     humidity: toNum(keys["humidity"]),
+    windSpeed: toNum(keys["windspeed"] ?? keys["windspeedkmh"]),
+    apparentTemp: toNum(keys["apparenttemp"] ?? keys["feelslike"] ?? keys["feelsliketemperature"]),
+    precipitation: toNum(keys["precipitation"] ?? keys["rain"]),
+    weatherCode: toNum(keys["weathercode"] ?? keys["wmocode"]),
+    weatherCondition: keys["weathercondition"] ?? keys["conditions"] ?? keys["weather"] ?? undefined,
+    weatherLocation: keys["weatherlocation"] ?? keys["location"] ?? undefined,
+    weatherObservedAt: keys["weatherobservedat"] ?? keys["weatherdatetime"] ?? undefined,
+    weatherSource: keys["weathersource"] ?? undefined,
     notes: keys["title"] ?? undefined,
   };
 }
