@@ -509,3 +509,12 @@
 - [x] Fix the iPhone 「更多」navigation drawer so its route list has a dedicated touch-scroll area and all secondary health pages remain reachable
 - [x] Verify Garmin running-field Google Sheets mappings remain complete, and complete GPS/model tests, browser preview checks, typecheck and production builds
 - [x] Save checkpoint, push to BodyFit-only GitHub main and verify the v3.14.6 Vercel production deployment
+
+## v3.14.7 Spreadsheet-style health data entry
+- [x] Create a reusable Excel-style grid that accepts multi-cell clipboard paste, provides row-level validation and allows corrections before batch submission
+- [x] Add transactional-style row result APIs and table-entry actions for steps/stairs, heart rate, blood pressure, sleep and body composition, with all calendar values interpreted as Hong Kong dates
+- [x] Make Body Composition, Sleep and Heart Rate batch entries write to Google Sheets first and retain a database mirror for existing charts, edit controls and offline-resilient page queries
+- [x] Update the Running Energy Lab to use all historical running records for every running-type baseline, distribution and personal calibration calculation
+- [x] Test clipboard-grid parsing, HK date normalization, validation, batch results and Google Sheets source/sync contracts; complete UI checks and production builds
+- [x] Complete clipboard-grid, Hong Kong date, validation, Google Sheets source/sync, all-history running analysis, mobile UI and production-build verification
+- [ ] Save checkpoint, push to BodyFit-only GitHub main and verify the v3.14.7 Vercel production deployment

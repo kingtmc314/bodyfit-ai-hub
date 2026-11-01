@@ -237,41 +237,22 @@
   background: linear-gradient(132deg, oklch(0.64 0.19 42) 0%, oklch(0.70 0.18 56) 40%, oklch(0.59 0.16 165) 100%);
 }
 
-/* Running energy laboratory — follows the app theme instead of forcing a dark canvas. */
+/* Running energy laboratory — deliberately dark in every app theme for focused, high-contrast analysis. */
 .running-lab {
-  background: linear-gradient(145deg, color-mix(in oklab, var(--card) 92%, oklch(0.88 0.08 205)) 0%, var(--card) 52%, color-mix(in oklab, var(--card) 94%, oklch(0.92 0.08 145)) 100%) !important;
-  border-color: color-mix(in oklab, var(--border) 86%, oklch(0.62 0.18 165)) !important;
-  color: var(--foreground) !important;
+  background: radial-gradient(circle at 96% 0%, rgba(16, 185, 129, .20), transparent 30rem), radial-gradient(circle at 3% 100%, rgba(14, 165, 233, .16), transparent 26rem), #07111f !important;
+  border-color: rgba(100, 149, 190, .38) !important;
+  color: #f8fafc !important;
 }
 .running-lab aside,
 .running-lab [class*="bg-slate-900"],
 .running-lab [class*="bg-slate-950"],
-.running-lab [class*="bg-black/"] {
-  background-color: color-mix(in oklab, var(--muted) 68%, var(--card)) !important;
-}
-.running-lab [class*="bg-white/"] {
-  background-color: color-mix(in oklab, var(--card) 92%, var(--muted)) !important;
-}
-.running-lab [class*="border-white/"] { border-color: var(--border) !important; }
-.running-lab .text-white { color: var(--foreground) !important; }
-.running-lab .text-slate-300,
-.running-lab .text-slate-400,
-.running-lab .text-slate-500 { color: var(--muted-foreground) !important; }
-.dark .running-lab {
-  background: linear-gradient(145deg, oklch(0.16 0.025 252) 0%, oklch(0.12 0.019 252) 55%, oklch(0.14 0.025 220) 100%) !important;
-  border-color: oklch(0.30 0.025 252) !important;
-  color: var(--foreground) !important;
-}
-.dark .running-lab aside,
-.dark .running-lab [class*="bg-slate-900"],
-.dark .running-lab [class*="bg-slate-950"],
-.dark .running-lab [class*="bg-black/"] { background-color: oklch(0.12 0.019 252 / 0.82) !important; }
-.dark .running-lab [class*="bg-white/"] { background-color: oklch(0.23 0.025 252 / 0.72) !important; }
-.dark .running-lab [class*="border-white/"] { border-color: oklch(0.32 0.025 252 / 0.85) !important; }
-.dark .running-lab .text-white { color: oklch(0.98 0.005 250) !important; }
-.dark .running-lab .text-slate-300 { color: oklch(0.84 0.015 250) !important; }
-.dark .running-lab .text-slate-400,
-.dark .running-lab .text-slate-500 { color: oklch(0.66 0.015 250) !important; }
+.running-lab [class*="bg-black/"] { background-color: rgba(8, 19, 34, .90) !important; }
+.running-lab [class*="bg-white/"] { background-color: rgba(30, 41, 59, .62) !important; }
+.running-lab [class*="border-white/"] { border-color: rgba(148, 163, 184, .28) !important; }
+.running-lab .text-white { color: #f8fafc !important; }
+.running-lab .text-slate-300 { color: #cbd5e1 !important; }
+.running-lab .text-slate-400 { color: #a8b7cb !important; }
+.running-lab .text-slate-500 { color: #8798b0 !important; }
 
 /* Sidebar nav item */
 .nav-item {

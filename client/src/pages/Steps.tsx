@@ -8,9 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Footprints, Trash2, Edit2, Loader2, ArrowUpDown, TrendingUp, Building2, Settings, Target, CheckCircle2, X } from "lucide-react";
+import { Plus, Footprints, Trash2, Edit2, Loader2, ArrowUpDown, TrendingUp, Building2, Settings, Target, CheckCircle2, X, ClipboardPaste } from "lucide-react";
 import LogPhotoUploader, { LogPhotoUploaderRef } from "@/components/LogPhotoUploader";
 import ScreenshotImporter from "@/components/ScreenshotImporter";
+import HealthSpreadsheetEntry from "@/components/HealthSpreadsheetEntry";
+import { HEALTH_SPREADSHEET_COLUMNS, prepareHealthSpreadsheetRow } from "@/lib/healthSpreadsheetRows";
 import { useTranslation } from "react-i18next";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -71,6 +73,7 @@ export default function Steps() {
   const { t } = useTranslation();
   const isOwner = useIsOwner();
   const [showDialog, setShowDialog] = useState(false);
+  const [showSpreadsheet, setShowSpreadsheet] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
   const photoUploaderRef = useRef<LogPhotoUploaderRef>(null);
@@ -136,6 +139,9 @@ export default function Steps() {
     },
     onError: (e) => toast.error(e.message),
   });
+  const batchMutation = trpc.steps.batchUpsert.useMutation({
+    onError: (error) => toast.error(`表格輸入未能完成：${error.message}`),
+  });
 
   // Auto-calculate calories when steps change (for both new entries and edits)
   useEffect(() => {
@@ -196,7 +202,7 @@ export default function Steps() {
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <Footprints className="w-6 h-6 text-primary" />
@@ -204,7 +210,7 @@ export default function Steps() {
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">{t('steps.subtitle')}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {isOwner && (
             <Button variant="outline" size="sm" onClick={() => backfillMutation.mutate()} disabled={backfillMutation.isPending} className="gap-1.5 text-xs">
               {backfillMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <TrendingUp className="w-3.5 h-3.5" />}
@@ -214,6 +220,11 @@ export default function Steps() {
           <Button variant="outline" size="sm" onClick={() => { setGoalForm({ steps: String(stepGoal), floors: String(floorGoal) }); setShowGoalDialog(true); }} className="gap-1.5 text-xs">
             <Target className="w-3.5 h-3.5" /> 設定目標
           </Button>
+          {isOwner && (
+            <Button variant="outline" size="sm" onClick={() => setShowSpreadsheet(true)} className="gap-1.5 text-xs">
+              <ClipboardPaste className="w-3.5 h-3.5" /> 表格輸入
+            </Button>
+          )}
           {isOwner && (
             <Button onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }} className="gap-2">
               <Plus className="w-4 h-4" /> {t('steps.add')}
@@ -384,6 +395,18 @@ export default function Steps() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <HealthSpreadsheetEntry
+        open={showSpreadsheet}
+        onOpenChange={setShowSpreadsheet}
+        title="表格式輸入步數及樓梯"
+        description="由 Excel 或 Google Sheets 複製多行每日活動數據後貼上。系統以香港日期驗證，重貼同一天會更新該日紀錄而不會重複新增。"
+        columns={HEALTH_SPREADSHEET_COLUMNS.steps}
+        sourceLabel="直接同步活動紀錄"
+        prepareRow={(row, rowIndex) => prepareHealthSpreadsheetRow("steps", row, rowIndex)}
+        submitRows={(rows) => batchMutation.mutateAsync({ rows: rows as any }) as any}
+        onSuccess={() => utils.steps.getAll.invalidate()}
+      />
 
       {/* Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>

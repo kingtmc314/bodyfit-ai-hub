@@ -7,7 +7,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Heart, Activity, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Heart, Activity, Loader2, ClipboardPaste } from "lucide-react";
+import HealthSpreadsheetEntry from "@/components/HealthSpreadsheetEntry";
+import { HEALTH_SPREADSHEET_COLUMNS, prepareHealthSpreadsheetRow } from "@/lib/healthSpreadsheetRows";
 import {
   ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, ReferenceLine,
@@ -47,6 +49,7 @@ const TooltipStyle = {
 export default function BloodPressure() {
   const [days, setDays] = useState(90);
   const [showDialog, setShowDialog] = useState(false);
+  const [showSpreadsheet, setShowSpreadsheet] = useState(false);
   const [editRecord, setEditRecord] = useState<any>(null);
   const [form, setForm] = useState({
     measuredAt: new Date().toISOString().slice(0, 16),
@@ -70,6 +73,9 @@ export default function BloodPressure() {
   const deleteBP = trpc.bloodPressure.delete.useMutation({
     onSuccess: () => { utils.bloodPressure.getAll.invalidate(); toast.success("已刪除"); },
     onError: (e) => toast.error("刪除失敗：" + e.message),
+  });
+  const batchBP = trpc.bloodPressure.batchUpsert.useMutation({
+    onError: (error) => toast.error(`表格輸入未能完成：${error.message}`),
   });
 
   const chartData = useMemo(() => {
@@ -127,14 +133,14 @@ export default function BloodPressure() {
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Heart className="w-6 h-6 text-red-500" /> 血壓記錄
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">追蹤收縮壓、舒張壓及脈搏</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <select
             className="text-xs border border-border rounded-lg px-2 py-1.5 bg-background text-foreground"
             value={days}
@@ -147,6 +153,9 @@ export default function BloodPressure() {
           </select>
           <Button size="sm" onClick={openAdd} className="gap-1">
             <Plus className="w-4 h-4" /> 新增記錄
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setShowSpreadsheet(true)} className="gap-1">
+            <ClipboardPaste className="w-4 h-4" /> 表格輸入
           </Button>
         </div>
       </div>
@@ -218,7 +227,19 @@ export default function BloodPressure() {
         </Card>
       )}
 
-      {/* Records Table */}
+      <HealthSpreadsheetEntry
+        open={showSpreadsheet}
+        onOpenChange={setShowSpreadsheet}
+        title="表格式輸入血壓數據"
+        description="直接從 Excel 或 Google Sheets 貼上多行量度結果。量度時間會一律按香港時間轉換；同一時間重貼會更新原有紀錄。"
+        columns={HEALTH_SPREADSHEET_COLUMNS.bloodPressure}
+        sourceLabel="香港時間批量儲存"
+        prepareRow={(row, rowIndex) => prepareHealthSpreadsheetRow("bloodPressure", row, rowIndex)}
+        submitRows={(rows) => batchBP.mutateAsync({ rows: rows as any }) as any}
+        onSuccess={() => utils.bloodPressure.getAll.invalidate()}
+      />
+
+      {/* Records table */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">記錄列表</CardTitle>

@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.14.6");
+    expect(APP_VERSION).toBe("3.14.7");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -293,5 +293,49 @@ describe("v3.14.6 GPX route intelligence and mobile drawer accessibility", () =>
     expect(releaseNotesSource).toContain('version: "3.14.6"');
     expect(releaseNotesSource).toContain("路線地圖與坡度分段分析");
     expect(releaseNotesSource).toContain("更多");
+  });
+});
+
+describe("v3.14.7 spreadsheet health entry and complete-history energy analysis", () => {
+  const stepsSource = readFileSync(new URL("../client/src/pages/Steps.tsx", import.meta.url), "utf8");
+  const heartRateSource = readFileSync(new URL("../client/src/pages/HeartRate.tsx", import.meta.url), "utf8");
+  const bloodPressureSource = readFileSync(new URL("../client/src/pages/BloodPressure.tsx", import.meta.url), "utf8");
+  const sleepSource = readFileSync(new URL("../client/src/pages/Sleep.tsx", import.meta.url), "utf8");
+  const bodySource = readFileSync(new URL("../client/src/pages/BodyComposition.tsx", import.meta.url), "utf8");
+  const spreadsheetSource = readFileSync(new URL("../client/src/components/HealthSpreadsheetEntry.tsx", import.meta.url), "utf8");
+  const rowSource = readFileSync(new URL("../client/src/lib/healthSpreadsheetRows.ts", import.meta.url), "utf8");
+  const sheetsSource = readFileSync(new URL("../server/sheetsService.ts", import.meta.url), "utf8");
+  const routerSource = readFileSync(new URL("../server/routers.ts", import.meta.url), "utf8");
+  const labSource = readFileSync(new URL("../client/src/components/RunningEnergyLab.tsx", import.meta.url), "utf8");
+  const stylesheetSource = readFileSync(new URL("../client/src/index.css", import.meta.url), "utf8");
+
+  it("offers one native spreadsheet paste grid for steps, heart rate, blood pressure, sleep and body composition", () => {
+    for (const page of [stepsSource, heartRateSource, bloodPressureSource, sleepSource, bodySource]) {
+      expect(page).toContain("HealthSpreadsheetEntry");
+      expect(page).toContain("表格輸入");
+    }
+    expect(spreadsheetSource).toContain("Excel / Google Sheets 相容");
+    expect(spreadsheetSource).toContain("onPaste");
+    expect(spreadsheetSource).toContain("提交結果");
+    expect(rowSource).toContain("normalizeHKDateTime");
+  });
+
+  it("uses Sheets first for body, sleep and heart-rate batch entries, while keeping chart-compatible database mirrors", () => {
+    expect(routerSource).toContain("mirrorSheetFirstBatch");
+    expect(routerSource).toContain('mirrorSheetFirstBatch("body"');
+    expect(routerSource).toContain('mirrorSheetFirstBatch("sleep"');
+    expect(routerSource).toContain('mirrorSheetFirstBatch("heartrate"');
+    expect(sheetsSource).toContain("upsertRowsToSheetByDate");
+    expect(sheetsSource).toContain("Sleep Score");
+    expect(sheetsSource).toContain("Avg HR");
+  });
+
+  it("calculates the energy lab from all stored running data and keeps its analysis surfaces high contrast", () => {
+    expect(routerSource).not.toContain("LIMIT 24");
+    expect(routerSource).not.toContain("interval '180 days'");
+    expect(routerSource).toContain("historicalRunCount");
+    expect(labSource).toContain("不設日期或筆數截斷");
+    expect(stylesheetSource).toContain("deliberately dark in every app theme");
+    expect(stylesheetSource).toContain("#07111f");
   });
 });

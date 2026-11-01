@@ -1797,7 +1797,7 @@ export default function Running() {
             restingHeartRate={labPersonalization?.restingHeartRate ?? (restingHr || undefined)}
             profile={labPersonalization?.body}
             runTypeDistribution={labPersonalization?.runTypeDistribution}
-            historicalRunCount={labPersonalization?.recentRunCount}
+            historicalRunCount={labPersonalization?.historicalRunCount}
           />
         </TabsContent>
       </Tabs>

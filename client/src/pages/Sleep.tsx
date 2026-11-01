@@ -11,9 +11,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PremiumFeatureHero from "@/components/PremiumFeatureHero";
-import { Plus, Moon, Trash2, Edit2, Loader2, Upload, ArrowUpDown } from "lucide-react";
+import { Plus, Moon, Trash2, Edit2, Loader2, Upload, ArrowUpDown, ClipboardPaste } from "lucide-react";
 import QuickImportModal from "@/components/QuickImportModal";
 import ScreenshotImporter from "@/components/ScreenshotImporter";
+import HealthSpreadsheetEntry from "@/components/HealthSpreadsheetEntry";
+import { HEALTH_SPREADSHEET_COLUMNS, prepareHealthSpreadsheetRow } from "@/lib/healthSpreadsheetRows";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, LineChart, Line,
@@ -82,6 +84,7 @@ export default function Sleep() {
   const isOwner = useIsOwner();
   const [showDialog, setShowDialog] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showSpreadsheet, setShowSpreadsheet] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
 
@@ -129,6 +132,9 @@ export default function Sleep() {
   });
   const deleteMutation = trpc.sleep.delete.useMutation({
     onSuccess: () => { utils.sleep.getAll.invalidate(); toast.success("Deleted"); },
+  });
+  const batchMutation = trpc.sleep.batchUpsert.useMutation({
+    onError: (error) => toast.error(`表格輸入未能完成：${error.message}`),
   });
 
   const toHrs = (v: number | null | undefined) =>
@@ -198,6 +204,9 @@ export default function Sleep() {
             <Button size="sm" variant="outline" className="h-9 gap-1.5 rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={() => setShowImport(true)}>
               <Upload className="w-3.5 h-3.5" /> 匯入
             </Button>
+            <Button size="sm" variant="outline" className="h-9 gap-1.5 rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={() => setShowSpreadsheet(true)}>
+              <ClipboardPaste className="w-3.5 h-3.5" /> 表格輸入
+            </Button>
             <Button size="sm" className="h-9 gap-1.5 rounded-xl bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
               <Plus className="w-3.5 h-3.5" /> {t('sleep.add_record')}
             </Button>
@@ -213,6 +222,17 @@ export default function Sleep() {
         ]}
       />
       <QuickImportModal open={showImport} onClose={() => setShowImport(false)} dataType="sleep" onSuccess={() => utils.sleep.getAll.invalidate()} />
+      <HealthSpreadsheetEntry
+        open={showSpreadsheet}
+        onOpenChange={setShowSpreadsheet}
+        title="表格式輸入睡眠數據"
+        description="直接貼上 Excel 或 Google Sheets 多行睡眠數據。所有日期按香港日曆解讀；成功行會先寫入 Sleep Google Sheet，再同步至睡眠趨勢與恢復分析。"
+        columns={HEALTH_SPREADSHEET_COLUMNS.sleep}
+        sourceLabel="先同步 Sleep Google Sheet"
+        prepareRow={(row, rowIndex) => prepareHealthSpreadsheetRow("sleep", row, rowIndex)}
+        submitRows={(rows) => batchMutation.mutateAsync({ rows: rows as any }) as any}
+        onSuccess={() => utils.sleep.getAll.invalidate()}
+      />
 
       <Tabs defaultValue="charts">
         <TabsList className="bg-muted/50">

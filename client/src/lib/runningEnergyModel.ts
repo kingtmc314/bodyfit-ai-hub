@@ -133,7 +133,7 @@ export function buildRunningEnergySimulation(input: EnergyModelInput): RunningEn
   if (hasNumber(input.weightKg)) calibrationNotes.push(`體重 ${input.weightKg.toFixed(1)} kg`);
   if (hasNumber(input.bodyFatPct)) calibrationNotes.push(`體脂 ${input.bodyFatPct.toFixed(1)}%`);
   if (hasNumber(input.muscleMassKg)) calibrationNotes.push(`肌肉量 ${input.muscleMassKg.toFixed(1)} kg`);
-  if ((input.historicalRunCount ?? 0) > 0) calibrationNotes.push(`${input.historicalRunCount} 次近期跑步記錄`);
+  if ((input.historicalRunCount ?? 0) > 0) calibrationNotes.push(`${input.historicalRunCount} 次完整歷史跑步記錄`);
   if (scenarioExperience > 0) calibrationNotes.push(`${Math.round(scenarioExperience * 100)}% 同類型訓練比重`);
   const calibrationLevel = calibrationNotes.length >= 4 ? "個人化" : calibrationNotes.length >= 2 ? "部分個人化" : "參考值";
 

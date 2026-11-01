@@ -1914,8 +1914,8 @@ var SHEET_TABS = {
   running: "Running"
 };
 var BODY_COLUMNS = ["Date", "Weight (kg)", "BMI", "Body Fat %", "Fat Mass (kg)", "Muscle Mass (kg)", "BMR", "Visceral Fat", "Source", "Notes"];
-var SLEEP_COLUMNS = ["Date", "Sleep Score", "Resting HR", "Body Battery", "Pulse Ox (%)", "Respiration", "HRV", "Quality", "Duration (h)", "Source"];
-var HR_COLUMNS = ["Date", "Resting HR", "High HR", "HRV", "Source", "Notes"];
+var SLEEP_COLUMNS = ["Date", "Sleep Score", "Resting HR", "Body Battery", "Pulse Ox (%)", "Respiration", "HRV", "Quality", "Duration (h)", "Source", "Bedtime", "Wake Time", "Notes"];
+var HR_COLUMNS = ["Date", "Resting HR", "High HR", "HRV", "Source", "Notes", "Avg HR"];
 var RUNNING_COLUMNS = ["Date", "Running Type", "Route Type", "Running Shoes", "Distance (km)", "Duration (h)", "Duration (min)", "Duration (sec)", "Avg Pace", "Best Pace", "Avg HR", "Max HR", "Avg Cadence", "Max Cadence", "Avg Stride Length (m)", "Avg Vertical Ratio", "Vertical Oscillation (cm)", "Avg Ground Contact Time (ms)", "Calories", "Temperature (\xB0C)", "Humidity (%)", "Notes", "Wind Speed (km/h)", "Feels Like (\xB0C)", "Precipitation (mm)", "Weather Condition", "Weather Location", "Weather Observed At (HK)", "Weather Source", "Garmin Details", "Laps"];
 function getAuth() {
   const credJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -1926,100 +1926,159 @@ function getAuth() {
     scopes: ["https://www.googleapis.com/auth/spreadsheets"]
   });
 }
-async function writeRowToSheet(type, rowData) {
+function toSheetValues(type, rowData) {
+  let values;
+  if (type === "body") {
+    values = [
+      String(rowData.date ?? ""),
+      rowData.weight !== void 0 ? Number(rowData.weight) : "",
+      rowData.bmi !== void 0 ? Number(rowData.bmi) : "",
+      rowData.bodyFatPct !== void 0 ? Number(rowData.bodyFatPct) : "",
+      rowData.fatMass !== void 0 ? Number(rowData.fatMass) : "",
+      rowData.muscleMass !== void 0 ? Number(rowData.muscleMass) : "",
+      rowData.bmr !== void 0 ? Number(rowData.bmr) : "",
+      rowData.visceralFat !== void 0 ? Number(rowData.visceralFat) : "",
+      String(rowData.source ?? "app"),
+      String(rowData.notes ?? "")
+    ];
+  } else if (type === "sleep") {
+    values = [
+      String(rowData.date ?? ""),
+      rowData.score !== void 0 ? Number(rowData.score) : "",
+      rowData.restingHr !== void 0 ? Number(rowData.restingHr) : "",
+      rowData.bodyBattery !== void 0 ? Number(rowData.bodyBattery) : "",
+      rowData.pulseOx !== void 0 ? Number(rowData.pulseOx) : "",
+      rowData.respiration !== void 0 ? Number(rowData.respiration) : "",
+      rowData.hrv !== void 0 ? Number(rowData.hrv) : "",
+      String(rowData.quality ?? ""),
+      rowData.duration !== void 0 ? Number(rowData.duration) : "",
+      String(rowData.source ?? "app"),
+      String(rowData.bedtime ?? ""),
+      String(rowData.waketime ?? ""),
+      String(rowData.notes ?? "")
+    ];
+  } else if (type === "heartrate") {
+    values = [
+      String(rowData.date ?? ""),
+      rowData.restingHr !== void 0 ? Number(rowData.restingHr) : "",
+      rowData.highHr !== void 0 ? Number(rowData.highHr) : "",
+      rowData.hrv !== void 0 ? Number(rowData.hrv) : "",
+      String(rowData.source ?? "app"),
+      String(rowData.notes ?? ""),
+      rowData.avgHr !== void 0 ? Number(rowData.avgHr) : ""
+    ];
+  } else {
+    values = [
+      String(rowData.date ?? ""),
+      String(rowData.runningType ?? ""),
+      String(rowData.routeType ?? ""),
+      String(rowData.runningShoes ?? ""),
+      rowData.distanceKm !== void 0 ? Number(rowData.distanceKm) : "",
+      rowData.hour !== void 0 ? Number(rowData.hour) : "",
+      rowData.minutes !== void 0 ? Number(rowData.minutes) : "",
+      rowData.second !== void 0 ? Number(rowData.second) : "",
+      String(rowData.averagePace ?? ""),
+      String(rowData.bestPace ?? ""),
+      rowData.averageHeartRate !== void 0 ? Number(rowData.averageHeartRate) : "",
+      rowData.maximumHeartRate !== void 0 ? Number(rowData.maximumHeartRate) : "",
+      rowData.averageCadence !== void 0 ? Number(rowData.averageCadence) : "",
+      rowData.maxCadence !== void 0 ? Number(rowData.maxCadence) : "",
+      rowData.avgStrideLengthM !== void 0 ? Number(rowData.avgStrideLengthM) : "",
+      rowData.avgVerticalRatio !== void 0 ? Number(rowData.avgVerticalRatio) : "",
+      rowData.verticalOscillationCm !== void 0 ? Number(rowData.verticalOscillationCm) : "",
+      rowData.avgGroundContactTimeMs !== void 0 ? Number(rowData.avgGroundContactTimeMs) : "",
+      rowData.calories !== void 0 ? Number(rowData.calories) : "",
+      rowData.temperature !== void 0 ? Number(rowData.temperature) : "",
+      rowData.humidity !== void 0 ? Number(rowData.humidity) : "",
+      String(rowData.notes ?? ""),
+      rowData.windSpeed !== void 0 ? Number(rowData.windSpeed) : "",
+      rowData.apparentTemp !== void 0 ? Number(rowData.apparentTemp) : "",
+      rowData.precipitation !== void 0 ? Number(rowData.precipitation) : "",
+      String(rowData.weatherCondition ?? ""),
+      String(rowData.weatherLocation ?? ""),
+      String(rowData.weatherObservedAt ?? ""),
+      String(rowData.weatherSource ?? ""),
+      rowData.garminDetails ? JSON.stringify(rowData.garminDetails) : "",
+      rowData.laps ? JSON.stringify(rowData.laps) : ""
+    ];
+  }
+  return values;
+}
+async function writeRowsToSheet(type, rows) {
+  if (!rows.length) return;
   try {
+    await ensureSheetHeaders(type);
     const auth = getAuth();
     const sheets = google.sheets({ version: "v4", auth });
     const sheetName = SHEET_TABS[type];
-    let values;
-    if (type === "body") {
-      values = [
-        String(rowData.date ?? ""),
-        rowData.weight !== void 0 ? Number(rowData.weight) : "",
-        rowData.bmi !== void 0 ? Number(rowData.bmi) : "",
-        rowData.bodyFatPct !== void 0 ? Number(rowData.bodyFatPct) : "",
-        rowData.fatMass !== void 0 ? Number(rowData.fatMass) : "",
-        rowData.muscleMass !== void 0 ? Number(rowData.muscleMass) : "",
-        rowData.bmr !== void 0 ? Number(rowData.bmr) : "",
-        rowData.visceralFat !== void 0 ? Number(rowData.visceralFat) : "",
-        String(rowData.source ?? "app"),
-        String(rowData.notes ?? "")
-      ];
-    } else if (type === "sleep") {
-      values = [
-        String(rowData.date ?? ""),
-        rowData.score !== void 0 ? Number(rowData.score) : "",
-        rowData.restingHr !== void 0 ? Number(rowData.restingHr) : "",
-        rowData.bodyBattery !== void 0 ? Number(rowData.bodyBattery) : "",
-        rowData.pulseOx !== void 0 ? Number(rowData.pulseOx) : "",
-        rowData.respiration !== void 0 ? Number(rowData.respiration) : "",
-        rowData.hrv !== void 0 ? Number(rowData.hrv) : "",
-        String(rowData.quality ?? ""),
-        rowData.duration !== void 0 ? Number(rowData.duration) : "",
-        String(rowData.source ?? "app")
-      ];
-    } else if (type === "heartrate") {
-      values = [
-        String(rowData.date ?? ""),
-        rowData.restingHr !== void 0 ? Number(rowData.restingHr) : "",
-        rowData.highHr !== void 0 ? Number(rowData.highHr) : "",
-        rowData.hrv !== void 0 ? Number(rowData.hrv) : "",
-        String(rowData.source ?? "app"),
-        String(rowData.notes ?? "")
-      ];
-    } else {
-      values = [
-        String(rowData.date ?? ""),
-        String(rowData.runningType ?? ""),
-        String(rowData.routeType ?? ""),
-        String(rowData.runningShoes ?? ""),
-        rowData.distanceKm !== void 0 ? Number(rowData.distanceKm) : "",
-        rowData.hour !== void 0 ? Number(rowData.hour) : "",
-        rowData.minutes !== void 0 ? Number(rowData.minutes) : "",
-        rowData.second !== void 0 ? Number(rowData.second) : "",
-        String(rowData.averagePace ?? ""),
-        String(rowData.bestPace ?? ""),
-        rowData.averageHeartRate !== void 0 ? Number(rowData.averageHeartRate) : "",
-        rowData.maximumHeartRate !== void 0 ? Number(rowData.maximumHeartRate) : "",
-        rowData.averageCadence !== void 0 ? Number(rowData.averageCadence) : "",
-        rowData.maxCadence !== void 0 ? Number(rowData.maxCadence) : "",
-        rowData.avgStrideLengthM !== void 0 ? Number(rowData.avgStrideLengthM) : "",
-        rowData.avgVerticalRatio !== void 0 ? Number(rowData.avgVerticalRatio) : "",
-        rowData.verticalOscillationCm !== void 0 ? Number(rowData.verticalOscillationCm) : "",
-        rowData.avgGroundContactTimeMs !== void 0 ? Number(rowData.avgGroundContactTimeMs) : "",
-        rowData.calories !== void 0 ? Number(rowData.calories) : "",
-        rowData.temperature !== void 0 ? Number(rowData.temperature) : "",
-        rowData.humidity !== void 0 ? Number(rowData.humidity) : "",
-        String(rowData.notes ?? ""),
-        rowData.windSpeed !== void 0 ? Number(rowData.windSpeed) : "",
-        rowData.apparentTemp !== void 0 ? Number(rowData.apparentTemp) : "",
-        rowData.precipitation !== void 0 ? Number(rowData.precipitation) : "",
-        String(rowData.weatherCondition ?? ""),
-        String(rowData.weatherLocation ?? ""),
-        String(rowData.weatherObservedAt ?? ""),
-        String(rowData.weatherSource ?? ""),
-        rowData.garminDetails ? JSON.stringify(rowData.garminDetails) : "",
-        rowData.laps ? JSON.stringify(rowData.laps) : ""
-      ];
-    }
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
       range: `${sheetName}!A:Z`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
-        values: [values]
+        values: rows.map((row) => toSheetValues(type, row))
       }
     });
   } catch (err) {
-    console.error(`[Sheets] writeRowToSheet(${type}) error:`, err?.message);
+    console.error(`[Sheets] writeRowsToSheet(${type}) error:`, err?.message);
     throw err;
   }
+}
+async function upsertRowsToSheetByDate(type, rows) {
+  if (!rows.length) return;
+  try {
+    await ensureSheetHeaders(type);
+    const auth = getAuth();
+    const sheets = google.sheets({ version: "v4", auth });
+    const sheetName = SHEET_TABS[type];
+    const existing = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${sheetName}!A2:A`
+    });
+    const rowForDate = /* @__PURE__ */ new Map();
+    (existing.data.values ?? []).forEach((entry, index) => {
+      const date2 = String(entry[0] ?? "").trim();
+      if (date2) rowForDate.set(date2, index + 2);
+    });
+    const updates = [];
+    const appended = [];
+    rows.forEach((row) => {
+      const date2 = String(row.date ?? "").trim();
+      const existingRow = rowForDate.get(date2);
+      if (existingRow) {
+        updates.push({ range: `${sheetName}!A${existingRow}`, values: [toSheetValues(type, row)] });
+      } else {
+        appended.push(row);
+      }
+    });
+    if (updates.length) {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: { valueInputOption: "USER_ENTERED", data: updates }
+      });
+    }
+    if (appended.length) {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${sheetName}!A:Z`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: appended.map((row) => toSheetValues(type, row)) }
+      });
+    }
+  } catch (err) {
+    console.error(`[Sheets] upsertRowsToSheetByDate(${type}) error:`, err?.message);
+    throw err;
+  }
+}
+async function writeRowToSheet(type, rowData) {
+  await writeRowsToSheet(type, [rowData]);
 }
 async function ensureSheetHeaders(type) {
   try {
     const auth = getAuth();
     const sheets = google.sheets({ version: "v4", auth });
     const sheetName = SHEET_TABS[type];
+    const headers = type === "body" ? BODY_COLUMNS : type === "sleep" ? SLEEP_COLUMNS : type === "heartrate" ? HR_COLUMNS : RUNNING_COLUMNS;
     try {
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
@@ -2027,12 +2086,20 @@ async function ensureSheetHeaders(type) {
       });
       const firstRow = response.data.values?.[0];
       if (firstRow && firstRow.length > 0) {
-        if (type === "running" && firstRow.length < RUNNING_COLUMNS.length) {
+        if (firstRow.length < headers.length) {
+          const columnNumber = firstRow.length + 1;
+          let columnName = "";
+          let remainder = columnNumber;
+          while (remainder > 0) {
+            remainder -= 1;
+            columnName = String.fromCharCode(65 + remainder % 26) + columnName;
+            remainder = Math.floor(remainder / 26);
+          }
           await sheets.spreadsheets.values.update({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${sheetName}!A1`,
+            range: `${sheetName}!${columnName}1`,
             valueInputOption: "USER_ENTERED",
-            requestBody: { values: [RUNNING_COLUMNS] }
+            requestBody: { values: [headers.slice(firstRow.length)] }
           });
         }
         return;
@@ -2043,7 +2110,6 @@ async function ensureSheetHeaders(type) {
         requestBody: { requests: [{ addSheet: { properties: { title: sheetName } } }] }
       }).catch(() => void 0);
     }
-    const headers = type === "body" ? BODY_COLUMNS : type === "sleep" ? SLEEP_COLUMNS : type === "heartrate" ? HR_COLUMNS : RUNNING_COLUMNS;
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: `${sheetName}!A1`,
@@ -2709,6 +2775,27 @@ function parseGarminRawFile(buffer, filename) {
   throw new Error("\u8ACB\u9078\u64C7 Garmin FIT\u3001CSV\u3001GPX \u6216 TCX \u539F\u59CB\u6A94");
 }
 
+// shared/healthSpreadsheet.ts
+function isRealCalendarDate(value) {
+  const [year, month, day] = value.split("-").map(Number);
+  const date2 = new Date(Date.UTC(year, month - 1, day));
+  return date2.getUTCFullYear() === year && date2.getUTCMonth() === month - 1 && date2.getUTCDate() === day;
+}
+function normalizeHKDate(value) {
+  const trimmed = value.trim();
+  const iso = trimmed.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (iso) {
+    const normalized = `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+    return isRealCalendarDate(normalized) ? normalized : null;
+  }
+  const dmy = trimmed.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (dmy) {
+    const normalized = `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+    return isRealCalendarDate(normalized) ? normalized : null;
+  }
+  return null;
+}
+
 // server/routers.ts
 import Papa2 from "papaparse";
 var OWNER_USER_ID = 2;
@@ -2744,6 +2831,24 @@ function decodeGarminChunk(base64) {
   const chunk = Buffer.from(normalized, "base64");
   if (!chunk.length || chunk.length > GARMIN_RAW_UPLOAD_CHUNK_BYTES) throw new Error("Garmin \u539F\u59CB\u6A94\u5206\u6BB5\u5927\u5C0F\u7121\u6548");
   return chunk;
+}
+async function mirrorSheetFirstBatch(sheetType, rows, mirrorRow) {
+  try {
+    await upsertRowsToSheetByDate(sheetType, rows.map(({ data }) => ({ ...data, source: "app_spreadsheet" })));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Google Sheets \u540C\u6B65\u5931\u6557";
+    return rows.map(({ rowIndex }) => ({ rowIndex, status: "failed", message: `\u672A\u5BEB\u5165\uFF1A${message}` }));
+  }
+  const results = [];
+  for (const { rowIndex, data } of rows) {
+    try {
+      results.push({ rowIndex, status: await mirrorRow(data) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "\u8CC7\u6599\u5EAB\u93E1\u50CF\u5931\u6557";
+      results.push({ rowIndex, status: "synced", message: `\u8A66\u7B97\u8868\u5DF2\u540C\u6B65\uFF1B\u8CC7\u6599\u5EAB\u93E1\u50CF\u7A0D\u5F8C\u91CD\u8A66\uFF08${message}\uFF09` });
+    }
+  }
+  return results;
 }
 var CARDIO_EXERCISE_NAMES = [
   "Stationary Bike",
@@ -3564,6 +3669,33 @@ var bodyRouter = router({
     )).orderBy(desc(bodyComposition.date)).limit(1);
     return rows[0] ?? null;
   }),
+  batchUpsert: ownerProcedure.input(z2.object({ rows: z2.array(z2.object({
+    rowIndex: z2.number().int().min(0),
+    data: z2.object({
+      date: z2.string().refine((value) => normalizeHKDate(value) !== null, "\u65E5\u671F\u9808\u70BA\u9999\u6E2F YYYY-MM-DD"),
+      weight: z2.number().min(10).max(500).optional(),
+      bmi: z2.number().min(5).max(100).optional(),
+      bodyFatPct: z2.number().min(0).max(100).optional(),
+      fatMass: z2.number().min(0).max(300).optional(),
+      muscleMass: z2.number().min(0).max(250).optional(),
+      bmr: z2.number().int().min(300).max(1e4).optional(),
+      visceralFat: z2.number().int().min(0).max(100).optional(),
+      notes: z2.string().max(500).optional()
+    }).refine((row) => Object.entries(row).some(([key, value]) => key !== "date" && key !== "notes" && value !== void 0), "\u8ACB\u81F3\u5C11\u8F38\u5165\u4E00\u9805\u8EAB\u9AD4\u6578\u64DA")
+  })).min(1).max(100) })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    return mirrorSheetFirstBatch("body", input.rows, async (row) => {
+      const existing = await db.select({ id: bodyComposition.id }).from(bodyComposition).where(and(eq2(bodyComposition.userId, OWNER_USER_ID), eq2(bodyComposition.date, row.date))).limit(1);
+      const data = { ...row, userId: OWNER_USER_ID, source: "sheets" };
+      if (existing[0]) {
+        await db.update(bodyComposition).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq2(bodyComposition.id, existing[0].id));
+        return "updated";
+      }
+      await db.insert(bodyComposition).values(data);
+      return "created";
+    });
+  }),
   // Bulk import from Google Sheets
   bulkImport: ownerProcedure.input(z2.array(z2.object({
     date: z2.string(),
@@ -3623,6 +3755,30 @@ var heartRateRouter = router({
     if (!db) throw new Error("DB unavailable");
     await db.delete(heartRateLogs).where(and(eq2(heartRateLogs.id, input.id), eq2(heartRateLogs.userId, OWNER_USER_ID)));
     return { success: true };
+  }),
+  batchUpsert: ownerProcedure.input(z2.object({ rows: z2.array(z2.object({
+    rowIndex: z2.number().int().min(0),
+    data: z2.object({
+      date: z2.string().refine((value) => normalizeHKDate(value) !== null, "\u65E5\u671F\u9808\u70BA\u9999\u6E2F YYYY-MM-DD"),
+      restingHr: z2.number().int().min(25).max(250).optional(),
+      highHr: z2.number().int().min(25).max(260).optional(),
+      avgHr: z2.number().int().min(25).max(250).optional(),
+      hrv: z2.number().int().min(0).max(500).optional(),
+      notes: z2.string().max(500).optional()
+    }).refine((row) => Object.entries(row).some(([key, value]) => key !== "date" && key !== "notes" && value !== void 0), "\u8ACB\u81F3\u5C11\u8F38\u5165\u4E00\u9805\u5FC3\u8DF3\u6578\u64DA")
+  })).min(1).max(100) })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    return mirrorSheetFirstBatch("heartrate", input.rows, async (row) => {
+      const existing = await db.select({ id: heartRateLogs.id }).from(heartRateLogs).where(and(eq2(heartRateLogs.userId, OWNER_USER_ID), eq2(heartRateLogs.date, row.date))).limit(1);
+      const data = { ...row, userId: OWNER_USER_ID, source: "sheets" };
+      if (existing[0]) {
+        await db.update(heartRateLogs).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq2(heartRateLogs.id, existing[0].id));
+        return "updated";
+      }
+      await db.insert(heartRateLogs).values(data);
+      return "created";
+    });
   }),
   bulkImport: ownerProcedure.input(z2.array(z2.object({
     date: z2.string(),
@@ -3722,6 +3878,45 @@ var sleepRouter = router({
     if (!db) throw new Error("DB unavailable");
     await db.delete(sleepLogs).where(and(eq2(sleepLogs.id, input.id), eq2(sleepLogs.userId, OWNER_USER_ID)));
     return { success: true };
+  }),
+  batchUpsert: ownerProcedure.input(z2.object({ rows: z2.array(z2.object({
+    rowIndex: z2.number().int().min(0),
+    data: z2.object({
+      date: z2.string().refine((value) => normalizeHKDate(value) !== null, "\u65E5\u671F\u9808\u70BA\u9999\u6E2F YYYY-MM-DD"),
+      score: z2.number().int().min(0).max(100).optional(),
+      restingHr: z2.number().int().min(25).max(250).optional(),
+      bodyBattery: z2.number().int().min(0).max(100).optional(),
+      pulseOx: z2.number().min(50).max(100).optional(),
+      respiration: z2.number().min(4).max(60).optional(),
+      hrv: z2.number().int().min(0).max(500).optional(),
+      quality: z2.enum(["Poor", "Fair", "Good", "Excellent"]).optional(),
+      duration: z2.number().min(0).max(24).optional(),
+      bedtime: z2.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+      waketime: z2.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+      notes: z2.string().max(500).optional()
+    }).refine((row) => Object.entries(row).some(([key, value]) => !["date", "quality", "bedtime", "waketime", "notes"].includes(key) && value !== void 0), "\u8ACB\u81F3\u5C11\u8F38\u5165\u4E00\u9805\u7761\u7720\u6578\u64DA")
+  })).min(1).max(100) })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    return mirrorSheetFirstBatch("sleep", input.rows, async (row) => {
+      const existing = await db.select({ id: sleepLogs.id }).from(sleepLogs).where(and(eq2(sleepLogs.userId, OWNER_USER_ID), eq2(sleepLogs.date, row.date))).limit(1);
+      const { score, quality, duration, restingHr, ...rest } = row;
+      const data = {
+        ...rest,
+        userId: OWNER_USER_ID,
+        source: "sheets",
+        sleepScore: score,
+        sleepQuality: quality,
+        sleepDuration: duration,
+        restingHr
+      };
+      if (existing[0]) {
+        await db.update(sleepLogs).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq2(sleepLogs.id, existing[0].id));
+        return "updated";
+      }
+      await db.insert(sleepLogs).values(data);
+      return "created";
+    });
   }),
   bulkImport: publicProcedure.input(z2.array(z2.object({
     date: z2.string(),
@@ -5198,23 +5393,20 @@ var runningRouter = router({
   }),
   getLabPersonalization: publicProcedure.query(async () => {
     const db = await getDb();
-    if (!db) return { body: null, baselinePaceSecPerKm: null, maxHeartRate: null, restingHeartRate: null, runTypeDistribution: [], recentRunCount: 0 };
+    if (!db) return { body: null, baselinePaceSecPerKm: null, maxHeartRate: null, restingHeartRate: null, runTypeDistribution: [], historicalRunCount: 0, baselineRunCount: 0 };
     const [profileRows, bodyRows, heartRows, runningRows, typeRows] = await Promise.all([
       db.execute(sql2`SELECT height FROM user_profile WHERE user_id = ${OWNER_USER_ID} LIMIT 1`),
       db.execute(sql2`SELECT weight, body_fat_pct, muscle_mass, date FROM body_composition WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
       db.execute(sql2`SELECT resting_hr, high_hr FROM heart_rate_logs WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
       db.execute(sql2`
-          SELECT average_pace, average_heart_rate, maximum_heart_rate, date
+          SELECT average_pace, average_heart_rate, maximum_heart_rate, distance_km, running_type, date
           FROM running_logs
-          WHERE average_pace ~ '^[0-9]+(\\.[0-9]+)?$'
-            AND COALESCE(distance_km::numeric, 0) >= 3
-          ORDER BY date DESC
-          LIMIT 24
+          WHERE NULLIF(TRIM(COALESCE(average_pace, '')), '') IS NOT NULL
+          ORDER BY date ASC
         `),
       db.execute(sql2`
           SELECT COALESCE(running_type, '未分類') AS running_type, COUNT(*) AS count
           FROM running_logs
-          WHERE date >= (${todayHK()}::date - interval '180 days')::text
           GROUP BY COALESCE(running_type, '未分類')
           ORDER BY count DESC, running_type ASC
         `)
@@ -5224,7 +5416,21 @@ var runningRouter = router({
     const heart = (heartRows.rows ?? heartRows)[0] ?? null;
     const running = runningRows.rows ?? runningRows;
     const types = typeRows.rows ?? typeRows;
-    const paces = running.map((row) => Number(row.average_pace) * 60).filter(Number.isFinite);
+    const parsePaceSeconds = (raw) => {
+      const value = String(raw ?? "").trim();
+      if (!value) return null;
+      const clock = value.match(/^(\d{1,2}):(\d{2})(?:\.\d+)?$/);
+      if (clock) {
+        const seconds = Number(clock[1]) * 60 + Number(clock[2]);
+        return seconds >= 120 && seconds <= 1800 ? seconds : null;
+      }
+      const numeric2 = Number(value);
+      return Number.isFinite(numeric2) && numeric2 >= 2 && numeric2 <= 30 ? numeric2 * 60 : null;
+    };
+    const paceRows = running.map((row) => ({ ...row, paceSeconds: parsePaceSeconds(row.average_pace) })).filter((row) => row.paceSeconds !== null);
+    const endurancePaceRows = paceRows.filter((row) => Number(row.distance_km) >= 3);
+    const baselineRows = endurancePaceRows.length ? endurancePaceRows : paceRows;
+    const paces = baselineRows.map((row) => row.paceSeconds);
     const maxFromRuns = running.map((row) => Number(row.maximum_heart_rate)).filter(Number.isFinite);
     const restFromRuns = running.map((row) => Number(row.average_heart_rate)).filter(Number.isFinite);
     const baselinePaceSecPerKm = paces.length ? paces.reduce((sum, pace) => sum + pace, 0) / paces.length : null;
@@ -5242,7 +5448,8 @@ var runningRouter = router({
       maxHeartRate,
       restingHeartRate,
       runTypeDistribution: types.map((row) => ({ type: row.running_type, count: Number(row.count) })),
-      recentRunCount: running.length
+      historicalRunCount: running.length,
+      baselineRunCount: baselineRows.length
     };
   }),
   lookupHistoricalWeather: ownerProcedure.input(z2.object({
@@ -6279,6 +6486,37 @@ var stepsRouter = router({
     const [row] = await db.update(dailySteps).set(rest).where(and(eq2(dailySteps.id, id), eq2(dailySteps.userId, OWNER_USER_ID))).returning();
     return row;
   }),
+  batchUpsert: ownerProcedure.input(z2.object({ rows: z2.array(z2.object({
+    rowIndex: z2.number().int().min(0),
+    data: z2.object({
+      date: z2.string().refine((value) => normalizeHKDate(value) !== null, "\u65E5\u671F\u9808\u70BA\u9999\u6E2F YYYY-MM-DD"),
+      steps: z2.number().int().min(0).max(2e5).optional(),
+      floorsClimbed: z2.number().int().min(0).max(1e3).optional(),
+      distanceKm: z2.string().refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 500, "\u8DDD\u96E2\u7121\u6548").optional(),
+      activeMinutes: z2.number().int().min(0).max(1440).optional(),
+      calories: z2.number().int().min(0).max(2e4).optional(),
+      notes: z2.string().max(500).optional()
+    }).refine((row) => Object.entries(row).some(([key, value]) => key !== "date" && key !== "notes" && value !== void 0), "\u8ACB\u81F3\u5C11\u8F38\u5165\u4E00\u9805\u6B65\u6578\u6216\u6A13\u68AF\u6578\u64DA")
+  })).min(1).max(100) })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const results = [];
+    for (const { rowIndex, data } of input.rows) {
+      try {
+        const existing = await db.select({ id: dailySteps.id }).from(dailySteps).where(and(eq2(dailySteps.userId, OWNER_USER_ID), eq2(dailySteps.date, data.date))).limit(1);
+        if (existing[0]) {
+          await db.update(dailySteps).set(data).where(eq2(dailySteps.id, existing[0].id));
+          results.push({ rowIndex, status: "updated" });
+        } else {
+          await db.insert(dailySteps).values({ ...data, userId: OWNER_USER_ID });
+          results.push({ rowIndex, status: "created" });
+        }
+      } catch (error) {
+        results.push({ rowIndex, status: "failed", message: error instanceof Error ? error.message : "\u672A\u80FD\u5132\u5B58" });
+      }
+    }
+    return results;
+  }),
   delete: ownerProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
@@ -6430,6 +6668,45 @@ var bloodPressureRouter = router({
     params.push(id);
     await pool.query(`UPDATE blood_pressure_logs SET ${setClauses.join(", ")} WHERE id = $${params.length}`, params);
     return { success: true };
+  }),
+  batchUpsert: ownerProcedure.input(z2.object({ rows: z2.array(z2.object({
+    rowIndex: z2.number().int().min(0),
+    data: z2.object({
+      measuredAt: z2.string().datetime({ offset: true }),
+      systolic: z2.number().int().min(50).max(300),
+      diastolic: z2.number().int().min(30).max(200),
+      pulse: z2.number().int().min(30).max(300).optional(),
+      notes: z2.string().max(500).optional()
+    })
+  })).min(1).max(100) })).mutation(async ({ input }) => {
+    const pool = getPool();
+    if (!pool) throw new Error("DB unavailable");
+    const results = [];
+    for (const { rowIndex, data } of input.rows) {
+      try {
+        const measuredAt = new Date(data.measuredAt);
+        const existing = await pool.query(
+          "SELECT id FROM blood_pressure_logs WHERE user_id = $1 AND measured_at = $2 LIMIT 1",
+          [OWNER_USER_ID, measuredAt]
+        );
+        if (existing.rows[0]) {
+          await pool.query(
+            "UPDATE blood_pressure_logs SET systolic = $1, diastolic = $2, pulse = $3, notes = $4 WHERE id = $5 AND user_id = $6",
+            [data.systolic, data.diastolic, data.pulse ?? null, data.notes ?? null, existing.rows[0].id, OWNER_USER_ID]
+          );
+          results.push({ rowIndex, status: "updated" });
+        } else {
+          await pool.query(
+            "INSERT INTO blood_pressure_logs (user_id, measured_at, systolic, diastolic, pulse, notes) VALUES ($1, $2, $3, $4, $5, $6)",
+            [OWNER_USER_ID, measuredAt, data.systolic, data.diastolic, data.pulse ?? null, data.notes ?? null]
+          );
+          results.push({ rowIndex, status: "created" });
+        }
+      } catch (error) {
+        results.push({ rowIndex, status: "failed", message: error instanceof Error ? error.message : "\u672A\u80FD\u5132\u5B58" });
+      }
+    }
+    return results;
   }),
   delete: ownerProcedure.input(z2.object({ id: z2.number().int() })).mutation(async ({ input }) => {
     const db = await getDb();

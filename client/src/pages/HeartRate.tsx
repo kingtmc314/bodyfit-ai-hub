@@ -9,10 +9,12 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Heart, Plus, Trash2, Edit2, Loader2, Activity, Upload, ArrowUpDown } from "lucide-react";
+import { Heart, Plus, Trash2, Edit2, Loader2, Activity, Upload, ArrowUpDown, ClipboardPaste } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import QuickImportModal from "@/components/QuickImportModal";
 import ScreenshotImporter from "@/components/ScreenshotImporter";
+import HealthSpreadsheetEntry from "@/components/HealthSpreadsheetEntry";
+import { HEALTH_SPREADSHEET_COLUMNS, prepareHealthSpreadsheetRow } from "@/lib/healthSpreadsheetRows";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area, Legend, ReferenceLine
@@ -39,6 +41,7 @@ export default function HeartRate() {
   const isOwner = useIsOwner();
   const [showDialog, setShowDialog] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showSpreadsheet, setShowSpreadsheet] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
 
@@ -90,6 +93,9 @@ export default function HeartRate() {
   });
   const deleteMutation = trpc.heartRate.delete.useMutation({
     onSuccess: () => { utils.heartRate.getAll.invalidate(); toast.success("Deleted"); },
+  });
+  const batchMutation = trpc.heartRate.batchUpsert.useMutation({
+    onError: (error) => toast.error(`表格輸入未能完成：${error.message}`),
   });
 
 
@@ -158,6 +164,9 @@ export default function HeartRate() {
               <Button size="sm" variant="outline" className="gap-2 bg-white/20 border-white/40 text-white hover:bg-white/30" onClick={() => setShowImport(true)}>
                 <Upload className="w-4 h-4" /> 匯入
               </Button>
+              <Button size="sm" variant="outline" className="gap-2 bg-white/20 border-white/40 text-white hover:bg-white/30" onClick={() => setShowSpreadsheet(true)}>
+                <ClipboardPaste className="w-4 h-4" /> 表格輸入
+              </Button>
               <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
                 <Plus className="w-4 h-4" /> {t('heartrate.add_record')}
               </Button>
@@ -166,6 +175,17 @@ export default function HeartRate() {
         </div>
       </div>
       <QuickImportModal open={showImport} onClose={() => setShowImport(false)} dataType="heartrate" onSuccess={() => utils.heartRate.getAll.invalidate()} />
+      <HealthSpreadsheetEntry
+        open={showSpreadsheet}
+        onOpenChange={setShowSpreadsheet}
+        title="表格式輸入心跳數據"
+        description="可從 Excel 或 Google Sheets 直接貼上多天的靜息、最高及平均心率與 HRV。系統先驗證數值，通過後先同步 Heart Rate Google Sheet，再更新頁面圖表。"
+        columns={HEALTH_SPREADSHEET_COLUMNS.heartRate}
+        sourceLabel="先同步 Heart Rate Google Sheet"
+        prepareRow={(row, rowIndex) => prepareHealthSpreadsheetRow("heartRate", row, rowIndex)}
+        submitRows={(rows) => batchMutation.mutateAsync({ rows: rows as any }) as any}
+        onSuccess={() => { utils.heartRate.getAll.invalidate(); utils.charts.heartRateHistory.invalidate(); }}
+      />
 
       {/* Latest Stats */}
       {latest && (

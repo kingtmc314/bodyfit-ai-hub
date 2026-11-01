@@ -9,12 +9,17 @@ const SHEET_TABS = {
   heartrate: "Heart Rate",
   running: "Running",
 } as const;
+export type SheetDataType = keyof typeof SHEET_TABS;
 
 // Column mappings for Body Fitness sheet (kingsrunai naming convention)
 const BODY_COLUMNS = ["Date", "Weight (kg)", "BMI", "Body Fat %", "Fat Mass (kg)", "Muscle Mass (kg)", "BMR", "Visceral Fat", "Source", "Notes"];
-const SLEEP_COLUMNS = ["Date", "Sleep Score", "Resting HR", "Body Battery", "Pulse Ox (%)", "Respiration", "HRV", "Quality", "Duration (h)", "Source"];
-const HR_COLUMNS = ["Date", "Resting HR", "High HR", "HRV", "Source", "Notes"];
+// New Sleep fields are appended after the historical Source column so old rows never shift.
+const SLEEP_COLUMNS = ["Date", "Sleep Score", "Resting HR", "Body Battery", "Pulse Ox (%)", "Respiration", "HRV", "Quality", "Duration (h)", "Source", "Bedtime", "Wake Time", "Notes"];
+// Avg HR is deliberately appended after the legacy Notes column for the same reason.
+const HR_COLUMNS = ["Date", "Resting HR", "High HR", "HRV", "Source", "Notes", "Avg HR"];
 const RUNNING_COLUMNS = ["Date", "Running Type", "Route Type", "Running Shoes", "Distance (km)", "Duration (h)", "Duration (min)", "Duration (sec)", "Avg Pace", "Best Pace", "Avg HR", "Max HR", "Avg Cadence", "Max Cadence", "Avg Stride Length (m)", "Avg Vertical Ratio", "Vertical Oscillation (cm)", "Avg Ground Contact Time (ms)", "Calories", "Temperature (°C)", "Humidity (%)", "Notes", "Wind Speed (km/h)", "Feels Like (°C)", "Precipitation (mm)", "Weather Condition", "Weather Location", "Weather Observed At (HK)", "Weather Source", "Garmin Details", "Laps"];
+
+export type SheetSyncResult = { rowIndex: number; status: "created" | "updated" };
 
 function getAuth() {
   const credJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -26,7 +31,7 @@ function getAuth() {
   });
 }
 
-export async function readSheetData(type: keyof typeof SHEET_TABS): Promise<Record<string, unknown>[]> {
+export async function readSheetData(type: SheetDataType): Promise<Record<string, unknown>[]> {
   try {
     const auth = getAuth();
     const sheets = google.sheets({ version: "v4", auth });
@@ -76,6 +81,9 @@ export async function readSheetData(type: keyof typeof SHEET_TABS): Promise<Reco
           hrv: parseFloat(String(obj["HRV"] ?? "")) || undefined,
           quality: String(obj["Quality"] ?? "") || undefined,
           duration: parseFloat(String(obj["Duration (h)"] ?? "")) || undefined,
+          bedtime: String(obj["Bedtime"] ?? "") || undefined,
+          waketime: String(obj["Wake Time"] ?? "") || undefined,
+          notes: String(obj["Notes"] ?? "") || undefined,
           source: "sheets",
         });
       } else if (type === "heartrate") {
@@ -84,6 +92,7 @@ export async function readSheetData(type: keyof typeof SHEET_TABS): Promise<Reco
           restingHr: parseFloat(String(obj["Resting HR"] ?? "")) || undefined,
           highHr: parseFloat(String(obj["High HR"] ?? "")) || undefined,
           hrv: parseFloat(String(obj["HRV"] ?? "")) || undefined,
+          avgHr: parseFloat(String(obj["Avg HR"] ?? "")) || undefined,
           notes: String(obj["Notes"] ?? "") || undefined,
           source: "sheets",
         });
@@ -97,104 +106,126 @@ export async function readSheetData(type: keyof typeof SHEET_TABS): Promise<Reco
   }
 }
 
-export async function writeRowToSheet(type: keyof typeof SHEET_TABS, rowData: Record<string, unknown>): Promise<void> {
+function toSheetValues(type: SheetDataType, rowData: Record<string, unknown>): (string | number | undefined)[] {
+  let values: (string | number | undefined)[];
+
+  if (type === "body") {
+    values = [
+      String(rowData.date ?? ""), rowData.weight !== undefined ? Number(rowData.weight) : "", rowData.bmi !== undefined ? Number(rowData.bmi) : "",
+      rowData.bodyFatPct !== undefined ? Number(rowData.bodyFatPct) : "", rowData.fatMass !== undefined ? Number(rowData.fatMass) : "", rowData.muscleMass !== undefined ? Number(rowData.muscleMass) : "",
+      rowData.bmr !== undefined ? Number(rowData.bmr) : "", rowData.visceralFat !== undefined ? Number(rowData.visceralFat) : "", String(rowData.source ?? "app"), String(rowData.notes ?? ""),
+    ];
+  } else if (type === "sleep") {
+    values = [
+      String(rowData.date ?? ""), rowData.score !== undefined ? Number(rowData.score) : "", rowData.restingHr !== undefined ? Number(rowData.restingHr) : "",
+      rowData.bodyBattery !== undefined ? Number(rowData.bodyBattery) : "", rowData.pulseOx !== undefined ? Number(rowData.pulseOx) : "", rowData.respiration !== undefined ? Number(rowData.respiration) : "",
+      rowData.hrv !== undefined ? Number(rowData.hrv) : "", String(rowData.quality ?? ""), rowData.duration !== undefined ? Number(rowData.duration) : "", String(rowData.source ?? "app"),
+      String(rowData.bedtime ?? ""), String(rowData.waketime ?? ""), String(rowData.notes ?? ""),
+    ];
+  } else if (type === "heartrate") {
+    values = [
+      String(rowData.date ?? ""), rowData.restingHr !== undefined ? Number(rowData.restingHr) : "", rowData.highHr !== undefined ? Number(rowData.highHr) : "",
+      rowData.hrv !== undefined ? Number(rowData.hrv) : "", String(rowData.source ?? "app"), String(rowData.notes ?? ""), rowData.avgHr !== undefined ? Number(rowData.avgHr) : "",
+    ];
+  } else {
+    values = [
+      String(rowData.date ?? ""), String(rowData.runningType ?? ""), String(rowData.routeType ?? ""), String(rowData.runningShoes ?? ""), rowData.distanceKm !== undefined ? Number(rowData.distanceKm) : "",
+      rowData.hour !== undefined ? Number(rowData.hour) : "", rowData.minutes !== undefined ? Number(rowData.minutes) : "", rowData.second !== undefined ? Number(rowData.second) : "",
+      String(rowData.averagePace ?? ""), String(rowData.bestPace ?? ""), rowData.averageHeartRate !== undefined ? Number(rowData.averageHeartRate) : "", rowData.maximumHeartRate !== undefined ? Number(rowData.maximumHeartRate) : "",
+      rowData.averageCadence !== undefined ? Number(rowData.averageCadence) : "", rowData.maxCadence !== undefined ? Number(rowData.maxCadence) : "", rowData.avgStrideLengthM !== undefined ? Number(rowData.avgStrideLengthM) : "",
+      rowData.avgVerticalRatio !== undefined ? Number(rowData.avgVerticalRatio) : "", rowData.verticalOscillationCm !== undefined ? Number(rowData.verticalOscillationCm) : "", rowData.avgGroundContactTimeMs !== undefined ? Number(rowData.avgGroundContactTimeMs) : "",
+      rowData.calories !== undefined ? Number(rowData.calories) : "", rowData.temperature !== undefined ? Number(rowData.temperature) : "", rowData.humidity !== undefined ? Number(rowData.humidity) : "", String(rowData.notes ?? ""),
+      rowData.windSpeed !== undefined ? Number(rowData.windSpeed) : "", rowData.apparentTemp !== undefined ? Number(rowData.apparentTemp) : "", rowData.precipitation !== undefined ? Number(rowData.precipitation) : "",
+      String(rowData.weatherCondition ?? ""), String(rowData.weatherLocation ?? ""), String(rowData.weatherObservedAt ?? ""), String(rowData.weatherSource ?? ""), rowData.garminDetails ? JSON.stringify(rowData.garminDetails) : "", rowData.laps ? JSON.stringify(rowData.laps) : "",
+    ];
+  }
+  return values;
+}
+
+export async function writeRowsToSheet(type: SheetDataType, rows: Record<string, unknown>[]): Promise<void> {
+  if (!rows.length) return;
   try {
+    await ensureSheetHeaders(type);
     const auth = getAuth();
     const sheets = google.sheets({ version: "v4", auth });
     const sheetName = SHEET_TABS[type];
-
-    let values: (string | number | undefined)[];
-
-    if (type === "body") {
-      values = [
-        String(rowData.date ?? ""),
-        rowData.weight !== undefined ? Number(rowData.weight) : "",
-        rowData.bmi !== undefined ? Number(rowData.bmi) : "",
-        rowData.bodyFatPct !== undefined ? Number(rowData.bodyFatPct) : "",
-        rowData.fatMass !== undefined ? Number(rowData.fatMass) : "",
-        rowData.muscleMass !== undefined ? Number(rowData.muscleMass) : "",
-        rowData.bmr !== undefined ? Number(rowData.bmr) : "",
-        rowData.visceralFat !== undefined ? Number(rowData.visceralFat) : "",
-        String(rowData.source ?? "app"),
-        String(rowData.notes ?? ""),
-      ];
-    } else if (type === "sleep") {
-      values = [
-        String(rowData.date ?? ""),
-        rowData.score !== undefined ? Number(rowData.score) : "",
-        rowData.restingHr !== undefined ? Number(rowData.restingHr) : "",
-        rowData.bodyBattery !== undefined ? Number(rowData.bodyBattery) : "",
-        rowData.pulseOx !== undefined ? Number(rowData.pulseOx) : "",
-        rowData.respiration !== undefined ? Number(rowData.respiration) : "",
-        rowData.hrv !== undefined ? Number(rowData.hrv) : "",
-        String(rowData.quality ?? ""),
-        rowData.duration !== undefined ? Number(rowData.duration) : "",
-        String(rowData.source ?? "app"),
-      ];
-    } else if (type === "heartrate") {
-      values = [
-        String(rowData.date ?? ""),
-        rowData.restingHr !== undefined ? Number(rowData.restingHr) : "",
-        rowData.highHr !== undefined ? Number(rowData.highHr) : "",
-        rowData.hrv !== undefined ? Number(rowData.hrv) : "",
-        String(rowData.source ?? "app"),
-        String(rowData.notes ?? ""),
-      ];
-    } else {
-      values = [
-        String(rowData.date ?? ""),
-        String(rowData.runningType ?? ""),
-        String(rowData.routeType ?? ""),
-        String(rowData.runningShoes ?? ""),
-        rowData.distanceKm !== undefined ? Number(rowData.distanceKm) : "",
-        rowData.hour !== undefined ? Number(rowData.hour) : "",
-        rowData.minutes !== undefined ? Number(rowData.minutes) : "",
-        rowData.second !== undefined ? Number(rowData.second) : "",
-        String(rowData.averagePace ?? ""),
-        String(rowData.bestPace ?? ""),
-        rowData.averageHeartRate !== undefined ? Number(rowData.averageHeartRate) : "",
-        rowData.maximumHeartRate !== undefined ? Number(rowData.maximumHeartRate) : "",
-        rowData.averageCadence !== undefined ? Number(rowData.averageCadence) : "",
-        rowData.maxCadence !== undefined ? Number(rowData.maxCadence) : "",
-        rowData.avgStrideLengthM !== undefined ? Number(rowData.avgStrideLengthM) : "",
-        rowData.avgVerticalRatio !== undefined ? Number(rowData.avgVerticalRatio) : "",
-        rowData.verticalOscillationCm !== undefined ? Number(rowData.verticalOscillationCm) : "",
-        rowData.avgGroundContactTimeMs !== undefined ? Number(rowData.avgGroundContactTimeMs) : "",
-        rowData.calories !== undefined ? Number(rowData.calories) : "",
-        rowData.temperature !== undefined ? Number(rowData.temperature) : "",
-        rowData.humidity !== undefined ? Number(rowData.humidity) : "",
-        String(rowData.notes ?? ""),
-        rowData.windSpeed !== undefined ? Number(rowData.windSpeed) : "",
-        rowData.apparentTemp !== undefined ? Number(rowData.apparentTemp) : "",
-        rowData.precipitation !== undefined ? Number(rowData.precipitation) : "",
-        String(rowData.weatherCondition ?? ""),
-        String(rowData.weatherLocation ?? ""),
-        String(rowData.weatherObservedAt ?? ""),
-        String(rowData.weatherSource ?? ""),
-        rowData.garminDetails ? JSON.stringify(rowData.garminDetails) : "",
-        rowData.laps ? JSON.stringify(rowData.laps) : "",
-      ];
-    }
-
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
       range: `${sheetName}!A:Z`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
-        values: [values],
+        values: rows.map((row) => toSheetValues(type, row)),
       },
     });
   } catch (err: any) {
-    console.error(`[Sheets] writeRowToSheet(${type}) error:`, err?.message);
+    console.error(`[Sheets] writeRowsToSheet(${type}) error:`, err?.message);
     throw err;
   }
 }
 
-export async function ensureSheetHeaders(type: keyof typeof SHEET_TABS): Promise<void> {
+/**
+ * Updates the latest row with the same HK calendar date or appends a new row.
+ * Used by app grids so retrying a paste never creates ambiguous duplicate dates in Sheets.
+ */
+export async function upsertRowsToSheetByDate(type: Exclude<SheetDataType, "running">, rows: Record<string, unknown>[]): Promise<void> {
+  if (!rows.length) return;
+  try {
+    await ensureSheetHeaders(type);
+    const auth = getAuth();
+    const sheets = google.sheets({ version: "v4", auth });
+    const sheetName = SHEET_TABS[type];
+    const existing = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${sheetName}!A2:A`,
+    });
+    const rowForDate = new Map<string, number>();
+    (existing.data.values ?? []).forEach((entry, index) => {
+      const date = String(entry[0] ?? "").trim();
+      if (date) rowForDate.set(date, index + 2);
+    });
+
+    const updates: Array<{ range: string; values: (string | number | undefined)[][] }> = [];
+    const appended: Record<string, unknown>[] = [];
+    rows.forEach((row) => {
+      const date = String(row.date ?? "").trim();
+      const existingRow = rowForDate.get(date);
+      if (existingRow) {
+        updates.push({ range: `${sheetName}!A${existingRow}`, values: [toSheetValues(type, row)] });
+      } else {
+        appended.push(row);
+      }
+    });
+
+    if (updates.length) {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: { valueInputOption: "USER_ENTERED", data: updates },
+      });
+    }
+    if (appended.length) {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${sheetName}!A:Z`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: appended.map((row) => toSheetValues(type, row)) },
+      });
+    }
+  } catch (err: any) {
+    console.error(`[Sheets] upsertRowsToSheetByDate(${type}) error:`, err?.message);
+    throw err;
+  }
+}
+
+export async function writeRowToSheet(type: SheetDataType, rowData: Record<string, unknown>): Promise<void> {
+  await writeRowsToSheet(type, [rowData]);
+}
+
+export async function ensureSheetHeaders(type: SheetDataType): Promise<void> {
   try {
     const auth = getAuth();
     const sheets = google.sheets({ version: "v4", auth });
     const sheetName = SHEET_TABS[type];
+    const headers = type === "body" ? BODY_COLUMNS : type === "sleep" ? SLEEP_COLUMNS : type === "heartrate" ? HR_COLUMNS : RUNNING_COLUMNS;
 
     try {
       const response = await sheets.spreadsheets.values.get({
@@ -203,14 +234,21 @@ export async function ensureSheetHeaders(type: keyof typeof SHEET_TABS): Promise
       });
       const firstRow = response.data.values?.[0];
       if (firstRow && firstRow.length > 0) {
-        // Running weather/Garmin columns are appended after the historical Notes column,
-        // so rewriting row 1 never shifts any existing running values.
-        if (type === "running" && firstRow.length < RUNNING_COLUMNS.length) {
+        // Columns are only appended to header row 1. Existing data columns/rows are never moved.
+        if (firstRow.length < headers.length) {
+          const columnNumber = firstRow.length + 1;
+          let columnName = "";
+          let remainder = columnNumber;
+          while (remainder > 0) {
+            remainder -= 1;
+            columnName = String.fromCharCode(65 + (remainder % 26)) + columnName;
+            remainder = Math.floor(remainder / 26);
+          }
           await sheets.spreadsheets.values.update({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${sheetName}!A1`,
+            range: `${sheetName}!${columnName}1`,
             valueInputOption: "USER_ENTERED",
-            requestBody: { values: [RUNNING_COLUMNS] },
+            requestBody: { values: [headers.slice(firstRow.length)] },
           });
         }
         return;
@@ -225,7 +263,6 @@ export async function ensureSheetHeaders(type: keyof typeof SHEET_TABS): Promise
     }
 
     // Write headers
-    const headers = type === "body" ? BODY_COLUMNS : type === "sleep" ? SLEEP_COLUMNS : type === "heartrate" ? HR_COLUMNS : RUNNING_COLUMNS;
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: `${sheetName}!A1`,

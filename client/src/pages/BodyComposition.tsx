@@ -13,6 +13,8 @@ import { Plus, Scale, Trash2, Edit2, Loader2, TrendingUp, TrendingDown, Minus, U
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import QuickImportModal from "@/components/QuickImportModal";
 import ScreenshotImporter from "@/components/ScreenshotImporter";
+import HealthSpreadsheetEntry from "@/components/HealthSpreadsheetEntry";
+import { HEALTH_SPREADSHEET_COLUMNS, prepareHealthSpreadsheetRow } from "@/lib/healthSpreadsheetRows";
 import {
   AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, ComposedChart, Bar, BarChart
@@ -39,6 +41,7 @@ export default function BodyComposition() {
   const isOwner = useIsOwner();
   const [showDialog, setShowDialog] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showSpreadsheet, setShowSpreadsheet] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
 
@@ -90,6 +93,9 @@ export default function BodyComposition() {
   });
   const deleteMutation = trpc.body.delete.useMutation({
     onSuccess: () => { utils.body.getAll.invalidate(); toast.success("Deleted"); },
+  });
+  const batchMutation = trpc.body.batchUpsert.useMutation({
+    onError: (error) => toast.error(`表格輸入未能完成：${error.message}`),
   });
 
 
@@ -151,6 +157,9 @@ export default function BodyComposition() {
               <Button size="sm" variant="outline" className="gap-2 bg-white/20 border-white/40 text-white hover:bg-white/30" onClick={() => setShowImport(true)}>
                 <Upload className="w-4 h-4" /> 匯入
               </Button>
+              <Button size="sm" variant="outline" className="gap-2 bg-white/20 border-white/40 text-white hover:bg-white/30" onClick={() => setShowSpreadsheet(true)}>
+                <Download className="w-4 h-4" /> 表格輸入
+              </Button>
               <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => { setEditEntry(null); setForm(defaultForm); setShowDialog(true); }}>
                 <Plus className="w-4 h-4" /> {t('body.add_record')}
               </Button>
@@ -159,6 +168,17 @@ export default function BodyComposition() {
         </div>
       </div>
       <QuickImportModal open={showImport} onClose={() => setShowImport(false)} dataType="body" onSuccess={() => utils.body.getAll.invalidate()} />
+      <HealthSpreadsheetEntry
+        open={showSpreadsheet}
+        onOpenChange={setShowSpreadsheet}
+        title="表格式輸入身體成份"
+        description="從 Excel 或 Google Sheets 複製多行資料後直接貼上。每行先驗證日期和數值範圍，通過後會先寫入 Body Fitness Google Sheet，再同步至應用程式圖表。"
+        columns={HEALTH_SPREADSHEET_COLUMNS.body}
+        sourceLabel="先同步 Body Fitness Google Sheet"
+        prepareRow={(row, rowIndex) => prepareHealthSpreadsheetRow("body", row, rowIndex)}
+        submitRows={(rows) => batchMutation.mutateAsync({ rows: rows as any }) as any}
+        onSuccess={() => utils.body.getAll.invalidate()}
+      />
 
       {/* Latest Metrics Cards */}
       {latest && (

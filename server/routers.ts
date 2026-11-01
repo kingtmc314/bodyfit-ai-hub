@@ -18,11 +18,12 @@ import { nanoid } from "nanoid";
 import { buildGarminVisionBatches, buildGarminVisionContent, mergeGarminExtractions, parseGarminExtraction } from "./garminImport";
 import { todayHK, daysAgoHK, toHKDateString } from "./hkTime";
 import { parseRows, detectDataType, type ImportDataType } from "./csvImport";
-import { ensureSheetHeaders, writeRowToSheet } from "./sheetsService";
+import { ensureSheetHeaders, writeRowToSheet, upsertRowsToSheetByDate, type SheetDataType } from "./sheetsService";
 import { buildProgressionSuggestion } from "@shared/progression";
 import { buildHistoricalBackfillCandidates, summariseHistoricalBackfill, type BackfillScope } from "@shared/runningBackfill";
 import { buildDateChunks, fetchHistoricalWeatherForDate, fetchHistoricalWeatherRange, HONG_KONG_WEATHER_LOCATION, resolveWeatherLocation } from "./weatherService";
 import { parseGarminRawFile } from "./garminFileImport";
+import { normalizeHKDate, type SpreadsheetSubmitResult } from "@shared/healthSpreadsheet";
 import Papa from "papaparse";
 // Fixed owner user ID - no login required
 const OWNER_USER_ID = 2;
@@ -67,6 +68,37 @@ function decodeGarminChunk(base64: string) {
   const chunk = Buffer.from(normalized, "base64");
   if (!chunk.length || chunk.length > GARMIN_RAW_UPLOAD_CHUNK_BYTES) throw new Error("Garmin 原始檔分段大小無效");
   return chunk;
+}
+
+type SpreadsheetBatchRow<T extends Record<string, unknown>> = { rowIndex: number; data: T };
+
+/**
+ * Keeps Body Fitness, Sleep and Heart Rate Sheets authoritative for table-style entry.
+ * The database only mirrors rows that have first been accepted by Google Sheets.
+ */
+async function mirrorSheetFirstBatch<T extends Record<string, unknown>>(
+  sheetType: SheetDataType,
+  rows: SpreadsheetBatchRow<T>[],
+  mirrorRow: (row: T) => Promise<"created" | "updated">,
+): Promise<SpreadsheetSubmitResult[]> {
+  try {
+    await upsertRowsToSheetByDate(sheetType as Exclude<SheetDataType, "running">, rows.map(({ data }) => ({ ...data, source: "app_spreadsheet" })));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Google Sheets 同步失敗";
+    return rows.map(({ rowIndex }) => ({ rowIndex, status: "failed", message: `未寫入：${message}` }));
+  }
+
+  const results: SpreadsheetSubmitResult[] = [];
+  for (const { rowIndex, data } of rows) {
+    try {
+      results.push({ rowIndex, status: await mirrorRow(data) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "資料庫鏡像失敗";
+      // The spreadsheet remains the accepted source; expose the exact mirror failure to the user.
+      results.push({ rowIndex, status: "synced", message: `試算表已同步；資料庫鏡像稍後重試（${message}）` });
+    }
+  }
+  return results;
 }
 
 // Cardio exercise names (must match BUILT_IN_EXERCISES in Workout.tsx)
@@ -1051,6 +1083,38 @@ const bodyRouter = router({
       return rows[0] ?? null;
     }),
 
+  batchUpsert: ownerProcedure
+    .input(z.object({ rows: z.array(z.object({
+      rowIndex: z.number().int().min(0),
+      data: z.object({
+        date: z.string().refine((value) => normalizeHKDate(value) !== null, "日期須為香港 YYYY-MM-DD"),
+        weight: z.number().min(10).max(500).optional(),
+        bmi: z.number().min(5).max(100).optional(),
+        bodyFatPct: z.number().min(0).max(100).optional(),
+        fatMass: z.number().min(0).max(300).optional(),
+        muscleMass: z.number().min(0).max(250).optional(),
+        bmr: z.number().int().min(300).max(10000).optional(),
+        visceralFat: z.number().int().min(0).max(100).optional(),
+        notes: z.string().max(500).optional(),
+      }).refine((row) => Object.entries(row).some(([key, value]) => key !== "date" && key !== "notes" && value !== undefined), "請至少輸入一項身體數據"),
+    })).min(1).max(100) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      return mirrorSheetFirstBatch("body", input.rows, async (row) => {
+        const existing = await db.select({ id: bodyComposition.id }).from(bodyComposition)
+          .where(and(eq(bodyComposition.userId, OWNER_USER_ID), eq(bodyComposition.date, row.date)))
+          .limit(1);
+        const data = { ...row, userId: OWNER_USER_ID, source: "sheets" };
+        if (existing[0]) {
+          await db.update(bodyComposition).set({ ...data, updatedAt: new Date() }).where(eq(bodyComposition.id, existing[0].id));
+          return "updated";
+        }
+        await db.insert(bodyComposition).values(data);
+        return "created";
+      });
+    }),
+
   // Bulk import from Google Sheets
   bulkImport: ownerProcedure
     .input(z.array(z.object({
@@ -1128,6 +1192,35 @@ const heartRateRouter = router({
       if (!db) throw new Error("DB unavailable");
       await db.delete(heartRateLogs).where(and(eq(heartRateLogs.id, input.id), eq(heartRateLogs.userId, OWNER_USER_ID)));
       return { success: true };
+    }),
+
+  batchUpsert: ownerProcedure
+    .input(z.object({ rows: z.array(z.object({
+      rowIndex: z.number().int().min(0),
+      data: z.object({
+        date: z.string().refine((value) => normalizeHKDate(value) !== null, "日期須為香港 YYYY-MM-DD"),
+        restingHr: z.number().int().min(25).max(250).optional(),
+        highHr: z.number().int().min(25).max(260).optional(),
+        avgHr: z.number().int().min(25).max(250).optional(),
+        hrv: z.number().int().min(0).max(500).optional(),
+        notes: z.string().max(500).optional(),
+      }).refine((row) => Object.entries(row).some(([key, value]) => key !== "date" && key !== "notes" && value !== undefined), "請至少輸入一項心跳數據"),
+    })).min(1).max(100) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      return mirrorSheetFirstBatch("heartrate", input.rows, async (row) => {
+        const existing = await db.select({ id: heartRateLogs.id }).from(heartRateLogs)
+          .where(and(eq(heartRateLogs.userId, OWNER_USER_ID), eq(heartRateLogs.date, row.date)))
+          .limit(1);
+        const data = { ...row, userId: OWNER_USER_ID, source: "sheets" };
+        if (existing[0]) {
+          await db.update(heartRateLogs).set({ ...data, updatedAt: new Date() }).where(eq(heartRateLogs.id, existing[0].id));
+          return "updated";
+        }
+        await db.insert(heartRateLogs).values(data);
+        return "created";
+      });
     }),
 
   bulkImport: ownerProcedure
@@ -1250,6 +1343,50 @@ const sleepRouter = router({
       if (!db) throw new Error("DB unavailable");
       await db.delete(sleepLogs).where(and(eq(sleepLogs.id, input.id), eq(sleepLogs.userId, OWNER_USER_ID)));
       return { success: true };
+    }),
+
+  batchUpsert: ownerProcedure
+    .input(z.object({ rows: z.array(z.object({
+      rowIndex: z.number().int().min(0),
+      data: z.object({
+        date: z.string().refine((value) => normalizeHKDate(value) !== null, "日期須為香港 YYYY-MM-DD"),
+        score: z.number().int().min(0).max(100).optional(),
+        restingHr: z.number().int().min(25).max(250).optional(),
+        bodyBattery: z.number().int().min(0).max(100).optional(),
+        pulseOx: z.number().min(50).max(100).optional(),
+        respiration: z.number().min(4).max(60).optional(),
+        hrv: z.number().int().min(0).max(500).optional(),
+        quality: z.enum(["Poor", "Fair", "Good", "Excellent"]).optional(),
+        duration: z.number().min(0).max(24).optional(),
+        bedtime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+        waketime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+        notes: z.string().max(500).optional(),
+      }).refine((row) => Object.entries(row).some(([key, value]) => !["date", "quality", "bedtime", "waketime", "notes"].includes(key) && value !== undefined), "請至少輸入一項睡眠數據"),
+    })).min(1).max(100) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      return mirrorSheetFirstBatch("sleep", input.rows, async (row) => {
+        const existing = await db.select({ id: sleepLogs.id }).from(sleepLogs)
+          .where(and(eq(sleepLogs.userId, OWNER_USER_ID), eq(sleepLogs.date, row.date)))
+          .limit(1);
+        const { score, quality, duration, restingHr, ...rest } = row;
+        const data = {
+          ...rest,
+          userId: OWNER_USER_ID,
+          source: "sheets",
+          sleepScore: score,
+          sleepQuality: quality,
+          sleepDuration: duration,
+          restingHr,
+        };
+        if (existing[0]) {
+          await db.update(sleepLogs).set({ ...data, updatedAt: new Date() }).where(eq(sleepLogs.id, existing[0].id));
+          return "updated";
+        }
+        await db.insert(sleepLogs).values(data);
+        return "created";
+      });
     }),
 
   bulkImport: publicProcedure
@@ -2860,24 +2997,21 @@ const runningRouter = router({
   getLabPersonalization: publicProcedure
     .query(async () => {
       const db = await getDb();
-      if (!db) return { body: null, baselinePaceSecPerKm: null, maxHeartRate: null, restingHeartRate: null, runTypeDistribution: [], recentRunCount: 0 };
+      if (!db) return { body: null, baselinePaceSecPerKm: null, maxHeartRate: null, restingHeartRate: null, runTypeDistribution: [], historicalRunCount: 0, baselineRunCount: 0 };
 
       const [profileRows, bodyRows, heartRows, runningRows, typeRows] = await Promise.all([
         db.execute(sql`SELECT height FROM user_profile WHERE user_id = ${OWNER_USER_ID} LIMIT 1`),
         db.execute(sql`SELECT weight, body_fat_pct, muscle_mass, date FROM body_composition WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
         db.execute(sql`SELECT resting_hr, high_hr FROM heart_rate_logs WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
         db.execute(sql`
-          SELECT average_pace, average_heart_rate, maximum_heart_rate, date
+          SELECT average_pace, average_heart_rate, maximum_heart_rate, distance_km, running_type, date
           FROM running_logs
-          WHERE average_pace ~ '^[0-9]+(\\.[0-9]+)?$'
-            AND COALESCE(distance_km::numeric, 0) >= 3
-          ORDER BY date DESC
-          LIMIT 24
+          WHERE NULLIF(TRIM(COALESCE(average_pace, '')), '') IS NOT NULL
+          ORDER BY date ASC
         `),
         db.execute(sql`
           SELECT COALESCE(running_type, '未分類') AS running_type, COUNT(*) AS count
           FROM running_logs
-          WHERE date >= (${todayHK()}::date - interval '180 days')::text
           GROUP BY COALESCE(running_type, '未分類')
           ORDER BY count DESC, running_type ASC
         `),
@@ -2887,7 +3021,23 @@ const runningRouter = router({
       const heart = ((heartRows as any).rows ?? heartRows)[0] ?? null;
       const running = (runningRows as any).rows ?? runningRows;
       const types = (typeRows as any).rows ?? typeRows;
-      const paces = running.map((row: any) => Number(row.average_pace) * 60).filter(Number.isFinite);
+      const parsePaceSeconds = (raw: unknown) => {
+        const value = String(raw ?? "").trim();
+        if (!value) return null;
+        const clock = value.match(/^(\d{1,2}):(\d{2})(?:\.\d+)?$/);
+        if (clock) {
+          const seconds = Number(clock[1]) * 60 + Number(clock[2]);
+          return seconds >= 120 && seconds <= 1800 ? seconds : null;
+        }
+        const numeric = Number(value);
+        return Number.isFinite(numeric) && numeric >= 2 && numeric <= 30 ? numeric * 60 : null;
+      };
+      const paceRows = running.map((row: any) => ({ ...row, paceSeconds: parsePaceSeconds(row.average_pace) })).filter((row: any) => row.paceSeconds !== null);
+      // All historical records inform the model. Endurance pace is used when available
+      // for long-distance predictions so a short sprint does not distort a half-marathon baseline.
+      const endurancePaceRows = paceRows.filter((row: any) => Number(row.distance_km) >= 3);
+      const baselineRows = endurancePaceRows.length ? endurancePaceRows : paceRows;
+      const paces = baselineRows.map((row: any) => row.paceSeconds as number);
       const maxFromRuns = running.map((row: any) => Number(row.maximum_heart_rate)).filter(Number.isFinite);
       const restFromRuns = running.map((row: any) => Number(row.average_heart_rate)).filter(Number.isFinite);
       const baselinePaceSecPerKm = paces.length ? paces.reduce((sum: number, pace: number) => sum + pace, 0) / paces.length : null;
@@ -2906,7 +3056,8 @@ const runningRouter = router({
         maxHeartRate,
         restingHeartRate,
         runTypeDistribution: types.map((row: any) => ({ type: row.running_type, count: Number(row.count) })),
-        recentRunCount: running.length,
+        historicalRunCount: running.length,
+        baselineRunCount: baselineRows.length,
       };
     }),
 
@@ -3936,6 +4087,41 @@ const stepsRouter = router({
       const [row] = await db.update(dailySteps).set(rest).where(and(eq(dailySteps.id, id), eq(dailySteps.userId, OWNER_USER_ID))).returning();
       return row;
     }),
+  batchUpsert: ownerProcedure
+    .input(z.object({ rows: z.array(z.object({
+      rowIndex: z.number().int().min(0),
+      data: z.object({
+        date: z.string().refine((value) => normalizeHKDate(value) !== null, "日期須為香港 YYYY-MM-DD"),
+        steps: z.number().int().min(0).max(200000).optional(),
+        floorsClimbed: z.number().int().min(0).max(1000).optional(),
+        distanceKm: z.string().refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 500, "距離無效").optional(),
+        activeMinutes: z.number().int().min(0).max(1440).optional(),
+        calories: z.number().int().min(0).max(20000).optional(),
+        notes: z.string().max(500).optional(),
+      }).refine((row) => Object.entries(row).some(([key, value]) => key !== "date" && key !== "notes" && value !== undefined), "請至少輸入一項步數或樓梯數據"),
+    })).min(1).max(100) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const results: SpreadsheetSubmitResult[] = [];
+      for (const { rowIndex, data } of input.rows) {
+        try {
+          const existing = await db.select({ id: dailySteps.id }).from(dailySteps)
+            .where(and(eq(dailySteps.userId, OWNER_USER_ID), eq(dailySteps.date, data.date)))
+            .limit(1);
+          if (existing[0]) {
+            await db.update(dailySteps).set(data).where(eq(dailySteps.id, existing[0].id));
+            results.push({ rowIndex, status: "updated" });
+          } else {
+            await db.insert(dailySteps).values({ ...data, userId: OWNER_USER_ID });
+            results.push({ rowIndex, status: "created" });
+          }
+        } catch (error) {
+          results.push({ rowIndex, status: "failed", message: error instanceof Error ? error.message : "未能儲存" });
+        }
+      }
+      return results;
+    }),
   delete: ownerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
@@ -4117,6 +4303,48 @@ const bloodPressureRouter = router({
       params.push(id);
       await pool.query(`UPDATE blood_pressure_logs SET ${setClauses.join(', ')} WHERE id = $${params.length}`, params);
       return { success: true };
+    }),
+
+  batchUpsert: ownerProcedure
+    .input(z.object({ rows: z.array(z.object({
+      rowIndex: z.number().int().min(0),
+      data: z.object({
+        measuredAt: z.string().datetime({ offset: true }),
+        systolic: z.number().int().min(50).max(300),
+        diastolic: z.number().int().min(30).max(200),
+        pulse: z.number().int().min(30).max(300).optional(),
+        notes: z.string().max(500).optional(),
+      }),
+    })).min(1).max(100) }))
+    .mutation(async ({ input }) => {
+      const pool = getPool();
+      if (!pool) throw new Error("DB unavailable");
+      const results: SpreadsheetSubmitResult[] = [];
+      for (const { rowIndex, data } of input.rows) {
+        try {
+          const measuredAt = new Date(data.measuredAt);
+          const existing = await pool.query(
+            "SELECT id FROM blood_pressure_logs WHERE user_id = $1 AND measured_at = $2 LIMIT 1",
+            [OWNER_USER_ID, measuredAt],
+          );
+          if (existing.rows[0]) {
+            await pool.query(
+              "UPDATE blood_pressure_logs SET systolic = $1, diastolic = $2, pulse = $3, notes = $4 WHERE id = $5 AND user_id = $6",
+              [data.systolic, data.diastolic, data.pulse ?? null, data.notes ?? null, existing.rows[0].id, OWNER_USER_ID],
+            );
+            results.push({ rowIndex, status: "updated" });
+          } else {
+            await pool.query(
+              "INSERT INTO blood_pressure_logs (user_id, measured_at, systolic, diastolic, pulse, notes) VALUES ($1, $2, $3, $4, $5, $6)",
+              [OWNER_USER_ID, measuredAt, data.systolic, data.diastolic, data.pulse ?? null, data.notes ?? null],
+            );
+            results.push({ rowIndex, status: "created" });
+          }
+        } catch (error) {
+          results.push({ rowIndex, status: "failed", message: error instanceof Error ? error.message : "未能儲存" });
+        }
+      }
+      return results;
     }),
 
   delete: ownerProcedure
