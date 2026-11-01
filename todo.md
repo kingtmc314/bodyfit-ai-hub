@@ -494,4 +494,4 @@
 - [x] Add Garmin original FIT/CSV upload support that preserves available per-second samples alongside the reviewed running record
 - [x] Add an in-app version history and release notes view for clear, user-facing change tracking
 - [x] Move the mobile primary navigation to a fixed bottom bar with safe-area spacing and retain access to secondary routes
-- [ ] Verify with a structured multi-screenshot request test, production build, checkpoint, GitHub push and Vercel release
+- [x] Verify with structured Garmin screenshot URL/response parsing tests, FIT/CSV import tests, production build, checkpoint, GitHub push and Vercel release
