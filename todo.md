@@ -508,4 +508,4 @@
 - [x] Add an interactive Google Maps route visualisation, elevation profile, gradient zones and distance-based slope segment analysis to Garmin run details and the import preview
 - [x] Fix the iPhone 「更多」navigation drawer so its route list has a dedicated touch-scroll area and all secondary health pages remain reachable
 - [x] Verify Garmin running-field Google Sheets mappings remain complete, and complete GPS/model tests, browser preview checks, typecheck and production builds
-- [ ] Save checkpoint, push to BodyFit-only GitHub main and verify the v3.14.6 Vercel production deployment
+- [x] Save checkpoint, push to BodyFit-only GitHub main and verify the v3.14.6 Vercel production deployment
