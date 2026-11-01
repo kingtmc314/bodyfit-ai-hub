@@ -1404,21 +1404,69 @@ async function storageGetSignedUrl(relKey) {
   const { url } = await resp.json();
   return url;
 }
+async function storageReadBuffer(relKey) {
+  const signedUrl = await storageGetSignedUrl(relKey);
+  const response = await fetch(signedUrl);
+  if (!response.ok) throw new Error(`Storage download failed (${response.status})`);
+  return Buffer.from(await response.arrayBuffer());
+}
 
 // server/routers.ts
 import { nanoid } from "nanoid";
 
 // server/garminImport.ts
-function buildGarminVisionContent(signedImageUrls, prompt) {
-  if (!signedImageUrls.length) throw new Error("\u8ACB\u81F3\u5C11\u63D0\u4F9B\u4E00\u5F35 Garmin \u622A\u5716");
-  for (const url of signedImageUrls) {
-    if (!/^https:\/\//i.test(url)) {
-      throw new Error("Garmin \u622A\u5716\u672A\u53D6\u5F97\u53EF\u4F9B\u5206\u6790\u7684\u5B89\u5168\u7DB2\u5740\uFF0C\u8ACB\u91CD\u65B0\u9078\u64C7\u5716\u7247\u5F8C\u518D\u8A66");
+var MAX_GARMIN_SCREENSHOTS = 16;
+var MAX_GARMIN_SCREENSHOT_BYTES = 10 * 1024 * 1024;
+var MAX_GARMIN_BATCH_SIZE = 5;
+var MAX_GARMIN_TOTAL_BYTES = 30 * 1024 * 1024;
+var SUPPORTED_IMAGE_TYPES = /* @__PURE__ */ new Set(["image/png", "image/jpeg", "image/webp"]);
+function asDataImageUrl(screenshot) {
+  const mimeType = screenshot.mimeType.toLowerCase().trim();
+  if (!SUPPORTED_IMAGE_TYPES.has(mimeType)) {
+    throw new Error("Garmin \u622A\u5716\u53EA\u652F\u63F4 PNG\u3001JPG \u6216 WEBP \u683C\u5F0F");
+  }
+  const payload = screenshot.base64.replace(/\s/g, "");
+  if (!payload || !/^[A-Za-z0-9+/]+={0,2}$/.test(payload)) {
+    throw new Error("Garmin \u622A\u5716\u8CC7\u6599\u683C\u5F0F\u7121\u6CD5\u8B80\u53D6\uFF0C\u8ACB\u91CD\u65B0\u9078\u64C7\u5716\u7247");
+  }
+  const bytes = Buffer.byteLength(payload, "base64");
+  if (bytes > MAX_GARMIN_SCREENSHOT_BYTES) {
+    throw new Error(`\u55AE\u5F35 Garmin \u622A\u5716\u4E0D\u53EF\u8D85\u904E ${MAX_GARMIN_SCREENSHOT_BYTES / 1024 / 1024}MB`);
+  }
+  return `data:${mimeType};base64,${payload}`;
+}
+function buildGarminVisionBatches(screenshots, batchSize = MAX_GARMIN_BATCH_SIZE) {
+  if (!screenshots.length) throw new Error("\u8ACB\u81F3\u5C11\u63D0\u4F9B\u4E00\u5F35 Garmin \u622A\u5716");
+  if (screenshots.length > MAX_GARMIN_SCREENSHOTS) {
+    throw new Error(`\u4E00\u6B21\u6700\u591A\u5206\u6790 ${MAX_GARMIN_SCREENSHOTS} \u5F35 Garmin \u622A\u5716`);
+  }
+  if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > MAX_GARMIN_BATCH_SIZE) {
+    throw new Error(`\u6BCF\u6279 Garmin \u622A\u5716\u6700\u591A ${MAX_GARMIN_BATCH_SIZE} \u5F35`);
+  }
+  let totalBytes = 0;
+  const dataImageUrls = screenshots.map((screenshot) => {
+    const url = asDataImageUrl(screenshot);
+    totalBytes += Buffer.byteLength(screenshot.base64.replace(/\s/g, ""), "base64");
+    return url;
+  });
+  if (totalBytes > MAX_GARMIN_TOTAL_BYTES) {
+    throw new Error("\u9019\u6279 Garmin \u622A\u5716\u5408\u8A08\u8D85\u904E 30MB\uFF0C\u8ACB\u5206\u5169\u6B21\u5206\u6790\u6216\u4FDD\u7559\u6700\u6E05\u6670\u7684\u7E3D\u89BD\u3001Stats \u8207 Laps \u756B\u9762");
+  }
+  return Array.from(
+    { length: Math.ceil(dataImageUrls.length / batchSize) },
+    (_, index) => dataImageUrls.slice(index * batchSize, (index + 1) * batchSize)
+  );
+}
+function buildGarminVisionContent(dataImageUrls, prompt) {
+  if (!dataImageUrls.length) throw new Error("\u8ACB\u81F3\u5C11\u63D0\u4F9B\u4E00\u5F35 Garmin \u622A\u5716");
+  for (const url of dataImageUrls) {
+    if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(url)) {
+      throw new Error("Garmin \u622A\u5716\u672A\u53D6\u5F97\u53EF\u4F9B\u5206\u6790\u7684\u5716\u7247\u8CC7\u6599\uFF0C\u8ACB\u91CD\u65B0\u9078\u64C7\u5716\u7247\u5F8C\u518D\u8A66");
     }
   }
   return [
     { type: "text", text: prompt },
-    ...signedImageUrls.map((url) => ({
+    ...dataImageUrls.map((url) => ({
       type: "image_url",
       image_url: { url, detail: "high" }
     }))
@@ -1457,6 +1505,48 @@ function parseGarminExtraction(content) {
     laps: Array.isArray(value.laps) ? value.laps.filter((lap) => typeof lap === "object" && lap !== null && !Array.isArray(lap)) : [],
     confidence,
     notes: typeof value.notes === "string" ? value.notes : "\u8ACB\u6838\u5C0D\u5F9E Garmin \u622A\u5716\u8B80\u53D6\u7684\u6578\u64DA\u3002"
+  };
+}
+function hasValue(value) {
+  return value !== null && value !== void 0 && value !== "";
+}
+function mergeRecordValues(records) {
+  return records.reduce((merged, record) => {
+    for (const [key, value] of Object.entries(record)) {
+      if (!hasValue(merged[key]) && hasValue(value)) merged[key] = value;
+    }
+    return merged;
+  }, {});
+}
+function completedValueCount(record) {
+  return Object.values(record).filter(hasValue).length;
+}
+function mergeGarminExtractions(extractions) {
+  if (!extractions.length) throw new Error("\u6C92\u6709\u53EF\u5408\u4F75\u7684 Garmin \u5206\u6790\u7D50\u679C");
+  const firstValue = (values, empty) => values.find((value) => hasValue(value)) ?? empty;
+  const lapByNumber = /* @__PURE__ */ new Map();
+  for (const extraction of extractions) {
+    for (const lap of extraction.laps) {
+      const number = typeof lap.lap === "number" && Number.isFinite(lap.lap) ? lap.lap : null;
+      if (number === null) continue;
+      const existing = lapByNumber.get(number);
+      if (!existing || completedValueCount(lap) > completedValueCount(existing)) lapByNumber.set(number, lap);
+    }
+  }
+  const confidenceRank = { high: 2, medium: 1, low: 0 };
+  const confidence = extractions.reduce(
+    (lowest, extraction) => confidenceRank[extraction.confidence] < confidenceRank[lowest] ? extraction.confidence : lowest,
+    "high"
+  );
+  const notes = Array.from(new Set(extractions.map((item) => item.notes.trim()).filter(Boolean))).join(" ");
+  return {
+    date: firstValue(extractions.map((item) => item.date), null),
+    time: firstValue(extractions.map((item) => item.time), null),
+    running: mergeRecordValues(extractions.map((item) => item.running)),
+    garminDetails: mergeRecordValues(extractions.map((item) => item.garminDetails)),
+    laps: Array.from(lapByNumber.entries()).sort(([left], [right]) => left - right).map(([, lap]) => lap),
+    confidence,
+    notes: notes || "\u5DF2\u5408\u4F75\u591A\u5F35 Garmin \u622A\u5716\uFF0C\u8ACB\u6838\u5C0D\u6578\u64DA\u5F8C\u518D\u5132\u5B58\u3002"
   };
 }
 
@@ -2012,7 +2102,7 @@ function normaliseDate(value) {
   const matched = valueString.match(/^\d{4}-\d{2}-\d{2}/);
   return matched?.[0] ?? null;
 }
-function hasValue(value) {
+function hasValue2(value) {
   return value !== null && value !== void 0 && value !== "";
 }
 function recordHasWeather(record) {
@@ -2024,7 +2114,7 @@ function recordHasWeather(record) {
     record.wind_speed,
     record.apparent_temp,
     record.precipitation
-  ].some(hasValue);
+  ].some(hasValue2);
 }
 function buildHistoricalBackfillCandidates(runningLogs2, races3, options, todayHK2) {
   const includeLogs = options.scope === "logs" || options.scope === "both";
@@ -2244,7 +2334,8 @@ function buildDateChunks(dates, maximumSpanDays = 31) {
 // server/garminFileImport.ts
 import { Decoder, Stream } from "@garmin/fitsdk";
 import Papa from "papaparse";
-var MAX_SAMPLES = 3e4;
+import sax from "sax";
+var MAX_SAMPLES = 1e4;
 var asNumber = (value) => {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : void 0;
@@ -2257,6 +2348,13 @@ var asDate = (value) => {
 var toHKDate = (date2) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Hong_Kong", year: "numeric", month: "2-digit", day: "2-digit" }).format(date2);
 var toHKTime = (date2) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Hong_Kong", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date2);
 var decimalPace = (secondsPerKm) => secondsPerKm && secondsPerKm > 0 ? (secondsPerKm / 60).toFixed(2) : void 0;
+function keepChartSamples(items) {
+  if (items.length <= MAX_SAMPLES) return items;
+  return Array.from({ length: MAX_SAMPLES }, (_, index) => {
+    const sourceIndex = Math.round(index * (items.length - 1) / (MAX_SAMPLES - 1));
+    return items[sourceIndex];
+  });
+}
 function metricFields(session, samples, sourceFormat) {
   const first = samples[0];
   const last = samples.at(-1);
@@ -2301,7 +2399,7 @@ function metricFields(session, samples, sourceFormat) {
   }
   const warnings = [];
   if (!samples.length) warnings.push("\u539F\u59CB\u6A94\u6C92\u6709\u53EF\u8B80\u53D6\u7684\u9010\u79D2 Record \u6A23\u672C\uFF1B\u5DF2\u53EA\u586B\u5165\u6D3B\u52D5\u6458\u8981\u3002");
-  if (samples.length >= MAX_SAMPLES) warnings.push(`\u70BA\u7DAD\u6301\u64CD\u4F5C\u6548\u80FD\uFF0C\u5DF2\u4FDD\u7559\u9996 ${MAX_SAMPLES.toLocaleString()} \u500B\u9010\u79D2\u6A23\u672C\u3002`);
+  if (samples.length >= MAX_SAMPLES) warnings.push(`\u70BA\u7DAD\u6301\u64CD\u4F5C\u6548\u80FD\uFF0C\u9019\u6B21\u6D3B\u52D5\u5DF2\u5747\u52FB\u4FDD\u7559\u5168\u7A0B ${MAX_SAMPLES.toLocaleString()} \u500B\u66F2\u7DDA\u6A23\u672C\uFF1B\u539F\u59CB\u6A94\u4ECD\u6703\u96A8\u7D00\u9304\u4FDD\u5B58\u3002`);
   return {
     sourceFormat,
     fields,
@@ -2325,6 +2423,7 @@ function mapFitRecord(record, startedAt) {
   if (!timestamp2) return null;
   const speed = asNumber(record.enhancedSpeed) ?? asNumber(record.speed);
   const distanceM = asNumber(record.distance);
+  const altitudeM = asNumber(record.enhancedAltitude) ?? asNumber(record.altitude);
   return {
     elapsedSec: Math.max(0, Math.round((timestamp2.getTime() - startedAt.getTime()) / 1e3)),
     timestamp: timestamp2.toISOString(),
@@ -2333,7 +2432,7 @@ function mapFitRecord(record, startedAt) {
     ...asNumber(record.heartRate) !== void 0 ? { heartRate: asNumber(record.heartRate) } : {},
     ...asNumber(record.cadence) !== void 0 ? { cadence: asNumber(record.cadence) } : {},
     ...asNumber(record.power) !== void 0 ? { power: asNumber(record.power) } : {},
-    ...asNumber(record.enhancedAltitude) ?? asNumber(record.altitude) ? { altitudeM: asNumber(record.enhancedAltitude) ?? asNumber(record.altitude) } : {},
+    ...altitudeM !== void 0 ? { altitudeM } : {},
     ...asNumber(record.temperature) !== void 0 ? { temperatureC: asNumber(record.temperature) } : {}
   };
 }
@@ -2344,7 +2443,8 @@ function parseGarminFit(buffer) {
   const { messages, errors } = decoder.read({ applyScaleAndOffset: true, expandComponents: true, convertDateTimesToDates: true, mergeHeartRates: true });
   const recordMessages = messages.recordMesgs ?? [];
   const firstTimestamp = recordMessages.map((record) => asDate(record.timestamp)).find((date2) => !!date2) ?? asDate(messages.sessionMesgs?.[0]?.startTime) ?? /* @__PURE__ */ new Date();
-  const samples = recordMessages.map((record) => mapFitRecord(record, firstTimestamp)).filter((sample) => !!sample).slice(0, MAX_SAMPLES);
+  const sourceSamples = recordMessages.map((record) => mapFitRecord(record, firstTimestamp)).filter((sample) => !!sample);
+  const samples = keepChartSamples(sourceSamples);
   const session = messages.sessionMesgs?.[0] ?? {};
   const preview = metricFields(session, samples, "FIT");
   preview.laps = (messages.lapMesgs ?? []).map((lap, index) => {
@@ -2353,6 +2453,7 @@ function parseGarminFit(buffer) {
     const speed = asNumber(lap.avgSpeed);
     return { lap: index + 1, durationSec: duration ? Math.round(duration) : null, distanceKm: distance ? Number((distance / 1e3).toFixed(3)) : null, avgPace: decimalPace(speed ? 1e3 / speed : void 0) ?? null };
   });
+  preview.garminDetails.rawSampleCount = sourceSamples.length;
   if (errors.length) preview.warnings.push(`FIT \u6A94\u6848\u6709 ${errors.length} \u9805\u53EF\u6062\u5FA9\u7684\u89E3\u6790\u63D0\u793A\uFF1B\u5DF2\u4FDD\u7559\u80FD\u5B89\u5168\u8B80\u53D6\u7684\u8CC7\u6599\u3002`);
   return preview;
 }
@@ -2373,7 +2474,7 @@ function parseGarminCsv(buffer) {
     return timestamp2 && !Number.isNaN(timestamp2.getTime()) ? { timestamp: timestamp2, distance, speed, row } : null;
   }).filter(Boolean);
   const start = timed[0]?.timestamp ?? /* @__PURE__ */ new Date();
-  const samples = timed.slice(0, MAX_SAMPLES).map((item) => ({
+  const sourceSamples = timed.map((item) => ({
     elapsedSec: Math.max(0, Math.round((item.timestamp.getTime() - start.getTime()) / 1e3)),
     timestamp: item.timestamp.toISOString(),
     ...item.distance !== void 0 ? { distanceKm: item.distance > 100 ? Number((item.distance / 1e3).toFixed(4)) : item.distance } : {},
@@ -2384,22 +2485,247 @@ function parseGarminCsv(buffer) {
     ...asNumber(valueFor(item.row, ["altitude", "enhancedaltitude"])) !== void 0 ? { altitudeM: asNumber(valueFor(item.row, ["altitude", "enhancedaltitude"])) } : {},
     ...asNumber(valueFor(item.row, ["temperature", "temp"])) !== void 0 ? { temperatureC: asNumber(valueFor(item.row, ["temperature", "temp"])) } : {}
   }));
+  const samples = keepChartSamples(sourceSamples);
   const last = samples.at(-1);
   const session = { startTime: start, totalDistance: last?.distanceKm ? last.distanceKm * 1e3 : void 0, totalTimerTime: last?.elapsedSec };
   const preview = metricFields(session, samples, "CSV");
+  preview.garminDetails.rawSampleCount = sourceSamples.length;
   preview.warnings.push("CSV \u6B04\u4F4D\u6703\u56E0 Garmin \u532F\u51FA\u8A2D\u5B9A\u800C\u4E0D\u540C\uFF1B\u8ACB\u5148\u6838\u5C0D\u6458\u8981\u8207\u9010\u79D2\u6A23\u672C\u6578\u91CF\u3002", ...!timed.length ? ["\u6B64 CSV \u672A\u5305\u542B\u53EF\u8B58\u5225\u7684 timestamp \u8A18\u9304\uFF0C\u56E0\u6B64\u672A\u4FDD\u5B58\u9010\u79D2\u66F2\u7DDA\u3002"] : []);
   return preview;
+}
+function localName(name) {
+  const segments = name.split(":");
+  return segments.at(-1)?.toLowerCase() ?? name.toLowerCase();
+}
+function parseXmlNumber(value) {
+  return value === void 0 ? void 0 : asNumber(value.trim());
+}
+function parseXmlDate(value) {
+  if (!value) return void 0;
+  const parsed = asDate(value.trim());
+  return parsed ?? void 0;
+}
+function xmlAttribute(tag, name) {
+  const value = tag.attributes[name];
+  if (typeof value === "string") return value;
+  return value?.value;
+}
+function distanceBetweenMeters(first, second) {
+  if (first.latitude === void 0 || first.longitude === void 0 || second.latitude === void 0 || second.longitude === void 0) return void 0;
+  const radians = Math.PI / 180;
+  const latDistance = (second.latitude - first.latitude) * radians;
+  const lonDistance = (second.longitude - first.longitude) * radians;
+  const a = Math.sin(latDistance / 2) ** 2 + Math.cos(first.latitude * radians) * Math.cos(second.latitude * radians) * Math.sin(lonDistance / 2) ** 2;
+  return 6371e3 * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+function toTimeSeries(points) {
+  const visiblePoints = keepChartSamples(points);
+  const startedAt = visiblePoints[0]?.timestamp;
+  if (!startedAt) return [];
+  let cumulativeDistanceM = 0;
+  let previous;
+  return visiblePoints.map((point) => {
+    if (point.distanceM !== void 0) cumulativeDistanceM = point.distanceM;
+    else if (previous) cumulativeDistanceM += distanceBetweenMeters(previous, point) ?? 0;
+    const elapsedSec = Math.max(0, Math.round((point.timestamp.getTime() - startedAt.getTime()) / 1e3));
+    const segmentSeconds = previous ? Math.max(0, (point.timestamp.getTime() - previous.timestamp.getTime()) / 1e3) : 0;
+    const segmentDistanceM = previous ? point.distanceM !== void 0 && previous.distanceM !== void 0 ? point.distanceM - previous.distanceM : distanceBetweenMeters(previous, point) ?? 0 : 0;
+    const paceSecPerKm = segmentSeconds > 0 && segmentDistanceM > 1 ? Number((segmentSeconds * 1e3 / segmentDistanceM).toFixed(2)) : void 0;
+    previous = point;
+    return {
+      elapsedSec,
+      timestamp: point.timestamp.toISOString(),
+      ...cumulativeDistanceM > 0 ? { distanceKm: Number((cumulativeDistanceM / 1e3).toFixed(4)) } : {},
+      ...paceSecPerKm && paceSecPerKm < 7200 ? { paceSecPerKm } : {},
+      ...point.heartRate !== void 0 ? { heartRate: point.heartRate } : {},
+      ...point.cadence !== void 0 ? { cadence: point.cadence } : {},
+      ...point.power !== void 0 ? { power: point.power } : {},
+      ...point.altitudeM !== void 0 ? { altitudeM: point.altitudeM } : {},
+      ...point.temperatureC !== void 0 ? { temperatureC: point.temperatureC } : {}
+    };
+  });
+}
+function calculateAscentDescent(points) {
+  let ascent = 0;
+  let descent = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const before = points[index - 1].altitudeM;
+    const after = points[index].altitudeM;
+    if (before === void 0 || after === void 0) continue;
+    const delta = after - before;
+    if (delta > 0) ascent += delta;
+    if (delta < 0) descent += Math.abs(delta);
+  }
+  return { ascent: Number(ascent.toFixed(1)), descent: Number(descent.toFixed(1)) };
+}
+function averageOf(values) {
+  const valid = values.filter((value) => value !== void 0 && Number.isFinite(value));
+  return valid.length ? Number((valid.reduce((total, value) => total + value, 0) / valid.length).toFixed(1)) : void 0;
+}
+function xmlPreview(points, laps, sourceFormat) {
+  const samples = toTimeSeries(points);
+  const lastPoint = points.at(-1);
+  const distanceFromTrack = samples.at(-1)?.distanceKm;
+  const totalLapTime = laps.reduce((total, lap) => total + (lap.totalTimeSec ?? 0), 0);
+  const totalLapDistance = laps.reduce((total, lap) => total + (lap.distanceM ?? 0), 0);
+  const elevation = calculateAscentDescent(points);
+  const session = {
+    startTime: points[0]?.timestamp,
+    totalTimerTime: totalLapTime || samples.at(-1)?.elapsedSec,
+    totalDistance: totalLapDistance || (distanceFromTrack ? distanceFromTrack * 1e3 : void 0),
+    totalCalories: laps.reduce((total, lap) => total + (lap.calories ?? 0), 0) || void 0,
+    avgHeartRate: averageOf(points.map((point) => point.heartRate)) ?? averageOf(laps.map((lap) => lap.avgHeartRate)),
+    maxHeartRate: Math.max(...points.map((point) => point.heartRate ?? 0), ...laps.map((lap) => lap.maxHeartRate ?? 0), 0) || void 0,
+    avgRunningCadence: averageOf(points.map((point) => point.cadence)),
+    totalAscent: elevation.ascent || void 0,
+    totalDescent: elevation.descent || void 0,
+    avgTemperature: averageOf(points.map((point) => point.temperatureC))
+  };
+  const preview = metricFields(session, samples, sourceFormat);
+  preview.garminDetails.rawSampleCount = points.length;
+  preview.laps = laps.map((lap, index) => {
+    const durationSec = lap.totalTimeSec ?? null;
+    const distanceKm = lap.distanceM !== void 0 ? Number((lap.distanceM / 1e3).toFixed(3)) : null;
+    return {
+      lap: index + 1,
+      durationSec: durationSec ? Math.round(durationSec) : null,
+      distanceKm,
+      avgPace: durationSec && distanceKm && distanceKm > 0 ? decimalPace(durationSec / distanceKm) ?? null : null
+    };
+  });
+  if (!points.length) preview.warnings.push(`${sourceFormat} \u6A94\u672A\u5305\u542B\u6709\u6548\u7684\u6642\u9593\u8ECC\u8DE1\u9EDE\uFF1B\u8ACB\u78BA\u8A8D\u9019\u662F\u6D3B\u52D5\u8A18\u9304\u800C\u4E0D\u662F\u8DEF\u7DDA\u898F\u5283\u6A94\u3002`);
+  if (sourceFormat === "GPX") preview.warnings.push("GPX \u6A19\u6E96\u53EF\u5305\u542B\u6642\u9593\u8207\u6D77\u62D4\uFF0C\u4F46\u5FC3\u7387\u3001\u6B65\u983B\u53CA\u529F\u7387\u6703\u8996 Garmin \u64F4\u5145\u6B04\u4F4D\u662F\u5426\u5B58\u5728\u800C\u5B9A\u3002");
+  if (sourceFormat === "TCX" && !preview.laps.length) preview.warnings.push("\u6B64 TCX \u6C92\u6709\u5B8C\u6574 Lap \u8CC7\u8A0A\uFF1B\u5DF2\u4FDD\u7559\u53EF\u8B80\u53D6\u7684\u9010\u9EDE\u6642\u9593\u5E8F\u5217\u3002 ");
+  if (!lastPoint) preview.warnings.push("\u8ACB\u5148\u6838\u5C0D\u6458\u8981\uFF0C\u518D\u5C07\u539F\u59CB\u6A94\u5957\u7528\u5230\u9019\u6B21\u8DD1\u6B65\u3002 ");
+  return preview;
+}
+function parseActivityXml(buffer, sourceFormat) {
+  const source = buffer.toString("utf8");
+  if (/<!DOCTYPE|<!ENTITY/i.test(source)) throw new Error("GPX\uFF0FTCX \u6A94\u4E0D\u53EF\u5305\u542B\u5916\u90E8\u5BE6\u9AD4\u6216 DTD \u5BA3\u544A");
+  const parser = sax.parser(true, { trim: true, normalize: false, position: false });
+  const points = [];
+  const laps = [];
+  const tagStack = [];
+  let rootName = "";
+  let activePoint = null;
+  let activeLap = null;
+  let currentText = "";
+  parser.onerror = (error) => {
+    throw error;
+  };
+  parser.ondoctype = () => {
+    throw new Error("GPX\uFF0FTCX \u6A94\u4E0D\u53EF\u5305\u542B DTD \u5BA3\u544A");
+  };
+  parser.onopentag = (tag) => {
+    const name = localName(tag.name);
+    tagStack.push(name);
+    currentText = "";
+    if (!rootName) rootName = name;
+    if (sourceFormat === "GPX" && name === "trkpt" || sourceFormat === "TCX" && name === "trackpoint") {
+      activePoint = {
+        latitude: parseXmlNumber(xmlAttribute(tag, "lat")),
+        longitude: parseXmlNumber(xmlAttribute(tag, "lon"))
+      };
+    }
+    if (sourceFormat === "TCX" && name === "lap") {
+      activeLap = { startedAt: parseXmlDate(xmlAttribute(tag, "starttime")) };
+    }
+  };
+  parser.ontext = (text2) => {
+    currentText += text2;
+  };
+  parser.oncdata = (text2) => {
+    currentText += text2;
+  };
+  parser.onclosetag = (rawName) => {
+    const name = localName(rawName);
+    const parent = tagStack.at(-2) ?? "";
+    const grandparent = tagStack.at(-3) ?? "";
+    const value = currentText.trim();
+    if (activePoint && value) {
+      if (name === "time") activePoint.timestamp = parseXmlDate(value);
+      if (name === "ele" || name === "altitudemeters") activePoint.altitudeM = parseXmlNumber(value);
+      if (name === "distancemeters") activePoint.distanceM = parseXmlNumber(value);
+      if (name === "value" && (parent === "heartratebpm" || grandparent === "heartratebpm") || name === "hr") activePoint.heartRate = parseXmlNumber(value);
+      if (name === "cadence" || name === "runcadence" || name === "cad") activePoint.cadence = parseXmlNumber(value);
+      if (name === "watts" || name === "power") activePoint.power = parseXmlNumber(value);
+      if (name === "atemp" || name === "temperature") activePoint.temperatureC = parseXmlNumber(value);
+    }
+    if (activeLap && value) {
+      if (name === "totaltimeseconds") activeLap.totalTimeSec = parseXmlNumber(value);
+      if (name === "distancemeters") activeLap.distanceM = parseXmlNumber(value);
+      if (name === "calories") activeLap.calories = parseXmlNumber(value);
+      if (name === "value" && (parent === "averageheartratebpm" || grandparent === "averageheartratebpm")) activeLap.avgHeartRate = parseXmlNumber(value);
+      if (name === "value" && (parent === "maximumheartratebpm" || grandparent === "maximumheartratebpm")) activeLap.maxHeartRate = parseXmlNumber(value);
+    }
+    if (sourceFormat === "GPX" && name === "trkpt" || sourceFormat === "TCX" && name === "trackpoint") {
+      if (activePoint?.timestamp) points.push(activePoint);
+      activePoint = null;
+    }
+    if (sourceFormat === "TCX" && name === "lap") {
+      laps.push(activeLap ?? {});
+      activeLap = null;
+    }
+    tagStack.pop();
+    currentText = "";
+  };
+  try {
+    parser.write(source).close();
+  } catch (error) {
+    throw new Error(`\u7121\u6CD5\u8B80\u53D6 ${sourceFormat} XML\uFF1A${error instanceof Error ? error.message : "\u6A94\u6848\u683C\u5F0F\u4E0D\u6B63\u78BA"}`);
+  }
+  if (sourceFormat === "GPX" && rootName !== "gpx") throw new Error("\u9019\u4E0D\u662F\u6709\u6548\u7684 GPX \u6D3B\u52D5\u6A94");
+  if (sourceFormat === "TCX" && rootName !== "trainingcenterdatabase") throw new Error("\u9019\u4E0D\u662F\u6709\u6548\u7684 TCX \u6D3B\u52D5\u6A94");
+  return xmlPreview(points, laps, sourceFormat);
+}
+function parseGarminGpx(buffer) {
+  return parseActivityXml(buffer, "GPX");
+}
+function parseGarminTcx(buffer) {
+  return parseActivityXml(buffer, "TCX");
 }
 function parseGarminRawFile(buffer, filename) {
   if (buffer.length > 25 * 1024 * 1024) throw new Error("\u539F\u59CB Garmin \u6A94\u6848\u8D85\u904E 25MB \u9650\u5236");
   if (/\.fit$/i.test(filename)) return parseGarminFit(buffer);
   if (/\.csv$/i.test(filename)) return parseGarminCsv(buffer);
-  throw new Error("\u8ACB\u9078\u64C7 Garmin FIT \u6216 CSV \u539F\u59CB\u6A94");
+  if (/\.gpx$/i.test(filename)) return parseGarminGpx(buffer);
+  if (/\.tcx$/i.test(filename)) return parseGarminTcx(buffer);
+  throw new Error("\u8ACB\u9078\u64C7 Garmin FIT\u3001CSV\u3001GPX \u6216 TCX \u539F\u59CB\u6A94");
 }
 
 // server/routers.ts
 import Papa2 from "papaparse";
 var OWNER_USER_ID = 2;
+var MAX_GARMIN_RAW_FILE_BYTES = 25 * 1024 * 1024;
+var GARMIN_RAW_UPLOAD_CHUNK_BYTES = 2 * 1024 * 1024;
+var MAX_GARMIN_RAW_UPLOAD_CHUNKS = Math.ceil(MAX_GARMIN_RAW_FILE_BYTES / GARMIN_RAW_UPLOAD_CHUNK_BYTES);
+var GARMIN_RAW_FILE_FORMATS = ["FIT", "CSV", "GPX", "TCX"];
+function garminRawFormatFromFilename(fileName) {
+  const extension = fileName.split(".").at(-1)?.toUpperCase();
+  return extension && GARMIN_RAW_FILE_FORMATS.includes(extension) ? extension : null;
+}
+function validateGarminChunkKeys(chunkKeys, uploadId) {
+  const prefix = `garmin-chunks/${OWNER_USER_ID}/${uploadId}/`;
+  if (!chunkKeys.length || chunkKeys.length > MAX_GARMIN_RAW_UPLOAD_CHUNKS) throw new Error("Garmin \u539F\u59CB\u6A94\u5206\u6BB5\u6578\u91CF\u7121\u6548");
+  for (let index = 0; index < chunkKeys.length; index += 1) {
+    const key = chunkKeys[index];
+    if (!key.startsWith(`${prefix}${index}_`) || !key.endsWith(".part")) throw new Error("Garmin \u539F\u59CB\u6A94\u5206\u6BB5\u4F86\u6E90\u7121\u6548");
+  }
+}
+function validateGarminOriginalKey(key) {
+  if (!/^garmin-originals\/\d+\/[a-zA-Z0-9_-]+_[a-f0-9]{8}\.(fit|csv|gpx|tcx)$/i.test(key)) {
+    throw new Error("\u7121\u6548\u7684 Garmin \u539F\u59CB\u6A94\u4F86\u6E90");
+  }
+}
+function decodeGarminChunk(base64) {
+  const normalized = base64.replace(/\s/g, "");
+  if (!normalized || normalized.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
+    throw new Error("Garmin \u539F\u59CB\u6A94\u5206\u6BB5\u8CC7\u6599\u683C\u5F0F\u7121\u6548");
+  }
+  const chunk = Buffer.from(normalized, "base64");
+  if (!chunk.length || chunk.length > GARMIN_RAW_UPLOAD_CHUNK_BYTES) throw new Error("Garmin \u539F\u59CB\u6A94\u5206\u6BB5\u5927\u5C0F\u7121\u6548");
+  return chunk;
+}
 var CARDIO_EXERCISE_NAMES = [
   "Stationary Bike",
   "Treadmill",
@@ -4283,16 +4609,8 @@ For steps data: extract daily step count, floors climbed, distance, active minut
       mimeType: z2.string().default("image/jpeg")
     })).min(1).max(16)
   })).mutation(async ({ input }) => {
-    const signedImageUrls = await Promise.all(input.screenshots.map(async (screenshot, index) => {
-      const buffer = Buffer.from(screenshot.base64, "base64");
-      if (buffer.length > 10 * 1024 * 1024) throw new Error(`\u7B2C ${index + 1} \u5F35\u622A\u5716\u8D85\u904E 10MB \u9650\u5236`);
-      const ext = screenshot.mimeType.includes("png") ? "png" : "jpg";
-      const key = `garmin-imports/${OWNER_USER_ID}/${nanoid()}.${ext}`;
-      const stored = await storagePut(key, buffer, screenshot.mimeType);
-      return storageGetSignedUrl(stored.key);
-    }));
     const systemPrompt = `You extract Garmin Connect screenshots into exactly one running activity. Return only strict JSON. Do not invent values from a graph. Prefer explicit numbers on Overview/Stats/Laps; if screenshots conflict, choose the value from Overview or Stats and explain the conflict briefly in Traditional Chinese notes. A displayed day and month without a year must produce null date. All extracted metric labels and notes must be understandable to a Traditional Chinese user.`;
-    const userPrompt = `These ${input.screenshots.length} screenshots belong to ONE Garmin running activity. Merge all visible values into a single reviewable record. Extract only visibly stated metrics. Convert duration into hour/minute/second and keep pace in MM:SS. Preserve every visible full-lap row (lap number, duration, distance and average pace); partial laps are valid. Screenshots cannot faithfully reconstruct second-by-second chart samples, so never fabricate curves. Return null for absent or unclear values.
+    const basePrompt = `These screenshots belong to ONE Garmin running activity. Extract only visibly stated metrics. Convert duration into hour/minute/second and keep pace in MM:SS. Preserve every visible full-lap row (lap number, duration, distance and average pace); partial laps are valid. Screenshots cannot faithfully reconstruct second-by-second chart samples, so never fabricate curves. Return null for absent or unclear values.
 
 Required JSON fields:
 - date: YYYY-MM-DD only if a full date including year is visible, else null
@@ -4301,105 +4619,114 @@ Required JSON fields:
 - garminDetails: Stats values such as moving/elapsed/run/walk/idle time, ascent/descent/elevation, speed, calories, sweat loss, intensity, Body Battery, training effect/load, power and performance condition
 - laps: each visible split row
 - confidence and concise Traditional Chinese notes.`;
-    const response = await invokeLLM({
-      model: "gpt-6.1-sol",
-      maxTokens: 12e3,
-      reasoning: { effort: "medium" },
-      messages: [{
-        role: "system",
-        content: systemPrompt
-      }, {
-        role: "user",
-        content: buildGarminVisionContent(signedImageUrls, userPrompt)
-      }],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "garmin_run_sequence",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              date: { type: ["string", "null"] },
-              time: { type: ["string", "null"] },
-              running: {
-                type: "object",
-                properties: {
-                  distanceKm: { type: ["number", "null"] },
-                  durationHour: { type: ["number", "null"] },
-                  durationMin: { type: ["number", "null"] },
-                  durationSec: { type: ["number", "null"] },
-                  avgPace: { type: ["string", "null"] },
-                  bestPace: { type: ["string", "null"] },
-                  avgHr: { type: ["number", "null"] },
-                  maxHr: { type: ["number", "null"] },
-                  avgCadence: { type: ["number", "null"] },
-                  maxCadence: { type: ["number", "null"] },
-                  calories: { type: ["number", "null"] },
-                  avgStrideLengthM: { type: ["number", "null"] },
-                  avgVerticalRatio: { type: ["number", "null"] },
-                  verticalOscillationCm: { type: ["number", "null"] },
-                  avgGroundContactTimeMs: { type: ["number", "null"] },
-                  temperatureC: { type: ["number", "null"] },
-                  runningType: { type: ["string", "null"] },
-                  routeName: { type: ["string", "null"] }
-                },
-                required: ["distanceKm", "durationHour", "durationMin", "durationSec", "avgPace", "bestPace", "avgHr", "maxHr", "avgCadence", "maxCadence", "calories", "avgStrideLengthM", "avgVerticalRatio", "verticalOscillationCm", "avgGroundContactTimeMs", "temperatureC", "runningType", "routeName"],
-                additionalProperties: false
-              },
-              garminDetails: {
-                type: "object",
-                properties: {
-                  avgMovingPace: { type: ["string", "null"] },
-                  avgGradeAdjustedPace: { type: ["string", "null"] },
-                  maxSpeedKph: { type: ["number", "null"] },
-                  avgSpeedKph: { type: ["number", "null"] },
-                  avgMovingSpeedKph: { type: ["number", "null"] },
-                  avgGradeAdjustedSpeedKph: { type: ["number", "null"] },
-                  movingTimeSec: { type: ["number", "null"] },
-                  elapsedTimeSec: { type: ["number", "null"] },
-                  runTimeSec: { type: ["number", "null"] },
-                  walkTimeSec: { type: ["number", "null"] },
-                  idleTimeSec: { type: ["number", "null"] },
-                  totalAscentM: { type: ["number", "null"] },
-                  totalDescentM: { type: ["number", "null"] },
-                  minElevationM: { type: ["number", "null"] },
-                  maxElevationM: { type: ["number", "null"] },
-                  restingCalories: { type: ["number", "null"] },
-                  activeCalories: { type: ["number", "null"] },
-                  sweatLossMl: { type: ["number", "null"] },
-                  moderateIntensityMinutes: { type: ["number", "null"] },
-                  vigorousIntensityMinutes: { type: ["number", "null"] },
-                  bodyBatteryImpact: { type: ["number", "null"] },
-                  aerobicTrainingEffect: { type: ["number", "null"] },
-                  anaerobicTrainingEffect: { type: ["number", "null"] },
-                  exerciseLoad: { type: ["number", "null"] },
-                  avgPowerW: { type: ["number", "null"] },
-                  maxPowerW: { type: ["number", "null"] },
-                  performanceCondition: { type: ["number", "null"] }
-                },
-                required: ["avgMovingPace", "avgGradeAdjustedPace", "maxSpeedKph", "avgSpeedKph", "avgMovingSpeedKph", "avgGradeAdjustedSpeedKph", "movingTimeSec", "elapsedTimeSec", "runTimeSec", "walkTimeSec", "idleTimeSec", "totalAscentM", "totalDescentM", "minElevationM", "maxElevationM", "restingCalories", "activeCalories", "sweatLossMl", "moderateIntensityMinutes", "vigorousIntensityMinutes", "bodyBatteryImpact", "aerobicTrainingEffect", "anaerobicTrainingEffect", "exerciseLoad", "avgPowerW", "maxPowerW", "performanceCondition"],
-                additionalProperties: false
-              },
-              laps: {
-                type: "array",
-                items: {
+    const batches = buildGarminVisionBatches(input.screenshots);
+    const extractions = [];
+    for (let index = 0; index < batches.length; index += 1) {
+      const batch = batches[index];
+      const userPrompt = `${basePrompt}
+
+This is image batch ${index + 1} of ${batches.length}. Return values visible in this batch only. The server will safely merge non-conflicting fields across batches.`;
+      const response = await invokeLLM({
+        model: "gpt-6.1-sol",
+        maxTokens: 8e3,
+        reasoning: { effort: "medium" },
+        messages: [{
+          role: "system",
+          content: systemPrompt
+        }, {
+          role: "user",
+          content: buildGarminVisionContent(batch, userPrompt)
+        }],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "garmin_run_sequence",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                date: { type: ["string", "null"] },
+                time: { type: ["string", "null"] },
+                running: {
                   type: "object",
-                  properties: { lap: { type: "number" }, durationSec: { type: ["number", "null"] }, distanceKm: { type: ["number", "null"] }, avgPace: { type: ["string", "null"] } },
-                  required: ["lap", "durationSec", "distanceKm", "avgPace"],
+                  properties: {
+                    distanceKm: { type: ["number", "null"] },
+                    durationHour: { type: ["number", "null"] },
+                    durationMin: { type: ["number", "null"] },
+                    durationSec: { type: ["number", "null"] },
+                    avgPace: { type: ["string", "null"] },
+                    bestPace: { type: ["string", "null"] },
+                    avgHr: { type: ["number", "null"] },
+                    maxHr: { type: ["number", "null"] },
+                    avgCadence: { type: ["number", "null"] },
+                    maxCadence: { type: ["number", "null"] },
+                    calories: { type: ["number", "null"] },
+                    avgStrideLengthM: { type: ["number", "null"] },
+                    avgVerticalRatio: { type: ["number", "null"] },
+                    verticalOscillationCm: { type: ["number", "null"] },
+                    avgGroundContactTimeMs: { type: ["number", "null"] },
+                    temperatureC: { type: ["number", "null"] },
+                    runningType: { type: ["string", "null"] },
+                    routeName: { type: ["string", "null"] }
+                  },
+                  required: ["distanceKm", "durationHour", "durationMin", "durationSec", "avgPace", "bestPace", "avgHr", "maxHr", "avgCadence", "maxCadence", "calories", "avgStrideLengthM", "avgVerticalRatio", "verticalOscillationCm", "avgGroundContactTimeMs", "temperatureC", "runningType", "routeName"],
                   additionalProperties: false
-                }
+                },
+                garminDetails: {
+                  type: "object",
+                  properties: {
+                    avgMovingPace: { type: ["string", "null"] },
+                    avgGradeAdjustedPace: { type: ["string", "null"] },
+                    maxSpeedKph: { type: ["number", "null"] },
+                    avgSpeedKph: { type: ["number", "null"] },
+                    avgMovingSpeedKph: { type: ["number", "null"] },
+                    avgGradeAdjustedSpeedKph: { type: ["number", "null"] },
+                    movingTimeSec: { type: ["number", "null"] },
+                    elapsedTimeSec: { type: ["number", "null"] },
+                    runTimeSec: { type: ["number", "null"] },
+                    walkTimeSec: { type: ["number", "null"] },
+                    idleTimeSec: { type: ["number", "null"] },
+                    totalAscentM: { type: ["number", "null"] },
+                    totalDescentM: { type: ["number", "null"] },
+                    minElevationM: { type: ["number", "null"] },
+                    maxElevationM: { type: ["number", "null"] },
+                    restingCalories: { type: ["number", "null"] },
+                    activeCalories: { type: ["number", "null"] },
+                    sweatLossMl: { type: ["number", "null"] },
+                    moderateIntensityMinutes: { type: ["number", "null"] },
+                    vigorousIntensityMinutes: { type: ["number", "null"] },
+                    bodyBatteryImpact: { type: ["number", "null"] },
+                    aerobicTrainingEffect: { type: ["number", "null"] },
+                    anaerobicTrainingEffect: { type: ["number", "null"] },
+                    exerciseLoad: { type: ["number", "null"] },
+                    avgPowerW: { type: ["number", "null"] },
+                    maxPowerW: { type: ["number", "null"] },
+                    performanceCondition: { type: ["number", "null"] }
+                  },
+                  required: ["avgMovingPace", "avgGradeAdjustedPace", "maxSpeedKph", "avgSpeedKph", "avgMovingSpeedKph", "avgGradeAdjustedSpeedKph", "movingTimeSec", "elapsedTimeSec", "runTimeSec", "walkTimeSec", "idleTimeSec", "totalAscentM", "totalDescentM", "minElevationM", "maxElevationM", "restingCalories", "activeCalories", "sweatLossMl", "moderateIntensityMinutes", "vigorousIntensityMinutes", "bodyBatteryImpact", "aerobicTrainingEffect", "anaerobicTrainingEffect", "exerciseLoad", "avgPowerW", "maxPowerW", "performanceCondition"],
+                  additionalProperties: false
+                },
+                laps: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: { lap: { type: "number" }, durationSec: { type: ["number", "null"] }, distanceKm: { type: ["number", "null"] }, avgPace: { type: ["string", "null"] } },
+                    required: ["lap", "durationSec", "distanceKm", "avgPace"],
+                    additionalProperties: false
+                  }
+                },
+                confidence: { type: "string" },
+                notes: { type: "string" }
               },
-              confidence: { type: "string" },
-              notes: { type: "string" }
-            },
-            required: ["date", "time", "running", "garminDetails", "laps", "confidence", "notes"],
-            additionalProperties: false
+              required: ["date", "time", "running", "garminDetails", "laps", "confidence", "notes"],
+              additionalProperties: false
+            }
           }
         }
-      }
-    });
-    return parseGarminExtraction(response.choices[0]?.message?.content);
+      });
+      extractions.push(parseGarminExtraction(response.choices[0]?.message?.content));
+    }
+    return mergeGarminExtractions(extractions);
   }),
   /**
    * Save extracted image data to the database after user confirms.
@@ -4583,31 +4910,51 @@ var runningRouter = router({
       monthly: monthlyRows.rows ?? monthlyRows
     };
   }),
+  uploadGarminRawChunk: ownerProcedure.input(z2.object({
+    uploadId: z2.string().regex(/^[A-Za-z0-9_-]{12,80}$/),
+    chunkIndex: z2.number().int().min(0).max(MAX_GARMIN_RAW_UPLOAD_CHUNKS - 1),
+    base64: z2.string().min(4).max(Math.ceil(GARMIN_RAW_UPLOAD_CHUNK_BYTES * 4 / 3) + 32)
+  })).mutation(async ({ input }) => {
+    const chunk = decodeGarminChunk(input.base64);
+    const stored = await storagePut(
+      `garmin-chunks/${OWNER_USER_ID}/${input.uploadId}/${input.chunkIndex}.part`,
+      chunk,
+      "application/octet-stream"
+    );
+    return { fileKey: stored.key, sizeBytes: chunk.length };
+  }),
   parseGarminRawFile: ownerProcedure.input(z2.object({
     fileName: z2.string().trim().min(5).max(180),
     mimeType: z2.string().trim().max(120),
-    base64: z2.string().min(16)
+    uploadId: z2.string().regex(/^[A-Za-z0-9_-]{12,80}$/),
+    chunkKeys: z2.array(z2.string().trim().min(20).max(500)).min(1).max(MAX_GARMIN_RAW_UPLOAD_CHUNKS)
   })).mutation(async ({ input }) => {
-    const buffer = Buffer.from(input.base64, "base64");
-    return parseGarminRawFile(buffer, input.fileName);
+    const sourceFormat = garminRawFormatFromFilename(input.fileName);
+    if (!sourceFormat) throw new Error("\u8ACB\u9078\u64C7 Garmin FIT\u3001CSV\u3001GPX \u6216 TCX \u539F\u59CB\u6A94");
+    validateGarminChunkKeys(input.chunkKeys, input.uploadId);
+    const chunks = await Promise.all(input.chunkKeys.map((key) => storageReadBuffer(key)));
+    const buffer = Buffer.concat(chunks);
+    if (buffer.length > MAX_GARMIN_RAW_FILE_BYTES) throw new Error("\u539F\u59CB Garmin \u6A94\u6848\u8D85\u904E 25MB \u9650\u5236");
+    const stored = await storagePut(`garmin-originals/${OWNER_USER_ID}/${nanoid()}.${sourceFormat.toLowerCase()}`, buffer, input.mimeType || "application/octet-stream");
+    const preview = parseGarminRawFile(buffer, input.fileName);
+    return { ...preview, rawFileKey: stored.key };
   }),
   saveGarminRawSource: ownerProcedure.input(z2.object({
     runningLogId: z2.number().int().positive(),
     fileName: z2.string().trim().min(1).max(180),
     mimeType: z2.string().trim().max(120),
-    base64: z2.string().min(16),
-    sourceFormat: z2.enum(["FIT", "CSV"]),
-    sampleCount: z2.number().int().min(0).max(3e4)
+    sourceFormat: z2.enum(["FIT", "CSV", "GPX", "TCX"]),
+    fileKey: z2.string().trim().min(20).max(500),
+    sampleCount: z2.number().int().min(0).max(1e4)
   })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const buffer = Buffer.from(input.base64, "base64");
-    if (buffer.length > 25 * 1024 * 1024) throw new Error("\u539F\u59CB Garmin \u6A94\u6848\u8D85\u904E 25MB \u9650\u5236");
-    const extension = input.sourceFormat === "FIT" ? "fit" : "csv";
-    const stored = await storagePut(`garmin-originals/${OWNER_USER_ID}/${nanoid()}.${extension}`, buffer, input.mimeType || "application/octet-stream");
+    const detectedFormat = garminRawFormatFromFilename(input.fileName);
+    if (detectedFormat !== input.sourceFormat) throw new Error("\u539F\u59CB\u6A94\u683C\u5F0F\u8207\u526F\u6A94\u540D\u4E0D\u4E00\u81F4");
+    validateGarminOriginalKey(input.fileKey);
     const metadata = JSON.stringify({
-      rawFileKey: stored.key,
-      rawFileUrl: stored.url,
+      rawFileKey: input.fileKey,
+      rawFileUrl: `/manus-storage/${input.fileKey}`,
       rawFileName: input.fileName,
       rawFileFormat: input.sourceFormat,
       rawSampleCount: input.sampleCount
@@ -4617,7 +4964,7 @@ var runningRouter = router({
         SET garmin_details = COALESCE(garmin_details, '{}'::jsonb) || ${metadata}::jsonb
         WHERE id = ${input.runningLogId}
       `);
-    return { success: true, fileUrl: stored.url };
+    return { success: true, fileUrl: `/manus-storage/${input.fileKey}` };
   }),
   addLog: publicProcedure.input(z2.object({
     date: z2.string(),
@@ -4666,7 +5013,7 @@ var runningRouter = router({
       power: z2.number().optional(),
       altitudeM: z2.number().optional(),
       temperatureC: z2.number().optional()
-    })).max(3e4).optional(),
+    })).max(1e4).optional(),
     notes: z2.string().optional()
   })).mutation(async ({ input }) => {
     const db = await getDb();
@@ -4780,7 +5127,7 @@ var runningRouter = router({
       power: z2.number().optional(),
       altitudeM: z2.number().optional(),
       temperatureC: z2.number().optional()
-    })).max(3e4).optional(),
+    })).max(1e4).optional(),
     notes: z2.string().optional()
   })).mutation(async ({ input }) => {
     const db = await getDb();

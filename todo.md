@@ -495,3 +495,10 @@
 - [x] Add an in-app version history and release notes view for clear, user-facing change tracking
 - [x] Move the mobile primary navigation to a fixed bottom bar with safe-area spacing and retain access to secondary routes
 - [x] Verify with structured Garmin screenshot URL/response parsing tests, FIT/CSV import tests, production build, checkpoint, GitHub push and Vercel release
+
+## v3.14.5 Garmin Vision Retry & Time-series Charts
+- [x] Identify and repair the remaining production error in 13-image Garmin screenshot analysis without weakening the review-before-save workflow
+- [x] Add interactive per-second pace, heart-rate and elevation charts for runs that include Garmin FIT/CSV time-series data
+- [x] Add GPX and TCX original running-file parsing with the same reviewed summary, laps and time-series data contract as FIT/CSV
+- [x] Replace cross-origin raw-file direct upload with a Vercel-compatible 2MB chunked upload flow; validate browser and server GPX upload, merge and parse without creating a run record
+- [ ] Verify the Garmin vision request using representative multi-screenshot inputs, then run tests, production build, checkpoint, GitHub push and Vercel release

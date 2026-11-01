@@ -13,9 +13,9 @@ import {
 } from "../drizzle/schema";
 import { eq, and, desc, gte, lte, like, or, sql, inArray } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
-import { storagePut, storageGetSignedUrl } from "./storage";
+import { storageGetSignedUrl, storagePut, storageReadBuffer } from "./storage";
 import { nanoid } from "nanoid";
-import { buildGarminVisionContent, parseGarminExtraction } from "./garminImport";
+import { buildGarminVisionBatches, buildGarminVisionContent, mergeGarminExtractions, parseGarminExtraction } from "./garminImport";
 import { todayHK, daysAgoHK, toHKDateString } from "./hkTime";
 import { parseRows, detectDataType, type ImportDataType } from "./csvImport";
 import { ensureSheetHeaders, writeRowToSheet } from "./sheetsService";
@@ -26,6 +26,43 @@ import { parseGarminRawFile } from "./garminFileImport";
 import Papa from "papaparse";
 // Fixed owner user ID - no login required
 const OWNER_USER_ID = 2;
+const MAX_GARMIN_RAW_FILE_BYTES = 25 * 1024 * 1024;
+const GARMIN_RAW_UPLOAD_CHUNK_BYTES = 2 * 1024 * 1024;
+const MAX_GARMIN_RAW_UPLOAD_CHUNKS = Math.ceil(MAX_GARMIN_RAW_FILE_BYTES / GARMIN_RAW_UPLOAD_CHUNK_BYTES);
+const GARMIN_RAW_FILE_FORMATS = ["FIT", "CSV", "GPX", "TCX"] as const;
+type GarminRawFileFormat = typeof GARMIN_RAW_FILE_FORMATS[number];
+
+function garminRawFormatFromFilename(fileName: string): GarminRawFileFormat | null {
+  const extension = fileName.split(".").at(-1)?.toUpperCase();
+  return extension && GARMIN_RAW_FILE_FORMATS.includes(extension as GarminRawFileFormat)
+    ? extension as GarminRawFileFormat
+    : null;
+}
+
+function validateGarminChunkKeys(chunkKeys: string[], uploadId: string) {
+  const prefix = `garmin-chunks/${OWNER_USER_ID}/${uploadId}/`;
+  if (!chunkKeys.length || chunkKeys.length > MAX_GARMIN_RAW_UPLOAD_CHUNKS) throw new Error("Garmin 原始檔分段數量無效");
+  for (let index = 0; index < chunkKeys.length; index += 1) {
+    const key = chunkKeys[index];
+    if (!key.startsWith(`${prefix}${index}_`) || !key.endsWith(".part")) throw new Error("Garmin 原始檔分段來源無效");
+  }
+}
+
+function validateGarminOriginalKey(key: string) {
+  if (!/^garmin-originals\/\d+\/[a-zA-Z0-9_-]+_[a-f0-9]{8}\.(fit|csv|gpx|tcx)$/i.test(key)) {
+    throw new Error("無效的 Garmin 原始檔來源");
+  }
+}
+
+function decodeGarminChunk(base64: string) {
+  const normalized = base64.replace(/\s/g, "");
+  if (!normalized || normalized.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
+    throw new Error("Garmin 原始檔分段資料格式無效");
+  }
+  const chunk = Buffer.from(normalized, "base64");
+  if (!chunk.length || chunk.length > GARMIN_RAW_UPLOAD_CHUNK_BYTES) throw new Error("Garmin 原始檔分段大小無效");
+  return chunk;
+}
 
 // Cardio exercise names (must match BUILT_IN_EXERCISES in Workout.tsx)
 const CARDIO_EXERCISE_NAMES = [
@@ -2250,17 +2287,8 @@ For steps data: extract daily step count, floors climbed, distance, active minut
       })).min(1).max(16),
     }))
     .mutation(async ({ input }) => {
-      const signedImageUrls = await Promise.all(input.screenshots.map(async (screenshot, index) => {
-        const buffer = Buffer.from(screenshot.base64, "base64");
-        if (buffer.length > 10 * 1024 * 1024) throw new Error(`第 ${index + 1} 張截圖超過 10MB 限制`);
-        const ext = screenshot.mimeType.includes("png") ? "png" : "jpg";
-        const key = `garmin-imports/${OWNER_USER_ID}/${nanoid()}.${ext}`;
-        const stored = await storagePut(key, buffer, screenshot.mimeType);
-        return storageGetSignedUrl(stored.key);
-      }));
-
       const systemPrompt = `You extract Garmin Connect screenshots into exactly one running activity. Return only strict JSON. Do not invent values from a graph. Prefer explicit numbers on Overview/Stats/Laps; if screenshots conflict, choose the value from Overview or Stats and explain the conflict briefly in Traditional Chinese notes. A displayed day and month without a year must produce null date. All extracted metric labels and notes must be understandable to a Traditional Chinese user.`;
-      const userPrompt = `These ${input.screenshots.length} screenshots belong to ONE Garmin running activity. Merge all visible values into a single reviewable record. Extract only visibly stated metrics. Convert duration into hour/minute/second and keep pace in MM:SS. Preserve every visible full-lap row (lap number, duration, distance and average pace); partial laps are valid. Screenshots cannot faithfully reconstruct second-by-second chart samples, so never fabricate curves. Return null for absent or unclear values.
+      const basePrompt = `These screenshots belong to ONE Garmin running activity. Extract only visibly stated metrics. Convert duration into hour/minute/second and keep pace in MM:SS. Preserve every visible full-lap row (lap number, duration, distance and average pace); partial laps are valid. Screenshots cannot faithfully reconstruct second-by-second chart samples, so never fabricate curves. Return null for absent or unclear values.
 
 Required JSON fields:
 - date: YYYY-MM-DD only if a full date including year is visible, else null
@@ -2270,18 +2298,25 @@ Required JSON fields:
 - laps: each visible split row
 - confidence and concise Traditional Chinese notes.`;
 
-      const response = await invokeLLM({
-        model: "gpt-6.1-sol",
-        maxTokens: 12000,
-        reasoning: { effort: "medium" },
-        messages: [{
-          role: "system",
-          content: systemPrompt,
-        }, {
-          role: "user",
-          content: buildGarminVisionContent(signedImageUrls, userPrompt),
-        }],
-        response_format: {
+      // Send direct data-image URLs in batches of at most five. This avoids both
+      // expiring signed storage URLs and provider request limits on long image lists.
+      const batches = buildGarminVisionBatches(input.screenshots);
+      const extractions = [];
+      for (let index = 0; index < batches.length; index += 1) {
+        const batch = batches[index];
+        const userPrompt = `${basePrompt}\n\nThis is image batch ${index + 1} of ${batches.length}. Return values visible in this batch only. The server will safely merge non-conflicting fields across batches.`;
+        const response = await invokeLLM({
+          model: "gpt-6.1-sol",
+          maxTokens: 8000,
+          reasoning: { effort: "medium" },
+          messages: [{
+            role: "system",
+            content: systemPrompt,
+          }, {
+            role: "user",
+            content: buildGarminVisionContent(batch, userPrompt),
+          }],
+          response_format: {
           type: "json_schema",
           json_schema: {
             name: "garmin_run_sequence",
@@ -2318,9 +2353,11 @@ Required JSON fields:
               required: ["date", "time", "running", "garminDetails", "laps", "confidence", "notes"], additionalProperties: false,
             },
           },
-        },
-      });
-      return parseGarminExtraction(response.choices[0]?.message?.content);
+          },
+        });
+        extractions.push(parseGarminExtraction(response.choices[0]?.message?.content));
+      }
+      return mergeGarminExtractions(extractions);
     }),
 
   /**
@@ -2526,15 +2563,39 @@ const runningRouter = router({
       };
     }),
 
+  uploadGarminRawChunk: ownerProcedure
+    .input(z.object({
+      uploadId: z.string().regex(/^[A-Za-z0-9_-]{12,80}$/),
+      chunkIndex: z.number().int().min(0).max(MAX_GARMIN_RAW_UPLOAD_CHUNKS - 1),
+      base64: z.string().min(4).max(Math.ceil(GARMIN_RAW_UPLOAD_CHUNK_BYTES * 4 / 3) + 32),
+    }))
+    .mutation(async ({ input }) => {
+      const chunk = decodeGarminChunk(input.base64);
+      const stored = await storagePut(
+        `garmin-chunks/${OWNER_USER_ID}/${input.uploadId}/${input.chunkIndex}.part`,
+        chunk,
+        "application/octet-stream",
+      );
+      return { fileKey: stored.key, sizeBytes: chunk.length };
+    }),
+
   parseGarminRawFile: ownerProcedure
     .input(z.object({
       fileName: z.string().trim().min(5).max(180),
       mimeType: z.string().trim().max(120),
-      base64: z.string().min(16),
+      uploadId: z.string().regex(/^[A-Za-z0-9_-]{12,80}$/),
+      chunkKeys: z.array(z.string().trim().min(20).max(500)).min(1).max(MAX_GARMIN_RAW_UPLOAD_CHUNKS),
     }))
     .mutation(async ({ input }) => {
-      const buffer = Buffer.from(input.base64, "base64");
-      return parseGarminRawFile(buffer, input.fileName);
+      const sourceFormat = garminRawFormatFromFilename(input.fileName);
+      if (!sourceFormat) throw new Error("請選擇 Garmin FIT、CSV、GPX 或 TCX 原始檔");
+      validateGarminChunkKeys(input.chunkKeys, input.uploadId);
+      const chunks = await Promise.all(input.chunkKeys.map((key) => storageReadBuffer(key)));
+      const buffer = Buffer.concat(chunks);
+      if (buffer.length > MAX_GARMIN_RAW_FILE_BYTES) throw new Error("原始 Garmin 檔案超過 25MB 限制");
+      const stored = await storagePut(`garmin-originals/${OWNER_USER_ID}/${nanoid()}.${sourceFormat.toLowerCase()}`, buffer, input.mimeType || "application/octet-stream");
+      const preview = parseGarminRawFile(buffer, input.fileName);
+      return { ...preview, rawFileKey: stored.key };
     }),
 
   saveGarminRawSource: ownerProcedure
@@ -2542,20 +2603,19 @@ const runningRouter = router({
       runningLogId: z.number().int().positive(),
       fileName: z.string().trim().min(1).max(180),
       mimeType: z.string().trim().max(120),
-      base64: z.string().min(16),
-      sourceFormat: z.enum(["FIT", "CSV"]),
-      sampleCount: z.number().int().min(0).max(30000),
+      sourceFormat: z.enum(["FIT", "CSV", "GPX", "TCX"]),
+      fileKey: z.string().trim().min(20).max(500),
+      sampleCount: z.number().int().min(0).max(10000),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const buffer = Buffer.from(input.base64, "base64");
-      if (buffer.length > 25 * 1024 * 1024) throw new Error("原始 Garmin 檔案超過 25MB 限制");
-      const extension = input.sourceFormat === "FIT" ? "fit" : "csv";
-      const stored = await storagePut(`garmin-originals/${OWNER_USER_ID}/${nanoid()}.${extension}`, buffer, input.mimeType || "application/octet-stream");
+      const detectedFormat = garminRawFormatFromFilename(input.fileName);
+      if (detectedFormat !== input.sourceFormat) throw new Error("原始檔格式與副檔名不一致");
+      validateGarminOriginalKey(input.fileKey);
       const metadata = JSON.stringify({
-        rawFileKey: stored.key,
-        rawFileUrl: stored.url,
+        rawFileKey: input.fileKey,
+        rawFileUrl: `/manus-storage/${input.fileKey}`,
         rawFileName: input.fileName,
         rawFileFormat: input.sourceFormat,
         rawSampleCount: input.sampleCount,
@@ -2565,7 +2625,7 @@ const runningRouter = router({
         SET garmin_details = COALESCE(garmin_details, '{}'::jsonb) || ${metadata}::jsonb
         WHERE id = ${input.runningLogId}
       `);
-      return { success: true, fileUrl: stored.url };
+      return { success: true, fileUrl: `/manus-storage/${input.fileKey}` };
     }),
 
   addLog: publicProcedure
@@ -2616,7 +2676,7 @@ const runningRouter = router({
         power: z.number().optional(),
         altitudeM: z.number().optional(),
         temperatureC: z.number().optional(),
-      })).max(30000).optional(),
+      })).max(10000).optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
@@ -2734,7 +2794,7 @@ const runningRouter = router({
         power: z.number().optional(),
         altitudeM: z.number().optional(),
         temperatureC: z.number().optional(),
-      })).max(30000).optional(),
+      })).max(10000).optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {

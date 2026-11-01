@@ -15,6 +15,18 @@ export type ReleaseNote = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.14.5",
+    status: "released",
+    title: "Garmin 多截圖可靠性與逐秒曲線",
+    summary: "已發布：更穩定地合併 Garmin 截圖，並可互動檢視原始逐秒跑步資料。",
+    highlights: [
+      "Garmin 連續截圖改為每 5 張自動分批分析，再以不覆蓋已讀取數值的方式合併，減少大量截圖造成的分析失敗。",
+      "圖片改為安全的直接視覺資料輸入，避免臨時簽名網址過期或格式限制；仍維持先核對、後儲存的流程。",
+      "支援 Garmin FIT、CSV、GPX 及 TCX 原始檔，並以安全直傳支援最大 25MB 的檔案；其逐秒資料可於跑步紀錄中開啟互動配速、心率及海拔曲線。",
+      "配速曲線採反向 Y 軸（越高越快），時間與提示一律以香港時區顯示；長跑資料會智慧採樣以保持流暢。",
+    ],
+  },
+  {
     version: "3.14.4",
     status: "released",
     title: "資料匯入、歷史比較與行動導覽",

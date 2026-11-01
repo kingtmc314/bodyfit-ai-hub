@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.14.4");
+    expect(APP_VERSION).toBe("3.14.5");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -202,5 +202,49 @@ describe("v3.14.4 complete import and history workflow", () => {
     expect(layoutSource).toContain("safe-area-inset-bottom");
     expect(releaseNotesSource).toContain('version: "3.14.4"');
     expect(releaseNotesSource).toContain('status: "released"');
+  });
+});
+
+describe("v3.14.5 Garmin vision reliability and time-series review", () => {
+  const runningSource = readFileSync(new URL("../client/src/pages/Running.tsx", import.meta.url), "utf8");
+  const chartSource = readFileSync(new URL("../client/src/components/GarminTimeSeriesChart.tsx", import.meta.url), "utf8");
+  const importerSource = readFileSync(new URL("../client/src/components/GarminRunImporter.tsx", import.meta.url), "utf8");
+  const rawImporterSource = readFileSync(new URL("../client/src/components/GarminRawFileImporter.tsx", import.meta.url), "utf8");
+  const rawParserSource = readFileSync(new URL("../server/garminFileImport.ts", import.meta.url), "utf8");
+  const storageSource = readFileSync(new URL("../server/storage.ts", import.meta.url), "utf8");
+  const routerSource = readFileSync(new URL("../server/routers.ts", import.meta.url), "utf8");
+  const releaseNotesSource = readFileSync(new URL("../client/src/lib/releaseNotes.ts", import.meta.url), "utf8");
+
+  it("batches direct Garmin image data before the vision request instead of relying on transient signed URLs", () => {
+    expect(routerSource).toContain("buildGarminVisionBatches(input.screenshots)");
+    expect(importerSource).toContain("最多 16 張／合計 30MB");
+    expect(importerSource).toContain("每 5 張自動分批");
+  });
+
+  it("offers reviewed FIT/CSV per-sample pace, heart-rate and elevation curves in the run history", () => {
+    expect(runningSource).toContain("GarminTimeSeriesChart");
+    expect(runningSource).toContain("查看 Garmin 逐秒曲線");
+    expect(chartSource).toContain("配速");
+    expect(chartSource).toContain("心率");
+    expect(chartSource).toContain("海拔");
+    expect(chartSource).toContain('timeZone: "Asia/Hong_Kong"');
+    expect(chartSource).toContain("reversed={selectedMetric === \"pace\"}");
+    expect(rawImporterSource).toContain("GarminTimeSeriesChart");
+    expect(rawImporterSource).toContain("FIT／CSV／GPX／TCX");
+    expect(rawParserSource).toContain("parseGarminGpx");
+    expect(rawParserSource).toContain("parseGarminTcx");
+    expect(rawParserSource).toContain("DOCTYPE");
+    expect(rawImporterSource).toContain("uploadGarminRawChunk");
+    expect(rawImporterSource).toContain("CHUNK_BYTES");
+    expect(rawImporterSource).toContain("安全分段上載");
+    expect(routerSource).toContain("uploadGarminRawChunk");
+    expect(routerSource).toContain("validateGarminChunkKeys");
+    expect(routerSource).toContain("Buffer.concat(chunks)");
+    expect(storageSource).toContain("storageReadBuffer");
+  });
+
+  it("makes the customer-facing release history match the visible version", () => {
+    expect(releaseNotesSource).toContain('version: "3.14.5"');
+    expect(releaseNotesSource).toContain("逐秒曲線");
   });
 });

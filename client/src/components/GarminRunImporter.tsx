@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 
+const MAX_SCREENSHOTS = 16;
+const MAX_TOTAL_BYTES = 30 * 1024 * 1024;
+
 interface GarminRunImporterProps {
   onExtracted: (fields: Record<string, unknown>, sourceFiles: File[]) => void;
 }
@@ -98,7 +101,7 @@ export default function GarminRunImporter({ onExtracted }: GarminRunImporterProp
     onError: (error) => {
       const raw = error.message || "";
       const guidance = /expected pattern|invalid url|image_url|url/i.test(raw)
-        ? "截圖傳送格式已自動修正；請直接再按一次「合併分析」。若仍失敗，先保留總覽、Stats、Laps 這 3–8 張最清晰畫面。"
+        ? "已改用直接圖片資料與每 5 張自動分批合併；請再次按「合併分析」。若仍失敗，可先保留總覽、Stats、Laps 這 3–8 張最清晰畫面。"
         : /json|format|parse/i.test(raw)
           ? "分析服務回傳格式不完整；請重試或減少至 6–8 張最清晰的 Garmin 畫面。"
           : "請重試；你目前已選取的截圖會保留在這個視窗。";
@@ -111,7 +114,16 @@ export default function GarminRunImporter({ onExtracted }: GarminRunImporterProp
     const valid = candidates.filter(file => file.type.startsWith("image/") && file.size <= 10 * 1024 * 1024);
     if (!valid.length) return;
     if (valid.length !== candidates.length) toast.message("只保留圖片檔案，每張上限 10MB");
-    setFiles(valid.slice(0, 16));
+    let totalBytes = 0;
+    const withinTotalLimit = valid.filter((file) => {
+      if (totalBytes + file.size > MAX_TOTAL_BYTES) return false;
+      totalBytes += file.size;
+      return true;
+    }).slice(0, MAX_SCREENSHOTS);
+    if (withinTotalLimit.length !== valid.length) {
+      toast.message("已保留合計 30MB 內的截圖；系統會每 5 張自動分批分析並合併結果。");
+    }
+    setFiles(withinTotalLimit);
     setPreview(null);
     setApplied(false);
   };
@@ -136,7 +148,7 @@ export default function GarminRunImporter({ onExtracted }: GarminRunImporterProp
   const visibleFields = preview ? Object.entries(preview.fields).filter(([key, value]) => labels[key] && value !== "" && value != null) : [];
 
   return <section className="overflow-hidden rounded-xl border border-violet-200/80 bg-gradient-to-br from-violet-50 via-white to-fuchsia-50 p-4 dark:border-violet-400/15 dark:from-violet-950/25 dark:via-card dark:to-fuchsia-950/10">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="flex gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/12 text-violet-600 dark:text-violet-300"><Images className="h-4.5 w-4.5" /></span><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-600 dark:text-violet-300">GARMIN CONTINUOUS IMPORT</p><h4 className="mt-0.5 text-sm font-bold text-foreground">連續截圖合併匯入</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">可一次選擇總覽、Stats、Laps、Charts 等多個畫面；AI 會合併為同一筆跑步，先讓你核對才填入表單。</p></div></div><Badge variant="outline" className="w-fit border-violet-200 bg-white/70 text-[10px] text-violet-700 dark:border-violet-400/20 dark:bg-violet-400/10 dark:text-violet-200">最多 16 張</Badge></div>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="flex gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/12 text-violet-600 dark:text-violet-300"><Images className="h-4.5 w-4.5" /></span><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-600 dark:text-violet-300">GARMIN CONTINUOUS IMPORT</p><h4 className="mt-0.5 text-sm font-bold text-foreground">連續截圖合併匯入</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">可一次選擇總覽、Stats、Laps、Charts 等多個畫面；系統每 5 張自動分批分析，再合併為同一筆跑步供你核對。</p></div></div><Badge variant="outline" className="w-fit border-violet-200 bg-white/70 text-[10px] text-violet-700 dark:border-violet-400/20 dark:bg-violet-400/10 dark:text-violet-200">最多 16 張／合計 30MB</Badge></div>
 
     <input ref={inputRef} type="file" accept="image/*" multiple className="hidden" onChange={event => { chooseFiles(event.target.files); event.target.value = ""; }} />
     <div className="mt-4 flex flex-wrap items-center gap-2"><Button type="button" variant="outline" size="sm" className="border-violet-200 bg-white text-violet-700 hover:bg-violet-50 dark:border-violet-400/20 dark:bg-slate-950/30 dark:text-violet-200" onClick={() => inputRef.current?.click()} disabled={extractMutation.isPending}><UploadCloud className="mr-1.5 h-3.5 w-3.5" />選擇 Garmin 截圖</Button><Button type="button" size="sm" className="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-400 dark:text-slate-950 dark:hover:bg-violet-300" onClick={analyze} disabled={!files.length || extractMutation.isPending}>{extractMutation.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}{extractMutation.isPending ? "分析多張畫面中…" : `合併分析${files.length ? ` (${files.length})` : ""}`}</Button>{files.length > 0 && <button type="button" className="ml-auto text-xs text-muted-foreground hover:text-foreground" onClick={() => { setFiles([]); setPreview(null); }}>清除</button>}</div>

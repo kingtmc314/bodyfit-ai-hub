@@ -15,6 +15,7 @@ import LogPhotoUploader, { LogPhotoUploaderRef } from "@/components/LogPhotoUplo
 import ScreenshotImporter from "@/components/ScreenshotImporter";
 import GarminRunImporter from "@/components/GarminRunImporter";
 import GarminRawFileImporter from "@/components/GarminRawFileImporter";
+import GarminTimeSeriesChart from "@/components/GarminTimeSeriesChart";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart, Area
@@ -45,6 +46,12 @@ const formatDuration = (h: number, m: number, s: number): string => {
   if (s > 0) parts.push(`${s}s`);
   return parts.join(" ") || "—";
 };
+
+const toGarminTimeSeries = (value: unknown): Array<Record<string, unknown>> => (
+  Array.isArray(value)
+    ? value.filter((sample): sample is Record<string, unknown> => typeof sample === "object" && sample !== null && !Array.isArray(sample))
+    : []
+);
 
 const RUNNING_TYPES = ["Easy", "Tempo", "Interval", "Long Run", "Race", "Trail", "Recovery", "Fartlek", "Sprint", "Time Trial", "其他"];
 const ROUTE_TYPES = ["Road", "Track", "Trail", "Treadmill", "Mixed"];
@@ -142,7 +149,8 @@ export default function Running() {
   const [showDialog, setShowDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
-  const [garminRawFile, setGarminRawFile] = useState<{ file: File; sourceFormat: "FIT" | "CSV"; sampleCount: number } | null>(null);
+  const [garminRawFile, setGarminRawFile] = useState<{ fileName: string; mimeType: string; fileKey: string; sourceFormat: "FIT" | "CSV" | "GPX" | "TCX"; sampleCount: number } | null>(null);
+  const [timeSeriesRun, setTimeSeriesRun] = useState<{ label: string; samples: Array<Record<string, unknown>> } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [aiWeeks, setAiWeeks] = useState(12);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
@@ -285,17 +293,11 @@ export default function Running() {
   const saveGarminRawSourceMutation = trpc.running.saveGarminRawSource.useMutation();
   const persistGarminRawSource = async (runningLogId: number) => {
     if (!garminRawFile) return;
-    const base64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error("無法讀取 Garmin 原始檔"));
-      reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
-      reader.readAsDataURL(garminRawFile.file);
-    });
     await saveGarminRawSourceMutation.mutateAsync({
       runningLogId,
-      fileName: garminRawFile.file.name,
-      mimeType: garminRawFile.file.type || "application/octet-stream",
-      base64,
+      fileName: garminRawFile.fileName,
+      mimeType: garminRawFile.mimeType,
+      fileKey: garminRawFile.fileKey,
       sourceFormat: garminRawFile.sourceFormat,
       sampleCount: garminRawFile.sampleCount,
     });
@@ -1036,7 +1038,25 @@ export default function Running() {
                           {row.notes || "—"}
                         </td>
                         <td className="px-4 py-3">
-                          <LogPhotoUploader logId={Number(row.id)} type="running" compact />
+                          <div className="flex items-center gap-1">
+                            <LogPhotoUploader logId={Number(row.id)} type="running" compact />
+                            {toGarminTimeSeries(row.time_series).length > 0 && (
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 text-sky-700 hover:bg-sky-500/10 hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-100"
+                                aria-label={`查看 ${formatHKDate(row.date)} 的 Garmin 逐秒曲線`}
+                                title="查看 Garmin 逐秒曲線"
+                                onClick={() => setTimeSeriesRun({
+                                  label: `${formatHKDate(row.date)}${row.running_type ? ` · ${row.running_type}` : ""}`,
+                                  samples: toGarminTimeSeries(row.time_series),
+                                })}
+                              >
+                                <Activity className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </div>
                         </td>
                         {isOwner && (
                         <td className="px-4 py-3">
@@ -1801,7 +1821,7 @@ export default function Running() {
                 }}
               />
               <GarminRawFileImporter
-                onExtracted={(preview, sourceFile) => {
+                onExtracted={(preview, sourceFile, stagedSource) => {
                   setForm((previous: any) => ({
                     ...previous,
                     ...preview.fields,
@@ -1809,7 +1829,13 @@ export default function Running() {
                     laps: preview.laps,
                     timeSeries: preview.timeSeries,
                   }));
-                  setGarminRawFile({ file: sourceFile, sourceFormat: preview.sourceFormat, sampleCount: preview.timeSeries.length });
+                  setGarminRawFile({
+                    fileName: sourceFile.name,
+                    mimeType: sourceFile.type || "application/octet-stream",
+                    fileKey: stagedSource.fileKey,
+                    sourceFormat: stagedSource.sourceFormat,
+                    sampleCount: preview.timeSeries.length,
+                  });
                 }}
               />
             </div>
@@ -2210,6 +2236,25 @@ export default function Running() {
               {deleteRaceMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}{t('running.delete')}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Garmin per-sample pace, heart-rate and elevation curves */}
+      <Dialog open={timeSeriesRun !== null} onOpenChange={(open) => { if (!open) setTimeSeriesRun(null); }}>
+        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto p-0 sm:rounded-2xl">
+          <DialogHeader className="px-5 pb-0 pt-5">
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Activity className="h-4 w-4 text-sky-600 dark:text-sky-300" />
+              Garmin 逐秒跑步曲線
+            </DialogTitle>
+          </DialogHeader>
+          {timeSeriesRun && (
+            <GarminTimeSeriesChart
+              timeSeries={timeSeriesRun.samples}
+              runLabel={timeSeriesRun.label}
+              className="mx-5 mb-5"
+            />
+          )}
         </DialogContent>
       </Dialog>
 

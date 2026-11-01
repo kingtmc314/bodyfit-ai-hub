@@ -1,6 +1,6 @@
 {
   "name": "bodyfit-ai-hub",
-  "version": "3.14.4",
+  "version": "3.14.5",
   "type": "module",
   "license": "MIT",
   "scripts": {
@@ -79,6 +79,7 @@
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^3.0.6",
     "recharts": "^2.15.2",
+    "sax": "1.6.1",
     "sonner": "^2.0.7",
     "streamdown": "^1.4.0",
     "superjson": "^1.13.3",
@@ -97,6 +98,7 @@
     "@types/node": "^24.7.0",
     "@types/react": "^19.2.1",
     "@types/react-dom": "^19.2.1",
+    "@types/sax": "^1.2.7",
     "@vitejs/plugin-react": "^5.0.4",
     "add": "^2.0.6",
     "autoprefixer": "^10.4.20",
