@@ -15,6 +15,17 @@ export type ReleaseNote = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.14.8",
+    status: "released",
+    title: "記錄與工具導覽精簡",
+    summary: "已發布：移除記錄與工具中的進度相片與全域匯入數據入口，讓側欄更聚焦健康追蹤。",
+    highlights: [
+      "「進度相片」與「匯入數據」已從側欄及手機更多選單移除，對應頁面路由亦不再開放。",
+      "既有的身體、睡眠、心跳、步數、血壓、飲食、健身與跑步紀錄均完整保留，並未刪除任何健康資料。",
+      "各健康頁現有的截圖、檔案及 Excel／Google Sheets 表格式輸入入口仍然可用。",
+    ],
+  },
+  {
     version: "3.14.7",
     status: "released",
     title: "Excel 式健康數據輸入與全歷史跑步分析",

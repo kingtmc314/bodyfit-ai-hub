@@ -19,9 +19,7 @@ const Workout = lazy(() => import("./pages/Workout"));
 const BodyComposition = lazy(() => import("./pages/BodyComposition"));
 const HeartRate = lazy(() => import("./pages/HeartRate"));
 const Sleep = lazy(() => import("./pages/Sleep"));
-const ProgressPhotos = lazy(() => import("./pages/ProgressPhotos"));
 const Insights = lazy(() => import("./pages/Insights"));
-const Import = lazy(() => import("./pages/Import"));
 const Trends = lazy(() => import("./pages/Trends"));
 const Goals = lazy(() => import("./pages/Goals"));
 const Running = lazy(() => import("./pages/Running"));
@@ -55,9 +53,7 @@ function Router() {
       <Route path="/body" component={() => <AppLayout><Lazy><BodyComposition /></Lazy></AppLayout>} />
       <Route path="/heart-rate" component={() => <AppLayout><Lazy><HeartRate /></Lazy></AppLayout>} />
       <Route path="/sleep" component={() => <AppLayout><Lazy><Sleep /></Lazy></AppLayout>} />
-      <Route path="/photos" component={() => <AppLayout><Lazy><ProgressPhotos /></Lazy></AppLayout>} />
       <Route path="/insights" component={() => <AppLayout><Lazy><Insights /></Lazy></AppLayout>} />
-      <Route path="/import" component={() => <AppLayout><Lazy><Import /></Lazy></AppLayout>} />
       <Route path="/trends" component={() => <AppLayout><Lazy><Trends /></Lazy></AppLayout>} />
       <Route path="/goals" component={() => <AppLayout><Lazy><Goals /></Lazy></AppLayout>} />
       <Route path="/running" component={() => <AppLayout><Lazy><Running /></Lazy></AppLayout>} />

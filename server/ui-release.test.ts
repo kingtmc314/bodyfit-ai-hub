@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.14.7");
+    expect(APP_VERSION).toBe("3.14.8");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -337,5 +337,34 @@ describe("v3.14.7 spreadsheet health entry and complete-history energy analysis"
     expect(labSource).toContain("不設日期或筆數截斷");
     expect(stylesheetSource).toContain("deliberately dark in every app theme");
     expect(stylesheetSource).toContain("#07111f");
+  });
+});
+
+describe("v3.14.8 records-and-tools navigation cleanup", () => {
+  const appSource = readFileSync(new URL("../client/src/App.tsx", import.meta.url), "utf8");
+  const layoutSource = readFileSync(new URL("../client/src/components/AppLayout.tsx", import.meta.url), "utf8");
+  const bodySource = readFileSync(new URL("../client/src/pages/BodyComposition.tsx", import.meta.url), "utf8");
+  const sleepSource = readFileSync(new URL("../client/src/pages/Sleep.tsx", import.meta.url), "utf8");
+  const heartSource = readFileSync(new URL("../client/src/pages/HeartRate.tsx", import.meta.url), "utf8");
+  const schemaSource = readFileSync(new URL("../drizzle/schema.ts", import.meta.url), "utf8");
+  const releaseNotesSource = readFileSync(new URL("../client/src/lib/releaseNotes.ts", import.meta.url), "utf8");
+
+  it("removes only the requested global records-and-tools routes and menu entries", () => {
+    for (const source of [appSource, layoutSource]) {
+      expect(source).not.toContain('path: "/photos"');
+      expect(source).not.toContain('path: "/import"');
+      expect(source).not.toContain('path="/photos"');
+      expect(source).not.toContain('path="/import"');
+    }
+    expect(appSource).not.toContain('import("./pages/ProgressPhotos")');
+    expect(appSource).not.toContain('import("./pages/Import")');
+    expect(layoutSource).toContain('path: "/release-notes"');
+  });
+
+  it("preserves existing health data structures and page-local import workflows", () => {
+    expect(schemaSource).toContain('pgTable("progress_photos"');
+    for (const page of [bodySource, sleepSource, heartSource]) expect(page).toContain("QuickImportModal");
+    expect(releaseNotesSource).toContain('version: "3.14.8"');
+    expect(releaseNotesSource).toContain("跑步紀錄均完整保留");
   });
 });

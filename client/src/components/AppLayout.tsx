@@ -8,7 +8,6 @@ import {
   Scale,
   Heart,
   Moon,
-  Camera,
   Sparkles,
   Menu,
   X,
@@ -16,7 +15,6 @@ import {
   ChevronRight,
   Activity,
   Languages,
-  Upload,
   TrendingUp,
   Target,
   Footprints,
@@ -64,8 +62,6 @@ const navGroups: NavGroup[] = [
   {
     groupKey: "group_records",
     items: [
-      { path: "/photos",   key: "photos",   icon: Camera,      badgeClass: "icon-badge-blue"   },
-      { path: "/import",   key: "import",   icon: Upload,      badgeClass: "icon-badge-green"  },
       { path: "/release-notes", key: "release_notes", icon: History, badgeClass: "icon-badge-purple" },
     ],
   },

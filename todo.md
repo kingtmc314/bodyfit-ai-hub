@@ -510,6 +510,11 @@
 - [x] Verify Garmin running-field Google Sheets mappings remain complete, and complete GPS/model tests, browser preview checks, typecheck and production builds
 - [x] Save checkpoint, push to BodyFit-only GitHub main and verify the v3.14.6 Vercel production deployment
 
+## v3.14.8 Records & tools navigation cleanup
+- [x] Remove the 「進度相片」and global「匯入數據」routes and navigation items from 記錄與工具, while preserving existing health records and page-specific import / spreadsheet entry workflows
+- [x] Run regression tests, typecheck and production builds; verify no requested global route or menu item remains while health data and page-local imports stay available
+- [ ] Save checkpoint, push to BodyFit-only GitHub main and verify the v3.14.8 Vercel production deployment
+
 ## v3.14.7 Spreadsheet-style health data entry
 - [x] Create a reusable Excel-style grid that accepts multi-cell clipboard paste, provides row-level validation and allows corrections before batch submission
 - [x] Add transactional-style row result APIs and table-entry actions for steps/stairs, heart rate, blood pressure, sleep and body composition, with all calendar values interpreted as Hong Kong dates
