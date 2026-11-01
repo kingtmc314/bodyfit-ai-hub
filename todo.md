@@ -525,7 +525,7 @@
 - [x] Add a mobile-friendly Garmin brief with training-load, heart-rate, running-dynamics, recovery, source-quality and selectable raw time-series visualisations
 - [x] Provide descriptive training observations and data-completeness guidance only; retain the existing energy-system simulator as a clearly separate educational model
 - [x] Test aggregation contracts, missing-data states, HK-time formatting, visualisation contracts and production builds
-- [ ] Save checkpoint, push the combined v3.15.0 release to BodyFit-only GitHub main, and verify Vercel production
+- [x] Save checkpoint, push the combined v3.15.0 release to BodyFit-only GitHub main, and verify Vercel production
 
 ## v3.14.7 Spreadsheet-style health data entry
 - [x] Create a reusable Excel-style grid that accepts multi-cell clipboard paste, provides row-level validation and allows corrections before batch submission

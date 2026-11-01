@@ -37,9 +37,9 @@ export type FeatureHistory = {
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
     version: "3.15.0",
-    status: "in-progress",
+    status: "released",
     title: "Garmin 健康數據簡報",
-    summary: "進行中：把已儲存的 Garmin 跑步、心率、睡眠及身體成份資料整合為可互動檢視的數據簡報。",
+    summary: "已發布：把已儲存的 Garmin 跑步、心率、睡眠及身體成份資料整合為可互動檢視的數據簡報。",
     changes: {
       added: ["跑步頁新增 Garmin 簡報工作區，集中訓練負荷、心率、恢復、跑姿與資料覆蓋率。", "逐秒 Garmin 曲線新增步頻及功率切換；GPS 路線和坡度分析保持在同一筆原始跑步詳情。"],
       removed: ["無。"],
@@ -49,9 +49,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
   },
   {
     version: "3.14.9",
-    status: "in-progress",
+    status: "released",
     title: "跑步歷史分頁與情境相容校準",
-    summary: "進行中：讓大量跑步歷史可逐頁查看，並讓能量系統實驗室只以相符項目的跑步資料校準。",
+    summary: "已發布：讓大量跑步歷史可逐頁查看，並讓能量系統實驗室只以相符項目的跑步資料校準。",
     changes: {
       added: ["跑步紀錄伺服器端分頁，提供總筆數、頁碼、上一頁及下一頁。", "能量實驗室顯示自動選取規則、相容樣本、排除筆數及保守回退原因。"],
       removed: ["無。"],
@@ -173,7 +173,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
 export const FEATURE_HISTORY: readonly FeatureHistory[] = [
   {
     feature: "Garmin 健康數據簡報",
-    status: "in-progress",
+    status: "released",
     summary: "以已儲存的跑步、Garmin 原始檔、心跳、睡眠及身體成份資料，提供可追溯的訓練與恢復資訊圖表。",
     lastRevisedVersion: "3.15.0",
     lastRevisedDateHK: "2026年11月1日（香港）",
@@ -185,7 +185,7 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
   },
   {
     feature: "跑步能量系統互動實驗室",
-    status: "in-progress",
+    status: "released",
     summary: "依跑步項目、天氣及相容歷史資料，提供教學用途的能量系統與恢復估算。",
     lastRevisedVersion: "3.14.9",
     lastRevisedDateHK: "2026年11月1日（香港）",
@@ -198,7 +198,7 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
   },
   {
     feature: "跑步紀錄、GPS 路線與歷史清單",
-    status: "in-progress",
+    status: "released",
     summary: "保存跑步、賽事、路線類型、GPS、坡度與時間序列，並可瀏覽完整歷史。",
     lastRevisedVersion: "3.14.9",
     lastRevisedDateHK: "2026年11月1日（香港）",
