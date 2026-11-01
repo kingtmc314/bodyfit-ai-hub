@@ -10,12 +10,13 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot, Trophy, Star, MapPin, Calendar, Clock, Award, Flag, Zap, Package, Camera, ImageIcon, ArrowUpDown, Thermometer, Wind, Droplets, Download, CloudSun } from "lucide-react";
+import { Footprints, Plus, Trash2, Edit2, Loader2, Activity, Timer, Heart, Sparkles, Bot, Trophy, Star, MapPin, Calendar, Clock, Award, Flag, Zap, Package, Camera, ImageIcon, ArrowUpDown, ChevronLeft, ChevronRight, Thermometer, Wind, Droplets, Download, CloudSun } from "lucide-react";
 import LogPhotoUploader, { LogPhotoUploaderRef } from "@/components/LogPhotoUploader";
 import ScreenshotImporter from "@/components/ScreenshotImporter";
 import GarminRunImporter from "@/components/GarminRunImporter";
 import GarminRawFileImporter from "@/components/GarminRawFileImporter";
 import GarminTimeSeriesChart from "@/components/GarminTimeSeriesChart";
+import GarminHealthBriefing from "@/components/GarminHealthBriefing";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart, Area
@@ -63,6 +64,7 @@ const DISTANCE_BANDS = [
   { value: "ultra", label: "超長距離 ≥21.1 km" },
 ];
 const WEEKS_OPTIONS = [4, 8, 12, 24, 52];
+const RUN_LOG_PAGE_SIZE = 30;
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload?.length) {
@@ -162,6 +164,7 @@ export default function Running() {
   const [logSort, setLogSort] = useState<'date_desc' | 'date_asc' | 'distance_desc' | 'pace_asc' | 'hr_asc'>('date_desc');
   const [logFilterType, setLogFilterType] = useState<string>('all');
   const [logSearch, setLogSearch] = useState('');
+  const [logPage, setLogPage] = useState(1);
   const [shoeDistanceBand, setShoeDistanceBand] = useState<'all' | 'short' | 'medium' | 'long' | 'ultra'>('all');
   const [shoeRouteType, setShoeRouteType] = useState('all');
   const [shoeStatusFilters, setShoeStatusFilters] = useState<string[]>([]);
@@ -222,7 +225,15 @@ export default function Running() {
 
   const utils = trpc.useUtils();
   const [weatherLookupTarget, setWeatherLookupTarget] = useState<"log" | "race" | null>(null);
-  const { data: logs = [], isLoading } = trpc.running.getLogs.useQuery({ limit: 200 });
+  const { data: logs = [] } = trpc.running.getLogs.useQuery({ limit: 200 });
+  const logPageInput = useMemo(() => ({
+    page: logPage,
+    pageSize: RUN_LOG_PAGE_SIZE,
+    runningType: logFilterType,
+    search: logSearch.trim(),
+    sort: logSort,
+  }), [logPage, logFilterType, logSearch, logSort]);
+  const { data: logPageData, isLoading: isLogPageLoading, isFetching: isLogPageFetching } = trpc.running.getLogsPage.useQuery(logPageInput);
   const { data: filteredShoePerformance = [] } = trpc.running.getShoePerformance.useQuery({
     distanceBand: shoeDistanceBand,
     routeType: shoeRouteType,
@@ -236,6 +247,7 @@ export default function Running() {
   const { data: hrLogs = [] } = trpc.heartRate.getAll.useQuery({ limit: 30 });
   const { data: maxHrData } = trpc.heartRate.getMaxHr.useQuery();
   const { data: labPersonalization } = trpc.running.getLabPersonalization.useQuery();
+  const { data: garminHealthBrief, isLoading: isGarminHealthBriefLoading } = trpc.running.getGarminHealthBrief.useQuery();
   const historicalWeatherMutation = trpc.running.lookupHistoricalWeather.useMutation({
     onSuccess: (weather) => {
       const weatherFields = {
@@ -595,27 +607,14 @@ export default function Running() {
     }
   }, [races, raceSort]);
 
-  // ─── Sorted/filtered log ────────────────────────────────────────────────────
-  const sortedFilteredLogs = useMemo(() => {
-    let list = [...(logs as any[])];
-    if (logFilterType !== 'all') list = list.filter((r: any) => r.running_type === logFilterType);
-    if (logSearch.trim()) {
-      const q = logSearch.toLowerCase();
-      list = list.filter((r: any) => (
-        (r.running_type || '').toLowerCase().includes(q) ||
-        (r.running_shoes || '').toLowerCase().includes(q) ||
-        (r.notes || '').toLowerCase().includes(q)
-      ));
-    }
-    switch (logSort) {
-      case 'date_asc': list.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); break;
-      case 'date_desc': list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); break;
-      case 'distance_desc': list.sort((a, b) => parseFloat(b.distance_km || 0) - parseFloat(a.distance_km || 0)); break;
-      case 'pace_asc': list.sort((a, b) => parsePaceField(a.average_pace) - parsePaceField(b.average_pace)); break;
-      case 'hr_asc': list.sort((a, b) => (a.average_heart_rate ?? 999) - (b.average_heart_rate ?? 999)); break;
-    }
-    return list;
-  }, [logs, logSort, logFilterType, logSearch]);
+  const pagedLogs = (logPageData?.rows ?? []) as any[];
+  const totalLogRecords = logPageData?.total ?? 0;
+  const totalLogPages = logPageData?.totalPages ?? 0;
+  const currentLogPage = logPageData?.page ?? logPage;
+
+  useEffect(() => {
+    setLogPage(1);
+  }, [logFilterType, logSearch, logSort]);
 
   // ─── Summary stats ───────────────────────────────────────────────────────────
   const summary = stats?.summary as any;
@@ -764,8 +763,12 @@ export default function Running() {
 
       {/* Tabs */}
       <Tabs defaultValue="charts">
-        <TabsList className="mb-4 grid h-auto w-full grid-cols-3 gap-1 rounded-xl p-1.5 sm:flex sm:w-auto sm:flex-wrap">
+        <TabsList className="mb-4 grid h-auto w-full grid-cols-2 gap-1 rounded-xl p-1.5 sm:flex sm:w-auto sm:flex-wrap">
           <TabsTrigger value="charts" className="min-w-0 px-1.5 text-[11px] sm:px-3 sm:text-sm">趨勢</TabsTrigger>
+          <TabsTrigger value="garmin-health" className="min-w-0 gap-1 px-1.5 text-[11px] sm:px-3 sm:text-sm">
+            <Activity className="h-3.5 w-3.5" />
+            Garmin 簡報
+          </TabsTrigger>
           <TabsTrigger value="log" className="min-w-0 px-1.5 text-[11px] sm:px-3 sm:text-sm">查看全部</TabsTrigger>
           <TabsTrigger value="shoes" className="min-w-0 gap-1 px-1.5 text-[11px] sm:px-3 sm:text-sm">
             <Footprints className="w-3.5 h-3.5" />
@@ -937,6 +940,10 @@ export default function Running() {
           </div>
         </TabsContent>
 
+        <TabsContent value="garmin-health" className="space-y-5">
+          <GarminHealthBriefing data={garminHealthBrief} isLoading={isGarminHealthBriefLoading} />
+        </TabsContent>
+
         {/* Log tab */}
         <TabsContent value="log" className="space-y-3">
           {isOwner && <RunningHistoricalBackfill />}
@@ -945,17 +952,17 @@ export default function Running() {
             <Input
               placeholder={t('common.search') + '...'}
               value={logSearch}
-              onChange={(e) => setLogSearch(e.target.value)}
+              onChange={(e) => { setLogSearch(e.target.value); setLogPage(1); }}
               className="h-8 text-xs w-40"
             />
-            <Select value={logFilterType} onValueChange={setLogFilterType}>
+            <Select value={logFilterType} onValueChange={(value) => { setLogFilterType(value); setLogPage(1); }}>
               <SelectTrigger className="h-8 w-36 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t('common.all_types')}</SelectItem>
                 {RUNNING_TYPES.map(rt => <SelectItem key={rt} value={rt}>{rt}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select value={logSort} onValueChange={(v) => setLogSort(v as any)}>
+            <Select value={logSort} onValueChange={(value) => { setLogSort(value as typeof logSort); setLogPage(1); }}>
               <SelectTrigger className="h-8 w-40 text-xs"><ArrowUpDown className="w-3 h-3 mr-1" /><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="date_desc">{t('running.sort_date_desc')}</SelectItem>
@@ -965,7 +972,7 @@ export default function Running() {
                 <SelectItem value="hr_asc">{t('running.sort_hr')}</SelectItem>
               </SelectContent>
             </Select>
-            <span className="text-xs text-muted-foreground">{sortedFilteredLogs.length} {t('common.records')}</span>
+            <span className="text-xs text-muted-foreground">共 {totalLogRecords} 筆 · 第 {currentLogPage || 1}/{totalLogPages || 1} 頁</span>
             <div className="ml-auto flex items-center gap-1">
               <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => window.open('/api/export/running/csv', '_blank')}>
                 <Download className="w-3 h-3" /> CSV
@@ -976,11 +983,11 @@ export default function Running() {
             </div>
           </div>
           <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
-            {isLoading ? (
+            {isLogPageLoading ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
               </div>
-            ) : sortedFilteredLogs.length === 0 ? (
+            ) : pagedLogs.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <Footprints className="w-10 h-10 mx-auto mb-3 opacity-30" />
                 <p className="font-medium">尚未記錄跑步數據</p>
@@ -997,7 +1004,7 @@ export default function Running() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedFilteredLogs.map((row: any) => (
+                    {pagedLogs.map((row: any) => (
                       <tr key={row.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                         <td className="px-4 py-3 font-medium whitespace-nowrap">{formatHKDate(row.date)}</td>
                         <td className="px-4 py-3">
@@ -1077,6 +1084,14 @@ export default function Running() {
                 </table>
               </div>
             )}
+            {totalLogRecords > 0 && <div className="flex flex-col gap-2 border-t border-border bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-muted-foreground">顯示第 {(currentLogPage - 1) * RUN_LOG_PAGE_SIZE + 1}–{Math.min(currentLogPage * RUN_LOG_PAGE_SIZE, totalLogRecords)} 筆，共 {totalLogRecords} 筆完整歷史紀錄</p>
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <Button type="button" size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={currentLogPage <= 1 || isLogPageFetching} onClick={() => setLogPage(page => Math.max(1, page - 1))}><ChevronLeft className="h-3.5 w-3.5" />上一頁</Button>
+                <span className="min-w-16 text-center text-xs font-semibold text-foreground">{currentLogPage} / {totalLogPages || 1}</span>
+                <Button type="button" size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={currentLogPage >= totalLogPages || isLogPageFetching} onClick={() => setLogPage(page => page + 1)}>下一頁<ChevronRight className="h-3.5 w-3.5" /></Button>
+              </div>
+            </div>}
           </div>
         </TabsContent>
 
@@ -1792,12 +1807,10 @@ export default function Running() {
 
         <TabsContent value="lab" className="space-y-4">
           <RunningEnergyLab
-            baselinePaceSecPerKm={labPersonalization?.baselinePaceSecPerKm ?? (avgPaceSec || undefined)}
             maxHeartRate={labPersonalization?.maxHeartRate ?? (maxHrForZones || undefined)}
             restingHeartRate={labPersonalization?.restingHeartRate ?? (restingHr || undefined)}
             profile={labPersonalization?.body}
-            runTypeDistribution={labPersonalization?.runTypeDistribution}
-            historicalRunCount={labPersonalization?.historicalRunCount}
+            historicalRuns={labPersonalization?.historicalRuns}
           />
         </TabsContent>
       </Tabs>

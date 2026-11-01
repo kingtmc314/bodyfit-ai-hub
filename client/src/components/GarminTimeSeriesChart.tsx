@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Activity, HeartPulse, Mountain, type LucideIcon } from "lucide-react";
+import { Activity, Gauge, HeartPulse, Mountain, Zap, type LucideIcon } from "lucide-react";
 import {
   CartesianGrid,
   Line,
@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 const MAX_DISPLAY_POINTS = 720;
 
-type ChartMetric = "pace" | "heartRate" | "altitude";
+type ChartMetric = "pace" | "heartRate" | "cadence" | "power" | "altitude";
 
 type GarminTimePoint = {
   elapsedSec: number;
@@ -25,6 +25,8 @@ type GarminTimePoint = {
   distanceKm?: number;
   paceSecPerKm?: number;
   heartRate?: number;
+  cadence?: number;
+  power?: number;
   altitudeM?: number;
 };
 
@@ -66,6 +68,22 @@ const METRIC_OPTIONS: readonly MetricOption[] = [
     activeClassName:
       "border-rose-600 bg-rose-600 text-white hover:bg-rose-700 dark:border-rose-400 dark:bg-rose-400 dark:text-slate-950 dark:hover:bg-rose-300",
     Icon: HeartPulse,
+  },
+  {
+    key: "cadence",
+    label: "步頻",
+    axisLabel: "步頻（spm）",
+    color: "var(--chart-5)",
+    activeClassName: "border-violet-600 bg-violet-600 text-white hover:bg-violet-700 dark:border-violet-400 dark:bg-violet-400 dark:text-slate-950 dark:hover:bg-violet-300",
+    Icon: Gauge,
+  },
+  {
+    key: "power",
+    label: "功率",
+    axisLabel: "功率（W）",
+    color: "var(--chart-1)",
+    activeClassName: "border-amber-600 bg-amber-600 text-white hover:bg-amber-700 dark:border-amber-400 dark:bg-amber-400 dark:text-slate-950 dark:hover:bg-amber-300",
+    Icon: Zap,
   },
   {
     key: "altitude",
@@ -121,6 +139,8 @@ function normalizeTimeSeries(
         distanceKm: toNonNegativeNumber(sample.distanceKm),
         paceSecPerKm: toPositiveNumber(sample.paceSecPerKm),
         heartRate: toPositiveNumber(sample.heartRate),
+        cadence: toPositiveNumber(sample.cadence),
+        power: toPositiveNumber(sample.power),
         altitudeM: toFiniteNumber(sample.altitudeM),
       },
     ];
@@ -133,6 +153,8 @@ function getMetricValue(
 ): number | undefined {
   if (metric === "pace") return point.paceSecPerKm;
   if (metric === "heartRate") return point.heartRate;
+  if (metric === "cadence") return point.cadence;
+  if (metric === "power") return point.power;
   return point.altitudeM;
 }
 
@@ -147,7 +169,7 @@ function samplePoints(points: GarminTimePoint[]): GarminTimePoint[] {
   const lastIndex = points.length - 1;
   const protectedIndexes = new Set<number>([0, lastIndex]);
 
-  for (const metric of ["pace", "heartRate", "altitude"] as const) {
+  for (const metric of ["pace", "heartRate", "cadence", "power", "altitude"] as const) {
     let firstValueIndex: number | undefined;
     let lastValueIndex: number | undefined;
 
@@ -196,11 +218,14 @@ function formatDistance(distanceKm: number): string {
 function formatMetricValue(metric: ChartMetric, value: number): string {
   if (metric === "pace") return formatPace(value);
   if (metric === "heartRate") return `${Math.round(value)} bpm`;
+  if (metric === "cadence") return `${Math.round(value)} spm`;
+  if (metric === "power") return `${Math.round(value)} W`;
   return `${value.toFixed(1)} m`;
 }
 
 function formatMetricTick(metric: ChartMetric, value: number): string {
   if (metric === "pace") return formatPace(value);
+  if (metric === "power") return `${Math.round(value)} W`;
   if (metric === "heartRate") return `${Math.round(value)}`;
   return `${Math.round(value)}`;
 }
@@ -237,6 +262,8 @@ function isChartPoint(value: unknown): value is ChartPoint {
     hasOptionalFiniteNumber(value.distanceKm) &&
     hasOptionalFiniteNumber(value.paceSecPerKm) &&
     hasOptionalFiniteNumber(value.heartRate) &&
+    hasOptionalFiniteNumber(value.cadence) &&
+    hasOptionalFiniteNumber(value.power) &&
     hasOptionalFiniteNumber(value.altitudeM) &&
     hasOptionalFiniteNumber(value.metricValue) &&
     (value.timestamp === undefined || typeof value.timestamp === "string")

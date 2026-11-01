@@ -2617,14 +2617,64 @@ const runningRouter = router({
     }),
 
   getLogs: publicProcedure
-    .input(z.object({ limit: z.number().optional().default(200) }))
+    .input(z.object({ limit: z.number().int().min(1).max(1000).optional().default(200) }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
       const rows = await db.execute(
-        sql`SELECT * FROM running_logs ORDER BY date DESC LIMIT ${input.limit}`
+        sql`SELECT * FROM running_logs WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC, id DESC LIMIT ${input.limit}`
       );
       return (rows as any).rows ?? rows;
+    }),
+
+  getLogsPage: publicProcedure
+    .input(z.object({
+      page: z.number().int().min(1).default(1),
+      pageSize: z.number().int().min(10).max(100).default(30),
+      runningType: z.string().default("all"),
+      search: z.string().trim().max(100).default(""),
+      sort: z.enum(["date_desc", "date_asc", "distance_desc", "pace_asc", "hr_asc"]).default("date_desc"),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { rows: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
+
+      const conditions = [sql`user_id = ${OWNER_USER_ID}`];
+      if (input.runningType !== "all") conditions.push(sql`running_type = ${input.runningType}`);
+      if (input.search) {
+        const pattern = `%${input.search}%`;
+        conditions.push(sql`(
+          COALESCE(running_type, '') ILIKE ${pattern}
+          OR COALESCE(running_shoes, '') ILIKE ${pattern}
+          OR COALESCE(route_type, '') ILIKE ${pattern}
+          OR COALESCE(notes, '') ILIKE ${pattern}
+        )`);
+      }
+      const whereClause = sql.join(conditions, sql` AND `);
+      const orderBy = input.sort === "date_asc" ? sql`date ASC, id ASC`
+        : input.sort === "distance_desc" ? sql`distance_km DESC NULLS LAST, date DESC, id DESC`
+          : input.sort === "pace_asc" ? sql`
+              CASE
+                WHEN TRIM(COALESCE(average_pace, '')) ~ '^[0-9]+:[0-9]{2}(\\.[0-9]+)?$'
+                  THEN SPLIT_PART(TRIM(average_pace), ':', 1)::numeric * 60 + SPLIT_PART(TRIM(average_pace), ':', 2)::numeric
+                WHEN TRIM(COALESCE(average_pace, '')) ~ '^[0-9]+(\\.[0-9]+)?$'
+                  THEN TRIM(average_pace)::numeric * 60
+                ELSE NULL
+              END ASC NULLS LAST, date DESC, id DESC`
+            : input.sort === "hr_asc" ? sql`average_heart_rate ASC NULLS LAST, date DESC, id DESC`
+              : sql`date DESC, id DESC`;
+      const countResult = await db.execute(sql`SELECT COUNT(*)::int AS total FROM running_logs WHERE ${whereClause}`);
+      const total = Number((((countResult as any).rows ?? countResult)[0]?.total) ?? 0);
+      const totalPages = Math.max(1, Math.ceil(total / input.pageSize));
+      const page = Math.min(input.page, totalPages);
+      const offset = (page - 1) * input.pageSize;
+      const rows = await db.execute(sql`
+        SELECT * FROM running_logs
+        WHERE ${whereClause}
+        ORDER BY ${orderBy}
+        LIMIT ${input.pageSize} OFFSET ${offset}
+      `);
+      return { rows: (rows as any).rows ?? rows, total, page, pageSize: input.pageSize, totalPages };
     }),
 
   getShoePerformance: publicProcedure
@@ -2703,6 +2753,187 @@ const runningRouter = router({
         byType: (typeRows as any).rows ?? typeRows,
         monthly: (monthlyRows as any).rows ?? monthlyRows,
       };
+    }),
+
+  getGarminHealthBrief: publicProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return null;
+
+      const [runResult, sleepResult, heartResult, bodyResult] = await Promise.all([
+        db.execute(sql`
+          SELECT id, date, running_type, route_type, distance_km, hour, minutes, second,
+                 average_pace, best_pace, average_heart_rate, maximum_heart_rate,
+                 average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
+                 vertical_oscillation_cm, avg_ground_contact_time_ms, calories,
+                 garmin_details,
+                 COALESCE(jsonb_array_length(time_series), 0) AS time_series_count,
+                 COALESCE(time_series::text LIKE '%"latitude"%', false) AND COALESCE(time_series::text LIKE '%"longitude"%', false) AS has_gps,
+                 COALESCE(time_series::text LIKE '%"power"%', false) AS has_power_samples,
+                 COALESCE(time_series::text LIKE '%"altitudeM"%', false) AS has_altitude_samples
+          FROM running_logs
+          WHERE user_id = ${OWNER_USER_ID}
+          ORDER BY date DESC, id DESC
+        `),
+        db.execute(sql`
+          SELECT date, sleep_score, sleep_duration, body_battery, hrv, resting_hr, pulse_ox, respiration
+          FROM sleep_logs
+          WHERE user_id = ${OWNER_USER_ID}
+          ORDER BY date DESC
+          LIMIT 120
+        `),
+        db.execute(sql`
+          SELECT date, resting_hr, high_hr, hrv, avg_hr,
+                 zone1_minutes, zone2_minutes, zone3_minutes, zone4_minutes, zone5_minutes
+          FROM heart_rate_logs
+          WHERE user_id = ${OWNER_USER_ID}
+          ORDER BY date DESC
+          LIMIT 120
+        `),
+        db.execute(sql`
+          SELECT date, weight, body_fat_pct, muscle_mass, bmi
+          FROM body_composition
+          WHERE user_id = ${OWNER_USER_ID}
+          ORDER BY date DESC
+          LIMIT 120
+        `),
+      ]);
+
+      const rawRuns = (runResult as any).rows ?? runResult;
+      const sleeps = (sleepResult as any).rows ?? sleepResult;
+      const hearts = (heartResult as any).rows ?? heartResult;
+      const bodies = (bodyResult as any).rows ?? bodyResult;
+      const finite = (value: unknown): number | null => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+      const parsePaceSeconds = (value: unknown): number | null => {
+        const source = String(value ?? "").trim();
+        const clock = source.match(/^(\d{1,2}):(\d{2})(?:\.\d+)?$/);
+        if (clock) return Number(clock[1]) * 60 + Number(clock[2]);
+        const numeric = finite(source);
+        return numeric !== null && numeric >= 2 && numeric <= 30 ? numeric * 60 : null;
+      };
+      const asRecord = (value: unknown): Record<string, unknown> => {
+        if (typeof value === "object" && value !== null && !Array.isArray(value)) return value as Record<string, unknown>;
+        if (typeof value === "string") {
+          try {
+            const parsed = JSON.parse(value);
+            return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+          } catch { return {}; }
+        }
+        return {};
+      };
+        const runs = rawRuns.map((row: any) => {
+          const details = asRecord(row.garmin_details);
+          const sampleCount = finite(row.time_series_count) ?? 0;
+        const durationSec = (finite(row.hour) ?? 0) * 3600 + (finite(row.minutes) ?? 0) * 60 + (finite(row.second) ?? 0);
+        const sourceFormat = typeof details.rawFileFormat === "string" ? details.rawFileFormat : typeof details.sourceFormat === "string" ? details.sourceFormat : null;
+        return {
+          id: Number(row.id), date: String(row.date ?? ""), runningType: row.running_type ?? null, routeType: row.route_type ?? null,
+          distanceKm: finite(row.distance_km), durationSec: durationSec || null,
+          paceSecPerKm: parsePaceSeconds(row.average_pace), bestPaceSecPerKm: parsePaceSeconds(row.best_pace),
+          averageHeartRate: finite(row.average_heart_rate), maximumHeartRate: finite(row.maximum_heart_rate),
+          averageCadence: finite(row.average_cadence), maxCadence: finite(row.max_cadence),
+          avgStrideLengthM: finite(row.avg_stride_length_m), avgVerticalRatio: finite(row.avg_vertical_ratio),
+          verticalOscillationCm: finite(row.vertical_oscillation_cm), avgGroundContactTimeMs: finite(row.avg_ground_contact_time_ms),
+          calories: finite(row.calories), sourceFormat,
+          rawSampleCount: (finite(details.rawSampleCount) ?? sampleCount) || null,
+          hasTimeSeries: sampleCount > 0,
+          hasGps: Boolean(row.has_gps),
+          hasPower: Boolean(row.has_power_samples) || finite(details.avgPowerW) !== null,
+          hasAltitude: Boolean(row.has_altitude_samples) || finite(details.totalAscentM) !== null,
+        };
+      });
+      const mean = (values: Array<number | null>) => {
+        const usable = values.filter((value): value is number => value !== null);
+        return usable.length ? usable.reduce((sum, value) => sum + value, 0) / usable.length : null;
+      };
+      const totalDistanceKm = runs.reduce((sum: number, run: any) => sum + (run.distanceKm ?? 0), 0);
+      const sourceRuns = runs.filter((run: any) => run.sourceFormat || run.hasTimeSeries);
+      const dates = runs.map((run: any) => run.date).filter(Boolean).sort();
+      const recentRuns = [...runs].reverse().slice(-24);
+      const weeklyMap = new Map<string, { week: string; distanceKm: number; runs: number; calories: number }>();
+      for (const run of runs) {
+        const key = run.date ? run.date.slice(0, 7) : "未標示日期";
+        const current = weeklyMap.get(key) ?? { week: key, distanceKm: 0, runs: 0, calories: 0 };
+        current.distanceKm += run.distanceKm ?? 0;
+        current.runs += 1;
+        current.calories += run.calories ?? 0;
+        weeklyMap.set(key, current);
+      }
+      const trainingLoad = Array.from(weeklyMap.values()).sort((first, second) => first.week.localeCompare(second.week)).slice(-12);
+      const recoverySleep = sleeps.slice(0, 30).reverse().map((row: any) => ({
+        date: String(row.date ?? ""), sleepScore: finite(row.sleep_score), sleepDurationHours: finite(row.sleep_duration), bodyBattery: finite(row.body_battery), hrv: finite(row.hrv), restingHr: finite(row.resting_hr),
+      }));
+      const recoveryHeart = hearts.slice(0, 30).reverse().map((row: any) => ({
+        date: String(row.date ?? ""), restingHr: finite(row.resting_hr), highHr: finite(row.high_hr), hrv: finite(row.hrv), averageHr: finite(row.avg_hr),
+      }));
+      const recoveryBody = bodies.slice(0, 30).reverse().map((row: any) => ({
+        date: String(row.date ?? ""), weightKg: finite(row.weight), bodyFatPct: finite(row.body_fat_pct), muscleMassKg: finite(row.muscle_mass), bmi: finite(row.bmi),
+      }));
+      const latestHeart = hearts[0] as any | undefined;
+      const maxHeartRate = (finite(latestHeart?.high_hr) ?? Math.max(...runs.map((run: any) => run.maximumHeartRate ?? 0), 0)) || null;
+      const restingHeartRate = finite(latestHeart?.resting_hr) ?? finite(sleeps[0]?.resting_hr);
+      const zoneCounts = [1, 2, 3, 4, 5].map((zone) => hearts.reduce((sum: number, row: any) => sum + (finite(row[`zone${zone}_minutes`]) ?? 0), 0));
+      const totalZoneMinutes = zoneCounts.reduce((sum, count) => sum + count, 0);
+      const dynamics = recentRuns.map((run: any) => ({
+        date: run.date, cadence: run.averageCadence, strideLengthM: run.avgStrideLengthM, verticalRatioPct: run.avgVerticalRatio, verticalOscillationCm: run.verticalOscillationCm, groundContactTimeMs: run.avgGroundContactTimeMs,
+      }));
+      const recentPaces = recentRuns.map((run: any) => run.paceSecPerKm).filter((value: number | null): value is number => value !== null);
+      const earlierPaces = runs.slice(8, 16).map((run: any) => run.paceSecPerKm).filter((value: number | null): value is number => value !== null);
+      const recentHeartRates = recentRuns.map((run: any) => run.averageHeartRate).filter((value: number | null): value is number => value !== null);
+      const earlierHeartRates = runs.slice(8, 16).map((run: any) => run.averageHeartRate).filter((value: number | null): value is number => value !== null);
+      const observations: string[] = [];
+      if (recentPaces.length >= 2 && earlierPaces.length >= 2) {
+        const delta = Math.round((mean(recentPaces)! - mean(earlierPaces)!) * -1);
+        observations.push(delta === 0 ? "最近跑步的平均配速與較早樣本大致相若。" : `最近跑步的平均配速較較早樣本${delta > 0 ? "快" : "慢"}${Math.abs(delta)} 秒／公里。`);
+      }
+      if (recentHeartRates.length >= 2 && earlierHeartRates.length >= 2) {
+        const delta = Math.round(mean(recentHeartRates)! - mean(earlierHeartRates)!);
+        observations.push(delta === 0 ? "最近跑步的平均心率與較早樣本大致相若。" : `最近跑步的平均心率較較早樣本${delta > 0 ? "高" : "低"}${Math.abs(delta)} bpm。`);
+      }
+      if (sourceRuns.length) observations.push(`${sourceRuns.length} 次跑步含 Garmin 原始或逐秒資料；詳細圖表只顯示實測欄位。`);
+      if (!observations.length) observations.push("記錄更多含距離、配速或心率的跑步後，簡報會自動產生可比較的訓練趨勢。");
+
+      return {
+        period: { from: dates[0] ?? null, to: dates[dates.length - 1] ?? null, timeZone: "Asia/Hong_Kong" },
+        overview: {
+          totalRuns: runs.length, totalDistanceKm, averagePaceSecPerKm: mean(runs.map((run: any) => run.paceSecPerKm)), averageHeartRate: mean(runs.map((run: any) => run.averageHeartRate)), averageCadence: mean(runs.map((run: any) => run.averageCadence)), totalCalories: runs.reduce((sum: number, run: any) => sum + (run.calories ?? 0), 0),
+        },
+        trainingLoad,
+        runs: runs.slice(0, 200),
+        heartRate: {
+          trend: recentRuns.map((run: any) => ({ date: run.date, averageHeartRate: run.averageHeartRate, maximumHeartRate: run.maximumHeartRate, paceSecPerKm: run.paceSecPerKm })),
+          zones: zoneCounts.map((minutes, index) => ({ zone: `Z${index + 1}`, minutes, pct: totalZoneMinutes ? Math.round(minutes / totalZoneMinutes * 100) : null })),
+          restingHeartRate, maxHeartRate, zoneMinuteCount: totalZoneMinutes,
+        },
+        dynamics,
+        recovery: { sleep: recoverySleep, heart: recoveryHeart, body: recoveryBody },
+        dataQuality: {
+          sourceRunCount: sourceRuns.length, timeSeriesRunCount: runs.filter((run: any) => run.hasTimeSeries).length, gpsRunCount: runs.filter((run: any) => run.hasGps).length, powerRunCount: runs.filter((run: any) => run.hasPower).length, elevationRunCount: runs.filter((run: any) => run.hasAltitude).length,
+          heartRateRunCount: runs.filter((run: any) => run.averageHeartRate !== null).length, cadenceRunCount: runs.filter((run: any) => run.averageCadence !== null).length, dynamicsRunCount: runs.filter((run: any) => run.avgGroundContactTimeMs !== null || run.avgStrideLengthM !== null || run.avgVerticalRatio !== null || run.verticalOscillationCm !== null).length,
+          sleepRecordCount: sleeps.length, heartRecordCount: hearts.length, bodyRecordCount: bodies.length,
+        },
+        observations,
+      };
+    }),
+
+  getGarminRunDetail: publicProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const result = await db.execute(sql`
+        SELECT id, date, running_type, route_type, distance_km, hour, minutes, second,
+               average_pace, best_pace, average_heart_rate, maximum_heart_rate,
+               average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
+               vertical_oscillation_cm, avg_ground_contact_time_ms, calories, garmin_details, laps, time_series
+        FROM running_logs
+        WHERE id = ${input.id} AND user_id = ${OWNER_USER_ID}
+        LIMIT 1
+      `);
+      return ((result as any).rows ?? result)[0] ?? null;
     }),
 
   uploadGarminRawChunk: ownerProcedure
@@ -2997,21 +3228,23 @@ const runningRouter = router({
   getLabPersonalization: publicProcedure
     .query(async () => {
       const db = await getDb();
-      if (!db) return { body: null, baselinePaceSecPerKm: null, maxHeartRate: null, restingHeartRate: null, runTypeDistribution: [], historicalRunCount: 0, baselineRunCount: 0 };
+      if (!db) return { body: null, baselinePaceSecPerKm: null, maxHeartRate: null, restingHeartRate: null, runTypeDistribution: [], historicalRunCount: 0, baselineRunCount: 0, historicalRuns: [] };
 
       const [profileRows, bodyRows, heartRows, runningRows, typeRows] = await Promise.all([
         db.execute(sql`SELECT height FROM user_profile WHERE user_id = ${OWNER_USER_ID} LIMIT 1`),
         db.execute(sql`SELECT weight, body_fat_pct, muscle_mass, date FROM body_composition WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
         db.execute(sql`SELECT resting_hr, high_hr FROM heart_rate_logs WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
         db.execute(sql`
-          SELECT average_pace, average_heart_rate, maximum_heart_rate, distance_km, running_type, date
+          SELECT id, average_pace, average_heart_rate, maximum_heart_rate, distance_km, running_type, route_type, date
           FROM running_logs
-          WHERE NULLIF(TRIM(COALESCE(average_pace, '')), '') IS NOT NULL
+          WHERE user_id = ${OWNER_USER_ID}
+            AND NULLIF(TRIM(COALESCE(average_pace, '')), '') IS NOT NULL
           ORDER BY date ASC
         `),
         db.execute(sql`
           SELECT COALESCE(running_type, '未分類') AS running_type, COUNT(*) AS count
           FROM running_logs
+          WHERE user_id = ${OWNER_USER_ID}
           GROUP BY COALESCE(running_type, '未分類')
           ORDER BY count DESC, running_type ASC
         `),
@@ -3058,6 +3291,16 @@ const runningRouter = router({
         runTypeDistribution: types.map((row: any) => ({ type: row.running_type, count: Number(row.count) })),
         historicalRunCount: running.length,
         baselineRunCount: baselineRows.length,
+        historicalRuns: paceRows.map((row: any) => ({
+          id: Number(row.id),
+          date: String(row.date ?? ""),
+          runningType: row.running_type ?? null,
+          routeType: row.route_type ?? null,
+          distanceKm: Number(row.distance_km),
+          paceSecPerKm: row.paceSeconds as number,
+          averageHeartRate: Number.isFinite(Number(row.average_heart_rate)) ? Number(row.average_heart_rate) : null,
+          maximumHeartRate: Number.isFinite(Number(row.maximum_heart_rate)) ? Number(row.maximum_heart_rate) : null,
+        })),
       };
     }),
 

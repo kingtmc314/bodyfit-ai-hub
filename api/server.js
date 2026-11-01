@@ -5047,13 +5047,55 @@ var runningRouter = router({
       `);
     return rows.rows ?? rows;
   }),
-  getLogs: publicProcedure.input(z2.object({ limit: z2.number().optional().default(200) })).query(async ({ input }) => {
+  getLogs: publicProcedure.input(z2.object({ limit: z2.number().int().min(1).max(1e3).optional().default(200) })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
     const rows = await db.execute(
-      sql2`SELECT * FROM running_logs ORDER BY date DESC LIMIT ${input.limit}`
+      sql2`SELECT * FROM running_logs WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC, id DESC LIMIT ${input.limit}`
     );
     return rows.rows ?? rows;
+  }),
+  getLogsPage: publicProcedure.input(z2.object({
+    page: z2.number().int().min(1).default(1),
+    pageSize: z2.number().int().min(10).max(100).default(30),
+    runningType: z2.string().default("all"),
+    search: z2.string().trim().max(100).default(""),
+    sort: z2.enum(["date_desc", "date_asc", "distance_desc", "pace_asc", "hr_asc"]).default("date_desc")
+  })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return { rows: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
+    const conditions = [sql2`user_id = ${OWNER_USER_ID}`];
+    if (input.runningType !== "all") conditions.push(sql2`running_type = ${input.runningType}`);
+    if (input.search) {
+      const pattern = `%${input.search}%`;
+      conditions.push(sql2`(
+          COALESCE(running_type, '') ILIKE ${pattern}
+          OR COALESCE(running_shoes, '') ILIKE ${pattern}
+          OR COALESCE(route_type, '') ILIKE ${pattern}
+          OR COALESCE(notes, '') ILIKE ${pattern}
+        )`);
+    }
+    const whereClause = sql2.join(conditions, sql2` AND `);
+    const orderBy = input.sort === "date_asc" ? sql2`date ASC, id ASC` : input.sort === "distance_desc" ? sql2`distance_km DESC NULLS LAST, date DESC, id DESC` : input.sort === "pace_asc" ? sql2`
+              CASE
+                WHEN TRIM(COALESCE(average_pace, '')) ~ '^[0-9]+:[0-9]{2}(\\.[0-9]+)?$'
+                  THEN SPLIT_PART(TRIM(average_pace), ':', 1)::numeric * 60 + SPLIT_PART(TRIM(average_pace), ':', 2)::numeric
+                WHEN TRIM(COALESCE(average_pace, '')) ~ '^[0-9]+(\\.[0-9]+)?$'
+                  THEN TRIM(average_pace)::numeric * 60
+                ELSE NULL
+              END ASC NULLS LAST, date DESC, id DESC` : input.sort === "hr_asc" ? sql2`average_heart_rate ASC NULLS LAST, date DESC, id DESC` : sql2`date DESC, id DESC`;
+    const countResult = await db.execute(sql2`SELECT COUNT(*)::int AS total FROM running_logs WHERE ${whereClause}`);
+    const total = Number((countResult.rows ?? countResult)[0]?.total ?? 0);
+    const totalPages = Math.max(1, Math.ceil(total / input.pageSize));
+    const page = Math.min(input.page, totalPages);
+    const offset = (page - 1) * input.pageSize;
+    const rows = await db.execute(sql2`
+        SELECT * FROM running_logs
+        WHERE ${whereClause}
+        ORDER BY ${orderBy}
+        LIMIT ${input.pageSize} OFFSET ${offset}
+      `);
+    return { rows: rows.rows ?? rows, total, page, pageSize: input.pageSize, totalPages };
   }),
   getShoePerformance: publicProcedure.input(z2.object({
     distanceBand: z2.enum(["all", "short", "medium", "long", "ultra"]).default("all"),
@@ -5123,6 +5165,224 @@ var runningRouter = router({
       byType: typeRows.rows ?? typeRows,
       monthly: monthlyRows.rows ?? monthlyRows
     };
+  }),
+  getGarminHealthBrief: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return null;
+    const [runResult, sleepResult, heartResult, bodyResult] = await Promise.all([
+      db.execute(sql2`
+          SELECT id, date, running_type, route_type, distance_km, hour, minutes, second,
+                 average_pace, best_pace, average_heart_rate, maximum_heart_rate,
+                 average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
+                 vertical_oscillation_cm, avg_ground_contact_time_ms, calories,
+                 garmin_details,
+                 COALESCE(jsonb_array_length(time_series), 0) AS time_series_count,
+                 COALESCE(time_series::text LIKE '%"latitude"%', false) AND COALESCE(time_series::text LIKE '%"longitude"%', false) AS has_gps,
+                 COALESCE(time_series::text LIKE '%"power"%', false) AS has_power_samples,
+                 COALESCE(time_series::text LIKE '%"altitudeM"%', false) AS has_altitude_samples
+          FROM running_logs
+          WHERE user_id = ${OWNER_USER_ID}
+          ORDER BY date DESC, id DESC
+        `),
+      db.execute(sql2`
+          SELECT date, sleep_score, sleep_duration, body_battery, hrv, resting_hr, pulse_ox, respiration
+          FROM sleep_logs
+          WHERE user_id = ${OWNER_USER_ID}
+          ORDER BY date DESC
+          LIMIT 120
+        `),
+      db.execute(sql2`
+          SELECT date, resting_hr, high_hr, hrv, avg_hr,
+                 zone1_minutes, zone2_minutes, zone3_minutes, zone4_minutes, zone5_minutes
+          FROM heart_rate_logs
+          WHERE user_id = ${OWNER_USER_ID}
+          ORDER BY date DESC
+          LIMIT 120
+        `),
+      db.execute(sql2`
+          SELECT date, weight, body_fat_pct, muscle_mass, bmi
+          FROM body_composition
+          WHERE user_id = ${OWNER_USER_ID}
+          ORDER BY date DESC
+          LIMIT 120
+        `)
+    ]);
+    const rawRuns = runResult.rows ?? runResult;
+    const sleeps = sleepResult.rows ?? sleepResult;
+    const hearts = heartResult.rows ?? heartResult;
+    const bodies = bodyResult.rows ?? bodyResult;
+    const finite = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const parsePaceSeconds = (value) => {
+      const source = String(value ?? "").trim();
+      const clock = source.match(/^(\d{1,2}):(\d{2})(?:\.\d+)?$/);
+      if (clock) return Number(clock[1]) * 60 + Number(clock[2]);
+      const numeric2 = finite(source);
+      return numeric2 !== null && numeric2 >= 2 && numeric2 <= 30 ? numeric2 * 60 : null;
+    };
+    const asRecord = (value) => {
+      if (typeof value === "object" && value !== null && !Array.isArray(value)) return value;
+      if (typeof value === "string") {
+        try {
+          const parsed = JSON.parse(value);
+          return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : {};
+        } catch {
+          return {};
+        }
+      }
+      return {};
+    };
+    const runs = rawRuns.map((row) => {
+      const details = asRecord(row.garmin_details);
+      const sampleCount = finite(row.time_series_count) ?? 0;
+      const durationSec = (finite(row.hour) ?? 0) * 3600 + (finite(row.minutes) ?? 0) * 60 + (finite(row.second) ?? 0);
+      const sourceFormat = typeof details.rawFileFormat === "string" ? details.rawFileFormat : typeof details.sourceFormat === "string" ? details.sourceFormat : null;
+      return {
+        id: Number(row.id),
+        date: String(row.date ?? ""),
+        runningType: row.running_type ?? null,
+        routeType: row.route_type ?? null,
+        distanceKm: finite(row.distance_km),
+        durationSec: durationSec || null,
+        paceSecPerKm: parsePaceSeconds(row.average_pace),
+        bestPaceSecPerKm: parsePaceSeconds(row.best_pace),
+        averageHeartRate: finite(row.average_heart_rate),
+        maximumHeartRate: finite(row.maximum_heart_rate),
+        averageCadence: finite(row.average_cadence),
+        maxCadence: finite(row.max_cadence),
+        avgStrideLengthM: finite(row.avg_stride_length_m),
+        avgVerticalRatio: finite(row.avg_vertical_ratio),
+        verticalOscillationCm: finite(row.vertical_oscillation_cm),
+        avgGroundContactTimeMs: finite(row.avg_ground_contact_time_ms),
+        calories: finite(row.calories),
+        sourceFormat,
+        rawSampleCount: (finite(details.rawSampleCount) ?? sampleCount) || null,
+        hasTimeSeries: sampleCount > 0,
+        hasGps: Boolean(row.has_gps),
+        hasPower: Boolean(row.has_power_samples) || finite(details.avgPowerW) !== null,
+        hasAltitude: Boolean(row.has_altitude_samples) || finite(details.totalAscentM) !== null
+      };
+    });
+    const mean = (values) => {
+      const usable = values.filter((value) => value !== null);
+      return usable.length ? usable.reduce((sum, value) => sum + value, 0) / usable.length : null;
+    };
+    const totalDistanceKm = runs.reduce((sum, run) => sum + (run.distanceKm ?? 0), 0);
+    const sourceRuns = runs.filter((run) => run.sourceFormat || run.hasTimeSeries);
+    const dates = runs.map((run) => run.date).filter(Boolean).sort();
+    const recentRuns = [...runs].reverse().slice(-24);
+    const weeklyMap = /* @__PURE__ */ new Map();
+    for (const run of runs) {
+      const key = run.date ? run.date.slice(0, 7) : "\u672A\u6A19\u793A\u65E5\u671F";
+      const current = weeklyMap.get(key) ?? { week: key, distanceKm: 0, runs: 0, calories: 0 };
+      current.distanceKm += run.distanceKm ?? 0;
+      current.runs += 1;
+      current.calories += run.calories ?? 0;
+      weeklyMap.set(key, current);
+    }
+    const trainingLoad = Array.from(weeklyMap.values()).sort((first, second) => first.week.localeCompare(second.week)).slice(-12);
+    const recoverySleep = sleeps.slice(0, 30).reverse().map((row) => ({
+      date: String(row.date ?? ""),
+      sleepScore: finite(row.sleep_score),
+      sleepDurationHours: finite(row.sleep_duration),
+      bodyBattery: finite(row.body_battery),
+      hrv: finite(row.hrv),
+      restingHr: finite(row.resting_hr)
+    }));
+    const recoveryHeart = hearts.slice(0, 30).reverse().map((row) => ({
+      date: String(row.date ?? ""),
+      restingHr: finite(row.resting_hr),
+      highHr: finite(row.high_hr),
+      hrv: finite(row.hrv),
+      averageHr: finite(row.avg_hr)
+    }));
+    const recoveryBody = bodies.slice(0, 30).reverse().map((row) => ({
+      date: String(row.date ?? ""),
+      weightKg: finite(row.weight),
+      bodyFatPct: finite(row.body_fat_pct),
+      muscleMassKg: finite(row.muscle_mass),
+      bmi: finite(row.bmi)
+    }));
+    const latestHeart = hearts[0];
+    const maxHeartRate = (finite(latestHeart?.high_hr) ?? Math.max(...runs.map((run) => run.maximumHeartRate ?? 0), 0)) || null;
+    const restingHeartRate = finite(latestHeart?.resting_hr) ?? finite(sleeps[0]?.resting_hr);
+    const zoneCounts = [1, 2, 3, 4, 5].map((zone) => hearts.reduce((sum, row) => sum + (finite(row[`zone${zone}_minutes`]) ?? 0), 0));
+    const totalZoneMinutes = zoneCounts.reduce((sum, count) => sum + count, 0);
+    const dynamics = recentRuns.map((run) => ({
+      date: run.date,
+      cadence: run.averageCadence,
+      strideLengthM: run.avgStrideLengthM,
+      verticalRatioPct: run.avgVerticalRatio,
+      verticalOscillationCm: run.verticalOscillationCm,
+      groundContactTimeMs: run.avgGroundContactTimeMs
+    }));
+    const recentPaces = recentRuns.map((run) => run.paceSecPerKm).filter((value) => value !== null);
+    const earlierPaces = runs.slice(8, 16).map((run) => run.paceSecPerKm).filter((value) => value !== null);
+    const recentHeartRates = recentRuns.map((run) => run.averageHeartRate).filter((value) => value !== null);
+    const earlierHeartRates = runs.slice(8, 16).map((run) => run.averageHeartRate).filter((value) => value !== null);
+    const observations = [];
+    if (recentPaces.length >= 2 && earlierPaces.length >= 2) {
+      const delta = Math.round((mean(recentPaces) - mean(earlierPaces)) * -1);
+      observations.push(delta === 0 ? "\u6700\u8FD1\u8DD1\u6B65\u7684\u5E73\u5747\u914D\u901F\u8207\u8F03\u65E9\u6A23\u672C\u5927\u81F4\u76F8\u82E5\u3002" : `\u6700\u8FD1\u8DD1\u6B65\u7684\u5E73\u5747\u914D\u901F\u8F03\u8F03\u65E9\u6A23\u672C${delta > 0 ? "\u5FEB" : "\u6162"}${Math.abs(delta)} \u79D2\uFF0F\u516C\u91CC\u3002`);
+    }
+    if (recentHeartRates.length >= 2 && earlierHeartRates.length >= 2) {
+      const delta = Math.round(mean(recentHeartRates) - mean(earlierHeartRates));
+      observations.push(delta === 0 ? "\u6700\u8FD1\u8DD1\u6B65\u7684\u5E73\u5747\u5FC3\u7387\u8207\u8F03\u65E9\u6A23\u672C\u5927\u81F4\u76F8\u82E5\u3002" : `\u6700\u8FD1\u8DD1\u6B65\u7684\u5E73\u5747\u5FC3\u7387\u8F03\u8F03\u65E9\u6A23\u672C${delta > 0 ? "\u9AD8" : "\u4F4E"}${Math.abs(delta)} bpm\u3002`);
+    }
+    if (sourceRuns.length) observations.push(`${sourceRuns.length} \u6B21\u8DD1\u6B65\u542B Garmin \u539F\u59CB\u6216\u9010\u79D2\u8CC7\u6599\uFF1B\u8A73\u7D30\u5716\u8868\u53EA\u986F\u793A\u5BE6\u6E2C\u6B04\u4F4D\u3002`);
+    if (!observations.length) observations.push("\u8A18\u9304\u66F4\u591A\u542B\u8DDD\u96E2\u3001\u914D\u901F\u6216\u5FC3\u7387\u7684\u8DD1\u6B65\u5F8C\uFF0C\u7C21\u5831\u6703\u81EA\u52D5\u7522\u751F\u53EF\u6BD4\u8F03\u7684\u8A13\u7DF4\u8DA8\u52E2\u3002");
+    return {
+      period: { from: dates[0] ?? null, to: dates[dates.length - 1] ?? null, timeZone: "Asia/Hong_Kong" },
+      overview: {
+        totalRuns: runs.length,
+        totalDistanceKm,
+        averagePaceSecPerKm: mean(runs.map((run) => run.paceSecPerKm)),
+        averageHeartRate: mean(runs.map((run) => run.averageHeartRate)),
+        averageCadence: mean(runs.map((run) => run.averageCadence)),
+        totalCalories: runs.reduce((sum, run) => sum + (run.calories ?? 0), 0)
+      },
+      trainingLoad,
+      runs: runs.slice(0, 200),
+      heartRate: {
+        trend: recentRuns.map((run) => ({ date: run.date, averageHeartRate: run.averageHeartRate, maximumHeartRate: run.maximumHeartRate, paceSecPerKm: run.paceSecPerKm })),
+        zones: zoneCounts.map((minutes, index) => ({ zone: `Z${index + 1}`, minutes, pct: totalZoneMinutes ? Math.round(minutes / totalZoneMinutes * 100) : null })),
+        restingHeartRate,
+        maxHeartRate,
+        zoneMinuteCount: totalZoneMinutes
+      },
+      dynamics,
+      recovery: { sleep: recoverySleep, heart: recoveryHeart, body: recoveryBody },
+      dataQuality: {
+        sourceRunCount: sourceRuns.length,
+        timeSeriesRunCount: runs.filter((run) => run.hasTimeSeries).length,
+        gpsRunCount: runs.filter((run) => run.hasGps).length,
+        powerRunCount: runs.filter((run) => run.hasPower).length,
+        elevationRunCount: runs.filter((run) => run.hasAltitude).length,
+        heartRateRunCount: runs.filter((run) => run.averageHeartRate !== null).length,
+        cadenceRunCount: runs.filter((run) => run.averageCadence !== null).length,
+        dynamicsRunCount: runs.filter((run) => run.avgGroundContactTimeMs !== null || run.avgStrideLengthM !== null || run.avgVerticalRatio !== null || run.verticalOscillationCm !== null).length,
+        sleepRecordCount: sleeps.length,
+        heartRecordCount: hearts.length,
+        bodyRecordCount: bodies.length
+      },
+      observations
+    };
+  }),
+  getGarminRunDetail: publicProcedure.input(z2.object({ id: z2.number().int().positive() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return null;
+    const result = await db.execute(sql2`
+        SELECT id, date, running_type, route_type, distance_km, hour, minutes, second,
+               average_pace, best_pace, average_heart_rate, maximum_heart_rate,
+               average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
+               vertical_oscillation_cm, avg_ground_contact_time_ms, calories, garmin_details, laps, time_series
+        FROM running_logs
+        WHERE id = ${input.id} AND user_id = ${OWNER_USER_ID}
+        LIMIT 1
+      `);
+    return (result.rows ?? result)[0] ?? null;
   }),
   uploadGarminRawChunk: ownerProcedure.input(z2.object({
     uploadId: z2.string().regex(/^[A-Za-z0-9_-]{12,80}$/),
@@ -5393,20 +5653,22 @@ var runningRouter = router({
   }),
   getLabPersonalization: publicProcedure.query(async () => {
     const db = await getDb();
-    if (!db) return { body: null, baselinePaceSecPerKm: null, maxHeartRate: null, restingHeartRate: null, runTypeDistribution: [], historicalRunCount: 0, baselineRunCount: 0 };
+    if (!db) return { body: null, baselinePaceSecPerKm: null, maxHeartRate: null, restingHeartRate: null, runTypeDistribution: [], historicalRunCount: 0, baselineRunCount: 0, historicalRuns: [] };
     const [profileRows, bodyRows, heartRows, runningRows, typeRows] = await Promise.all([
       db.execute(sql2`SELECT height FROM user_profile WHERE user_id = ${OWNER_USER_ID} LIMIT 1`),
       db.execute(sql2`SELECT weight, body_fat_pct, muscle_mass, date FROM body_composition WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
       db.execute(sql2`SELECT resting_hr, high_hr FROM heart_rate_logs WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
       db.execute(sql2`
-          SELECT average_pace, average_heart_rate, maximum_heart_rate, distance_km, running_type, date
+          SELECT id, average_pace, average_heart_rate, maximum_heart_rate, distance_km, running_type, route_type, date
           FROM running_logs
-          WHERE NULLIF(TRIM(COALESCE(average_pace, '')), '') IS NOT NULL
+          WHERE user_id = ${OWNER_USER_ID}
+            AND NULLIF(TRIM(COALESCE(average_pace, '')), '') IS NOT NULL
           ORDER BY date ASC
         `),
       db.execute(sql2`
           SELECT COALESCE(running_type, '未分類') AS running_type, COUNT(*) AS count
           FROM running_logs
+          WHERE user_id = ${OWNER_USER_ID}
           GROUP BY COALESCE(running_type, '未分類')
           ORDER BY count DESC, running_type ASC
         `)
@@ -5449,7 +5711,17 @@ var runningRouter = router({
       restingHeartRate,
       runTypeDistribution: types.map((row) => ({ type: row.running_type, count: Number(row.count) })),
       historicalRunCount: running.length,
-      baselineRunCount: baselineRows.length
+      baselineRunCount: baselineRows.length,
+      historicalRuns: paceRows.map((row) => ({
+        id: Number(row.id),
+        date: String(row.date ?? ""),
+        runningType: row.running_type ?? null,
+        routeType: row.route_type ?? null,
+        distanceKm: Number(row.distance_km),
+        paceSecPerKm: row.paceSeconds,
+        averageHeartRate: Number.isFinite(Number(row.average_heart_rate)) ? Number(row.average_heart_rate) : null,
+        maximumHeartRate: Number.isFinite(Number(row.maximum_heart_rate)) ? Number(row.maximum_heart_rate) : null
+      }))
     };
   }),
   lookupHistoricalWeather: ownerProcedure.input(z2.object({

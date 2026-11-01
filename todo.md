@@ -513,7 +513,19 @@
 ## v3.14.8 Records & tools navigation cleanup
 - [x] Remove the 「進度相片」and global「匯入數據」routes and navigation items from 記錄與工具, while preserving existing health records and page-specific import / spreadsheet entry workflows
 - [x] Run regression tests, typecheck and production builds; verify no requested global route or menu item remains while health data and page-local imports stay available
-- [ ] Save checkpoint, push to BodyFit-only GitHub main and verify the v3.14.8 Vercel production deployment
+- [x] Save checkpoint, push to BodyFit-only GitHub main and verify the v3.14.8 Vercel production deployment
+
+## v3.14.9 Scenario-aware energy-lab calibration
+- [x] Select compatible historical runs automatically for each lab scenario, using workout type, route type, distance band and quality checks while excluding mismatched records such as trail runs from sprint calibration
+- [x] Show the chosen historical evidence, exclusions and fallback reason in the energy lab before the model runs
+- [x] Test scenario-to-history matching, Hong Kong date-safe historical selection, UI evidence visibility and full production builds
+
+## v3.15.0 Garmin Health Brief & Information Graphics
+- [x] Add a read-only Garmin health-brief aggregation that draws only from saved running, heart-rate, sleep and body-composition records, keeps Hong Kong dates, and reports field coverage instead of fabricating missing metrics
+- [x] Add a mobile-friendly Garmin brief with training-load, heart-rate, running-dynamics, recovery, source-quality and selectable raw time-series visualisations
+- [x] Provide descriptive training observations and data-completeness guidance only; retain the existing energy-system simulator as a clearly separate educational model
+- [x] Test aggregation contracts, missing-data states, HK-time formatting, visualisation contracts and production builds
+- [ ] Save checkpoint, push the combined v3.15.0 release to BodyFit-only GitHub main, and verify Vercel production
 
 ## v3.14.7 Spreadsheet-style health data entry
 - [x] Create a reusable Excel-style grid that accepts multi-cell clipboard paste, provides row-level validation and allows corrections before batch submission
@@ -522,4 +534,4 @@
 - [x] Update the Running Energy Lab to use all historical running records for every running-type baseline, distribution and personal calibration calculation
 - [x] Test clipboard-grid parsing, HK date normalization, validation, batch results and Google Sheets source/sync contracts; complete UI checks and production builds
 - [x] Complete clipboard-grid, Hong Kong date, validation, Google Sheets source/sync, all-history running analysis, mobile UI and production-build verification
-- [ ] Save checkpoint, push to BodyFit-only GitHub main and verify the v3.14.7 Vercel production deployment
+- [x] Save checkpoint, push to BodyFit-only GitHub main and verify the v3.14.7 Vercel production deployment

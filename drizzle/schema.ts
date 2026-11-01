@@ -305,7 +305,7 @@ export const runningLogs = pgTable("running_logs", {
   weatherSource: text("weather_source"),
   garminDetails: jsonb("garmin_details").$type<Record<string, number | string | null>>(),
   laps: jsonb("laps").$type<Array<{ lap: number; distanceKm: number | null; durationSec: number | null; avgPace: string | null }>>(),
-  timeSeries: jsonb("time_series").$type<Array<{ elapsedSec: number; timestamp: string; distanceKm?: number; paceSecPerKm?: number; heartRate?: number; cadence?: number; power?: number; altitudeM?: number; temperatureC?: number }>>(),
+  timeSeries: jsonb("time_series").$type<Array<{ elapsedSec: number; timestamp: string; distanceKm?: number; latitude?: number; longitude?: number; paceSecPerKm?: number; heartRate?: number; cadence?: number; power?: number; altitudeM?: number; temperatureC?: number }>>(),
   status: text("status"),
   notes: text("notes"),
   routeType: text("route_type"),

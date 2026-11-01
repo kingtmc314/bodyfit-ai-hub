@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.14.8");
+    expect(APP_VERSION).toBe("3.15.0");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -334,7 +334,7 @@ describe("v3.14.7 spreadsheet health entry and complete-history energy analysis"
     expect(routerSource).not.toContain("LIMIT 24");
     expect(routerSource).not.toContain("interval '180 days'");
     expect(routerSource).toContain("historicalRunCount");
-    expect(labSource).toContain("不設日期或筆數截斷");
+    expect(labSource).toContain("掃描全部歷史跑步資料");
     expect(stylesheetSource).toContain("deliberately dark in every app theme");
     expect(stylesheetSource).toContain("#07111f");
   });
@@ -365,6 +365,74 @@ describe("v3.14.8 records-and-tools navigation cleanup", () => {
     expect(schemaSource).toContain('pgTable("progress_photos"');
     for (const page of [bodySource, sleepSource, heartSource]) expect(page).toContain("QuickImportModal");
     expect(releaseNotesSource).toContain('version: "3.14.8"');
-    expect(releaseNotesSource).toContain("跑步紀錄均完整保留");
+    expect(releaseNotesSource).toContain("跑步的全部既有健康紀錄");
+  });
+});
+
+describe("v3.14.9 scenario-aware history selection, running pagination and release history", () => {
+  const routerSource = readFileSync(new URL("../server/routers.ts", import.meta.url), "utf8");
+  const runningSource = readFileSync(new URL("../client/src/pages/Running.tsx", import.meta.url), "utf8");
+  const labSource = readFileSync(new URL("../client/src/components/RunningEnergyLab.tsx", import.meta.url), "utf8");
+  const selectorSource = readFileSync(new URL("../shared/labHistoricalSelector.ts", import.meta.url), "utf8");
+  const releaseNotesSource = readFileSync(new URL("../client/src/lib/releaseNotes.ts", import.meta.url), "utf8");
+  const releasePageSource = readFileSync(new URL("../client/src/pages/ReleaseNotes.tsx", import.meta.url), "utf8");
+
+  it("uses server-side pages for the full running history", () => {
+    expect(routerSource).toContain("getLogsPage: publicProcedure");
+    expect(routerSource).toContain("COUNT(*)::int AS total");
+    expect(routerSource).toContain("LIMIT ${input.pageSize} OFFSET ${offset}");
+    expect(runningSource).toContain("trpc.running.getLogsPage.useQuery");
+    expect(runningSource).toContain("完整歷史紀錄");
+    expect(runningSource).toContain("上一頁");
+    expect(runningSource).toContain("下一頁");
+  });
+
+  it("selects compatible history rather than blending trail and long-run data into sprint calibration", () => {
+    expect(routerSource).toContain("historicalRuns");
+    expect(selectorSource).toContain("excludedTrailCount");
+    expect(selectorSource).toContain("type-and-surface");
+    expect(selectorSource).toContain("Sprint／Interval／Time Trial");
+    expect(labSource).toContain("selectLabHistoricalRuns");
+    expect(labSource).toContain("自動選取證據");
+    expect(labSource).toContain("衝刺不會把越野或長距離慢跑混入校準");
+  });
+
+  it("presents both release categories and a feature-first history with a HK last-revised date", () => {
+    expect(releaseNotesSource).toContain('version: "3.14.9"');
+    expect(releaseNotesSource).toContain("FEATURE_HISTORY");
+    expect(releasePageSource).toContain("新增功能");
+    expect(releasePageSource).toContain("刪除功能");
+    expect(releasePageSource).toContain("優化功能");
+    expect(releasePageSource).toContain("修訂功能");
+    expect(releasePageSource).toContain("功能歷程");
+    expect(releasePageSource).toContain("最後修訂日期");
+  });
+});
+
+describe("v3.15.0 Garmin health data briefing", () => {
+  const runningSource = readFileSync(new URL("../client/src/pages/Running.tsx", import.meta.url), "utf8");
+  const briefingSource = readFileSync(new URL("../client/src/components/GarminHealthBriefing.tsx", import.meta.url), "utf8");
+  const chartSource = readFileSync(new URL("../client/src/components/GarminTimeSeriesChart.tsx", import.meta.url), "utf8");
+  const routerSource = readFileSync(new URL("../server/routers.ts", import.meta.url), "utf8");
+  const releaseNotesSource = readFileSync(new URL("../client/src/lib/releaseNotes.ts", import.meta.url), "utf8");
+
+  it("exposes a dedicated briefing built from stored running, recovery and Garmin source data", () => {
+    expect(runningSource).toContain("GarminHealthBriefing");
+    expect(runningSource).toContain('value="garmin-health"');
+    expect(routerSource).toContain("getGarminHealthBrief: publicProcedure");
+    expect(routerSource).toContain("getGarminRunDetail: publicProcedure");
+    expect(briefingSource).toContain("跑步健康數據簡報");
+    expect(briefingSource).toContain("資料來源與覆蓋率");
+    expect(briefingSource).toContain("不作醫療診斷");
+  });
+
+  it("keeps raw-source claims explicit and makes cadence and power inspectable per run", () => {
+    expect(briefingSource).toContain("已儲存數據");
+    expect(briefingSource).toContain("區間分鐘數");
+    expect(chartSource).toContain('key: "cadence"');
+    expect(chartSource).toContain('key: "power"');
+    expect(chartSource).toContain("cadence: toPositiveNumber");
+    expect(chartSource).toContain("power: toPositiveNumber");
+    expect(releaseNotesSource).toContain('version: "3.15.0"');
   });
 });
