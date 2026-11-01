@@ -478,4 +478,5 @@
 - [x] Move shoe-performance comparisons into the running trends experience and consolidate running charts into a coherent analytics view
 - [x] Add Shoe Locker multi-select status, brand, usage-count, mileage and retirement filters with compatible sorting
 - [x] Make the running energy laboratory surface follow the app light/dark theme without changing its simulation interactions
-- [x] Apply a non-destructive Supabase migration and validate record preservation, desktop/mobile UX, tests, production build, checkpoint and Vercel release
+- [x] Apply a non-destructive Supabase migration and validate record preservation, desktop/mobile UX, tests, production build, checkpoint and GitHub push
+- [ ] Verify the Vercel production release for v3.14.2 after the GitHub deployment pipeline reports the new build
