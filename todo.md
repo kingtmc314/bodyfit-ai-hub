@@ -485,4 +485,4 @@
 - [x] Strengthen the global light-theme surfaces, borders, muted labels and sidebar selection without losing the warm BodyFit identity
 - [x] Refine card, panel, table and focus treatments for clearer hierarchy across light and dark modes
 - [x] Restore historical workout visibility by removing the accidental 90-day client query limit while retaining server-side owner isolation
-- [ ] Verify desktop/mobile colour contrast, automated tests, production build, checkpoint, GitHub push and Vercel release
+- [x] Verify desktop/mobile colour contrast, automated tests, production build, checkpoint, GitHub push and Vercel release
