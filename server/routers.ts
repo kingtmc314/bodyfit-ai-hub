@@ -54,6 +54,11 @@ function validateGarminOriginalKey(key: string) {
   }
 }
 
+/** Supports a file uploaded by the preceding web client during a rolling deploy. */
+function isGarminLegacyStagingKey(key: string) {
+  return /^garmin-staging\/\d+\/[a-zA-Z0-9_-]{8,}\.(fit|csv|gpx|tcx)$/i.test(key);
+}
+
 function decodeGarminChunk(base64: string) {
   const normalized = base64.replace(/\s/g, "");
   if (!normalized || normalized.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
@@ -2582,16 +2587,26 @@ const runningRouter = router({
   parseGarminRawFile: ownerProcedure
     .input(z.object({
       fileName: z.string().trim().min(5).max(180),
-      mimeType: z.string().trim().max(120),
-      uploadId: z.string().regex(/^[A-Za-z0-9_-]{12,80}$/),
-      chunkKeys: z.array(z.string().trim().min(20).max(500)).min(1).max(MAX_GARMIN_RAW_UPLOAD_CHUNKS),
+      mimeType: z.string().trim().max(120).optional(),
+      uploadId: z.string().regex(/^[A-Za-z0-9_-]{12,80}$/).optional(),
+      chunkKeys: z.array(z.string().trim().min(20).max(500)).min(1).max(MAX_GARMIN_RAW_UPLOAD_CHUNKS).optional(),
+      // Only accepted to let an already-open old client finish its in-flight import.
+      fileKey: z.string().trim().min(20).max(500).optional(),
+    }).refine((input) => Boolean(input.fileKey) || Boolean(input.uploadId && input.chunkKeys), {
+      message: "請先安全上載 Garmin 原始檔",
     }))
     .mutation(async ({ input }) => {
       const sourceFormat = garminRawFormatFromFilename(input.fileName);
       if (!sourceFormat) throw new Error("請選擇 Garmin FIT、CSV、GPX 或 TCX 原始檔");
-      validateGarminChunkKeys(input.chunkKeys, input.uploadId);
-      const chunks = await Promise.all(input.chunkKeys.map((key) => storageReadBuffer(key)));
-      const buffer = Buffer.concat(chunks);
+      let buffer: Buffer;
+      if (input.fileKey) {
+        if (!isGarminLegacyStagingKey(input.fileKey)) throw new Error("無效的 Garmin 暫存檔來源");
+        buffer = await storageReadBuffer(input.fileKey);
+      } else {
+        validateGarminChunkKeys(input.chunkKeys!, input.uploadId!);
+        const chunks = await Promise.all(input.chunkKeys!.map((key) => storageReadBuffer(key)));
+        buffer = Buffer.concat(chunks);
+      }
       if (buffer.length > MAX_GARMIN_RAW_FILE_BYTES) throw new Error("原始 Garmin 檔案超過 25MB 限制");
       const stored = await storagePut(`garmin-originals/${OWNER_USER_ID}/${nanoid()}.${sourceFormat.toLowerCase()}`, buffer, input.mimeType || "application/octet-stream");
       const preview = parseGarminRawFile(buffer, input.fileName);
@@ -2612,10 +2627,18 @@ const runningRouter = router({
       if (!db) throw new Error("DB unavailable");
       const detectedFormat = garminRawFormatFromFilename(input.fileName);
       if (detectedFormat !== input.sourceFormat) throw new Error("原始檔格式與副檔名不一致");
-      validateGarminOriginalKey(input.fileKey);
+      let rawFileKey = input.fileKey;
+      if (isGarminLegacyStagingKey(rawFileKey)) {
+        const legacyBuffer = await storageReadBuffer(rawFileKey);
+        if (legacyBuffer.length > MAX_GARMIN_RAW_FILE_BYTES) throw new Error("原始 Garmin 檔案超過 25MB 限制");
+        const stored = await storagePut(`garmin-originals/${OWNER_USER_ID}/${nanoid()}.${input.sourceFormat.toLowerCase()}`, legacyBuffer, input.mimeType || "application/octet-stream");
+        rawFileKey = stored.key;
+      } else {
+        validateGarminOriginalKey(rawFileKey);
+      }
       const metadata = JSON.stringify({
-        rawFileKey: input.fileKey,
-        rawFileUrl: `/manus-storage/${input.fileKey}`,
+        rawFileKey,
+        rawFileUrl: `/manus-storage/${rawFileKey}`,
         rawFileName: input.fileName,
         rawFileFormat: input.sourceFormat,
         rawSampleCount: input.sampleCount,
@@ -2625,7 +2648,7 @@ const runningRouter = router({
         SET garmin_details = COALESCE(garmin_details, '{}'::jsonb) || ${metadata}::jsonb
         WHERE id = ${input.runningLogId}
       `);
-      return { success: true, fileUrl: `/manus-storage/${input.fileKey}` };
+      return { success: true, fileUrl: `/manus-storage/${rawFileKey}` };
     }),
 
   addLog: publicProcedure
@@ -2670,6 +2693,8 @@ const runningRouter = router({
         elapsedSec: z.number().int().nonnegative(),
         timestamp: z.string().min(1).max(40),
         distanceKm: z.number().optional(),
+        latitude: z.number().min(-90).max(90).optional(),
+        longitude: z.number().min(-180).max(180).optional(),
         paceSecPerKm: z.number().optional(),
         heartRate: z.number().optional(),
         cadence: z.number().optional(),
@@ -2788,6 +2813,8 @@ const runningRouter = router({
         elapsedSec: z.number().int().nonnegative(),
         timestamp: z.string().min(1).max(40),
         distanceKm: z.number().optional(),
+        latitude: z.number().min(-90).max(90).optional(),
+        longitude: z.number().min(-180).max(180).optional(),
         paceSecPerKm: z.number().optional(),
         heartRate: z.number().optional(),
         cadence: z.number().optional(),

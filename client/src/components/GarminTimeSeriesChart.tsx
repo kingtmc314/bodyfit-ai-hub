@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import GarminRouteAnalysis from "@/components/GarminRouteAnalysis";
 import { cn } from "@/lib/utils";
 
 const MAX_DISPLAY_POINTS = 720;
@@ -571,6 +572,8 @@ export default function GarminTimeSeriesChart({
               )}
             </div>
           )}
+
+          <GarminRouteAnalysis timeSeries={timeSeries} className="mt-5" />
         </div>
       )}
     </section>

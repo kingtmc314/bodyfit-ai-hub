@@ -11,6 +11,7 @@ import {
   Camera,
   Sparkles,
   Menu,
+  X,
   Sun,
   ChevronRight,
   Activity,
@@ -94,9 +95,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
   };
 
   const SidebarContent = () => (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* Logo */}
-      <div className="app-brand px-5 py-5 border-b border-sidebar-border">
+      <div className="app-brand shrink-0 px-5 py-5 border-b border-sidebar-border">
         <div className="flex items-center gap-3.5">
           <div className="brand-mark w-10 h-10 rounded-2xl hero-gradient flex items-center justify-center shadow-md">
             <Activity className="w-5 h-5 text-white" strokeWidth={2.5} />
@@ -105,11 +106,20 @@ export default function AppLayout({ children }: AppLayoutProps) {
             <p className="text-[15px] font-extrabold text-foreground leading-none tracking-tight gradient-text">BodyFit AI</p>
             <p className="text-[11px] text-muted-foreground mt-1 font-semibold tracking-wide">{t('app.tagline').split(' ').slice(0,3).join(' ')}</p>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto h-9 w-9 rounded-xl lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="關閉更多選單"
+          >
+            <X className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 overflow-y-auto">
+      <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-4 [-webkit-overflow-scrolling:touch]" aria-label="所有功能">
         {navGroups.map((group, gi) => (
           <div key={group.groupKey} className={gi > 0 ? "mt-3" : ""}>
             <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-muted-foreground/55 px-2 mb-1.5">
@@ -141,7 +151,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       </nav>
 
       {/* Bottom controls */}
-      <div className="border-t border-sidebar-border p-3 app-sidebar-footer">
+      <div className="shrink-0 border-t border-sidebar-border p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] lg:pb-3 app-sidebar-footer">
         <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-2xl bg-secondary/55 border border-white/70 dark:border-white/5">
           <div className="w-8 h-8 rounded-xl hero-gradient flex items-center justify-center shrink-0 shadow-sm">
             <Activity className="w-4 h-4 text-white" />
@@ -184,9 +194,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div className="fixed inset-0 z-50 overflow-hidden lg:hidden">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
-          <aside className="app-sidebar absolute left-0 top-0 bottom-0 w-[17rem] bg-card border-r border-border shadow-xl">
+          <aside className="app-sidebar absolute inset-y-0 left-0 flex h-[100dvh] max-h-[100dvh] w-[17rem] flex-col overflow-hidden bg-card border-r border-border shadow-xl">
             <SidebarContent />
           </aside>
         </div>

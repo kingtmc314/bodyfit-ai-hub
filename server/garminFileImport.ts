@@ -8,6 +8,8 @@ export type GarminTimeSample = {
   elapsedSec: number;
   timestamp: string;
   distanceKm?: number;
+  latitude?: number;
+  longitude?: number;
   paceSecPerKm?: number;
   heartRate?: number;
   cadence?: number;
@@ -63,6 +65,13 @@ const asDate = (value: unknown): Date | null => {
 const toHKDate = (date: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Hong_Kong", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 const toHKTime = (date: Date) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Hong_Kong", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
 const decimalPace = (secondsPerKm: number | undefined) => secondsPerKm && secondsPerKm > 0 ? (secondsPerKm / 60).toFixed(2) : undefined;
+
+function toCoordinateDegrees(value: unknown, maximum: number): number | undefined {
+  const parsed = asNumber(value);
+  if (parsed === undefined) return undefined;
+  const degrees = Math.abs(parsed) <= maximum ? parsed : parsed * 180 / 2 ** 31;
+  return Math.abs(degrees) <= maximum ? Number(degrees.toFixed(7)) : undefined;
+}
 
 function keepChartSamples<T>(items: T[]): T[] {
   if (items.length <= MAX_SAMPLES) return items;
@@ -130,10 +139,14 @@ function mapFitRecord(record: Record<string, unknown>, startedAt: Date): GarminT
   const speed = asNumber(record.enhancedSpeed) ?? asNumber(record.speed);
   const distanceM = asNumber(record.distance);
   const altitudeM = asNumber(record.enhancedAltitude) ?? asNumber(record.altitude);
+  const latitude = toCoordinateDegrees(record.positionLat, 90);
+  const longitude = toCoordinateDegrees(record.positionLong, 180);
   return {
     elapsedSec: Math.max(0, Math.round((timestamp.getTime() - startedAt.getTime()) / 1000)),
     timestamp: timestamp.toISOString(),
     ...(distanceM !== undefined ? { distanceKm: Number((distanceM / 1000).toFixed(4)) } : {}),
+    ...(latitude !== undefined ? { latitude } : {}),
+    ...(longitude !== undefined ? { longitude } : {}),
     ...(speed && speed > 0 ? { paceSecPerKm: Number((1000 / speed).toFixed(2)) } : {}),
     ...(asNumber(record.heartRate) !== undefined ? { heartRate: asNumber(record.heartRate) } : {}),
     ...(asNumber(record.cadence) !== undefined ? { cadence: asNumber(record.cadence) } : {}),
@@ -188,6 +201,8 @@ export function parseGarminCsv(buffer: Buffer): GarminRawPreview {
   const sourceSamples: GarminTimeSample[] = timed.map(item => ({
     elapsedSec: Math.max(0, Math.round((item.timestamp.getTime() - start.getTime()) / 1000)), timestamp: item.timestamp.toISOString(),
     ...(item.distance !== undefined ? { distanceKm: item.distance > 100 ? Number((item.distance / 1000).toFixed(4)) : item.distance } : {}),
+    ...(toCoordinateDegrees(valueFor(item.row, ["latitude", "lat", "positionlat"]), 90) !== undefined ? { latitude: toCoordinateDegrees(valueFor(item.row, ["latitude", "lat", "positionlat"]), 90) } : {}),
+    ...(toCoordinateDegrees(valueFor(item.row, ["longitude", "lon", "lng", "positionlong"]), 180) !== undefined ? { longitude: toCoordinateDegrees(valueFor(item.row, ["longitude", "lon", "lng", "positionlong"]), 180) } : {}),
     ...(item.speed && item.speed > 0 ? { paceSecPerKm: Number((1000 / item.speed).toFixed(2)) } : {}),
     ...(asNumber(valueFor(item.row, ["heartrate", "heart_rate"])) !== undefined ? { heartRate: asNumber(valueFor(item.row, ["heartrate", "heart_rate"])) } : {}),
     ...(asNumber(valueFor(item.row, ["cadence"])) !== undefined ? { cadence: asNumber(valueFor(item.row, ["cadence"])) } : {}),
@@ -255,6 +270,8 @@ function toTimeSeries(points: XmlPoint[]): GarminTimeSample[] {
       elapsedSec,
       timestamp: point.timestamp.toISOString(),
       ...(cumulativeDistanceM > 0 ? { distanceKm: Number((cumulativeDistanceM / 1000).toFixed(4)) } : {}),
+      ...(point.latitude !== undefined ? { latitude: point.latitude } : {}),
+      ...(point.longitude !== undefined ? { longitude: point.longitude } : {}),
       ...(paceSecPerKm && paceSecPerKm < 7200 ? { paceSecPerKm } : {}),
       ...(point.heartRate !== undefined ? { heartRate: point.heartRate } : {}),
       ...(point.cadence !== undefined ? { cadence: point.cadence } : {}),
@@ -370,6 +387,8 @@ function parseActivityXml(buffer: Buffer, sourceFormat: "GPX" | "TCX"): GarminRa
       if (name === "time") activePoint.timestamp = parseXmlDate(value);
       if (name === "ele" || name === "altitudemeters") activePoint.altitudeM = parseXmlNumber(value);
       if (name === "distancemeters") activePoint.distanceM = parseXmlNumber(value);
+      if (name === "latitudedegrees") activePoint.latitude = parseXmlNumber(value);
+      if (name === "longitudedegrees") activePoint.longitude = parseXmlNumber(value);
       if ((name === "value" && (parent === "heartratebpm" || grandparent === "heartratebpm")) || name === "hr") activePoint.heartRate = parseXmlNumber(value);
       if (name === "cadence" || name === "runcadence" || name === "cad") activePoint.cadence = parseXmlNumber(value);
       if (name === "watts" || name === "power") activePoint.power = parseXmlNumber(value);

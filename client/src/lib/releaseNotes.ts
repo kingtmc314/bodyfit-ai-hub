@@ -15,6 +15,18 @@ export type ReleaseNote = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.14.6",
+    status: "released",
+    title: "GPX 路線地圖與坡度分段分析",
+    summary: "已發布：將 Garmin GPS 路線、海拔剖面與每公里坡度分段整合至跑步資料核對及紀錄詳情。",
+    highlights: [
+      "FIT、CSV、GPX 與 TCX 原始跑步檔會保留可用的 GPS 經緯度，並在 Garmin 逐秒曲線下方顯示原始路線地圖。",
+      "新增海拔剖面、總爬升／下降、最大上坡與下坡、坡度分布，以及約每公里的高度變化與平均坡度分段。",
+      "沒有 GPS 或海拔的活動會顯示清晰提示，不會以道路導航資料猜測或取代已上載的原始記錄。",
+      "修復手機「更多」抽屜的捲動範圍；現可直接滑到所有次要健康頁面和版本歷程。",
+    ],
+  },
+  {
     version: "3.14.5",
     status: "released",
     title: "Garmin 多截圖可靠性與逐秒曲線",

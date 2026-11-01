@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.14.5");
+    expect(APP_VERSION).toBe("3.14.6");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -246,5 +246,52 @@ describe("v3.14.5 Garmin vision reliability and time-series review", () => {
   it("makes the customer-facing release history match the visible version", () => {
     expect(releaseNotesSource).toContain('version: "3.14.5"');
     expect(releaseNotesSource).toContain("逐秒曲線");
+  });
+});
+
+describe("v3.14.6 GPX route intelligence and mobile drawer accessibility", () => {
+  const chartSource = readFileSync(new URL("../client/src/components/GarminTimeSeriesChart.tsx", import.meta.url), "utf8");
+  const routeSource = readFileSync(new URL("../client/src/components/GarminRouteAnalysis.tsx", import.meta.url), "utf8");
+  const mapSource = readFileSync(new URL("../client/src/components/Map.tsx", import.meta.url), "utf8");
+  const layoutSource = readFileSync(new URL("../client/src/components/AppLayout.tsx", import.meta.url), "utf8");
+  const parserSource = readFileSync(new URL("../server/garminFileImport.ts", import.meta.url), "utf8");
+  const routerSource = readFileSync(new URL("../server/routers.ts", import.meta.url), "utf8");
+  const sheetsSource = readFileSync(new URL("../server/sheetsService.ts", import.meta.url), "utf8");
+  const releaseNotesSource = readFileSync(new URL("../client/src/lib/releaseNotes.ts", import.meta.url), "utf8");
+
+  it("keeps GPS coordinates through Garmin parsers and the reviewed running-record API", () => {
+    expect(parserSource).toContain("latitude?: number");
+    expect(parserSource).toContain("positionLat");
+    expect(parserSource).toContain("latitudedegrees");
+    expect(routerSource).toContain("latitude: z.number().min(-90).max(90).optional()");
+    expect(routerSource).toContain("longitude: z.number().min(-180).max(180).optional()");
+  });
+
+  it("adds an original-route map, elevation profile, gradient distribution and distance segments beside time-series charts", () => {
+    expect(chartSource).toContain("GarminRouteAnalysis");
+    expect(routeSource).toContain("MapView");
+    expect(routeSource).toContain("海拔剖面");
+    expect(routeSource).toContain("坡度分布");
+    expect(routeSource).toContain("距離分段坡度");
+    expect(mapSource).toContain("className ?? \"h-[500px]\"");
+  });
+
+  it("keeps all specified running metrics in the Google Sheets row and makes the full mobile drawer touch-scrollable", () => {
+    for (const requiredColumn of ["Max Cadence", "Avg Stride Length", "Avg Vertical Ratio", "Vertical Oscillation"]) {
+      expect(sheetsSource).toContain(requiredColumn);
+    }
+    expect(sheetsSource).toContain("rowData.maxCadence");
+    expect(sheetsSource).toContain("rowData.avgStrideLengthM");
+    expect(sheetsSource).toContain("rowData.avgVerticalRatio");
+    expect(sheetsSource).toContain("rowData.verticalOscillationCm");
+    expect(layoutSource).toContain("flex-1 min-h-0 overflow-y-auto overscroll-contain");
+    expect(layoutSource).toContain("[-webkit-overflow-scrolling:touch]");
+    expect(layoutSource).toContain("h-[100dvh]");
+  });
+
+  it("records the visible route and mobile-navigation update in the release history", () => {
+    expect(releaseNotesSource).toContain('version: "3.14.6"');
+    expect(releaseNotesSource).toContain("路線地圖與坡度分段分析");
+    expect(releaseNotesSource).toContain("更多");
   });
 });

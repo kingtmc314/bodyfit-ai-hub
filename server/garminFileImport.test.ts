@@ -4,16 +4,16 @@ import { parseGarminCsv, parseGarminRawFile } from "./garminFileImport";
 describe("Garmin original file import", () => {
   it("extracts Garmin-style CSV records into a reviewed summary and time series", () => {
     const csv = [
-      "timestamp,distance,enhanced_speed,heart_rate,cadence,power,enhanced_altitude,temperature",
-      "2026-11-01T00:00:00Z,0,3.0,120,165,210,25,24",
-      "2026-11-01T00:00:01Z,3000,3.2,122,166,215,25.1,24",
-      "2026-11-01T00:00:02Z,6300,3.4,124,167,220,25.2,24",
+      "timestamp,distance,enhanced_speed,heart_rate,cadence,power,enhanced_altitude,temperature,latitude,longitude",
+      "2026-11-01T00:00:00Z,0,3.0,120,165,210,25,24,22.3000,114.1700",
+      "2026-11-01T00:00:01Z,3000,3.2,122,166,215,25.1,24,22.3010,114.1700",
+      "2026-11-01T00:00:02Z,6300,3.4,124,167,220,25.2,24,22.3020,114.1700",
     ].join("\n");
     const result = parseGarminCsv(Buffer.from(csv));
 
     expect(result.sourceFormat).toBe("CSV");
     expect(result.timeSeries).toHaveLength(3);
-    expect(result.timeSeries[1]).toMatchObject({ elapsedSec: 1, heartRate: 122, cadence: 166, power: 215 });
+    expect(result.timeSeries[1]).toMatchObject({ elapsedSec: 1, heartRate: 122, cadence: 166, power: 215, latitude: 22.301, longitude: 114.17 });
     expect(result.fields.date).toBe("2026-11-01");
     expect(result.fields.distanceKm).toBe("6.30");
   });
@@ -45,7 +45,7 @@ describe("Garmin original file import", () => {
 
     expect(result.sourceFormat).toBe("GPX");
     expect(result.timeSeries).toHaveLength(3);
-    expect(result.timeSeries[1]).toMatchObject({ elapsedSec: 60, heartRate: 142, cadence: 84, altitudeM: 14 });
+    expect(result.timeSeries[1]).toMatchObject({ elapsedSec: 60, heartRate: 142, cadence: 84, altitudeM: 14, latitude: 22.301, longitude: 114.17 });
     expect(Number(result.fields.distanceKm)).toBeGreaterThan(0.2);
     expect(result.garminDetails.totalAscentM).toBe(2.8);
   });
@@ -56,9 +56,9 @@ describe("Garmin original file import", () => {
   <Activities><Activity Sport="Running"><Id>2026-11-01T00:00:00Z</Id>
     <Lap StartTime="2026-11-01T00:00:00Z"><TotalTimeSeconds>120</TotalTimeSeconds><DistanceMeters>400</DistanceMeters><Calories>24</Calories><AverageHeartRateBpm><Value>145</Value></AverageHeartRateBpm><MaximumHeartRateBpm><Value>158</Value></MaximumHeartRateBpm>
       <Track>
-        <Trackpoint><Time>2026-11-01T00:00:00Z</Time><AltitudeMeters>10</AltitudeMeters><DistanceMeters>0</DistanceMeters><HeartRateBpm><Value>132</Value></HeartRateBpm><Cadence>80</Cadence></Trackpoint>
-        <Trackpoint><Time>2026-11-01T00:01:00Z</Time><AltitudeMeters>13</AltitudeMeters><DistanceMeters>200</DistanceMeters><HeartRateBpm><Value>145</Value></HeartRateBpm><Cadence>83</Cadence></Trackpoint>
-        <Trackpoint><Time>2026-11-01T00:02:00Z</Time><AltitudeMeters>11</AltitudeMeters><DistanceMeters>400</DistanceMeters><HeartRateBpm><Value>158</Value></HeartRateBpm><Cadence>85</Cadence></Trackpoint>
+        <Trackpoint><Time>2026-11-01T00:00:00Z</Time><Position><LatitudeDegrees>22.3000</LatitudeDegrees><LongitudeDegrees>114.1700</LongitudeDegrees></Position><AltitudeMeters>10</AltitudeMeters><DistanceMeters>0</DistanceMeters><HeartRateBpm><Value>132</Value></HeartRateBpm><Cadence>80</Cadence></Trackpoint>
+        <Trackpoint><Time>2026-11-01T00:01:00Z</Time><Position><LatitudeDegrees>22.3010</LatitudeDegrees><LongitudeDegrees>114.1700</LongitudeDegrees></Position><AltitudeMeters>13</AltitudeMeters><DistanceMeters>200</DistanceMeters><HeartRateBpm><Value>145</Value></HeartRateBpm><Cadence>83</Cadence></Trackpoint>
+        <Trackpoint><Time>2026-11-01T00:02:00Z</Time><Position><LatitudeDegrees>22.3020</LatitudeDegrees><LongitudeDegrees>114.1700</LongitudeDegrees></Position><AltitudeMeters>11</AltitudeMeters><DistanceMeters>400</DistanceMeters><HeartRateBpm><Value>158</Value></HeartRateBpm><Cadence>85</Cadence></Trackpoint>
       </Track>
     </Lap>
   </Activity></Activities>
@@ -67,7 +67,7 @@ describe("Garmin original file import", () => {
 
     expect(result.sourceFormat).toBe("TCX");
     expect(result.timeSeries).toHaveLength(3);
-    expect(result.timeSeries[2]).toMatchObject({ elapsedSec: 120, distanceKm: 0.4, heartRate: 158, cadence: 85 });
+    expect(result.timeSeries[2]).toMatchObject({ elapsedSec: 120, distanceKm: 0.4, heartRate: 158, cadence: 85, latitude: 22.302, longitude: 114.17 });
     expect(result.fields.distanceKm).toBe("0.40");
     expect(result.fields.averageHeartRate).toBe("145");
     expect(result.laps).toEqual([{ lap: 1, durationSec: 120, distanceKm: 0.4, avgPace: "5.00" }]);

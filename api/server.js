@@ -2348,6 +2348,12 @@ var asDate = (value) => {
 var toHKDate = (date2) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Hong_Kong", year: "numeric", month: "2-digit", day: "2-digit" }).format(date2);
 var toHKTime = (date2) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Hong_Kong", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date2);
 var decimalPace = (secondsPerKm) => secondsPerKm && secondsPerKm > 0 ? (secondsPerKm / 60).toFixed(2) : void 0;
+function toCoordinateDegrees(value, maximum) {
+  const parsed = asNumber(value);
+  if (parsed === void 0) return void 0;
+  const degrees = Math.abs(parsed) <= maximum ? parsed : parsed * 180 / 2 ** 31;
+  return Math.abs(degrees) <= maximum ? Number(degrees.toFixed(7)) : void 0;
+}
 function keepChartSamples(items) {
   if (items.length <= MAX_SAMPLES) return items;
   return Array.from({ length: MAX_SAMPLES }, (_, index) => {
@@ -2424,10 +2430,14 @@ function mapFitRecord(record, startedAt) {
   const speed = asNumber(record.enhancedSpeed) ?? asNumber(record.speed);
   const distanceM = asNumber(record.distance);
   const altitudeM = asNumber(record.enhancedAltitude) ?? asNumber(record.altitude);
+  const latitude = toCoordinateDegrees(record.positionLat, 90);
+  const longitude = toCoordinateDegrees(record.positionLong, 180);
   return {
     elapsedSec: Math.max(0, Math.round((timestamp2.getTime() - startedAt.getTime()) / 1e3)),
     timestamp: timestamp2.toISOString(),
     ...distanceM !== void 0 ? { distanceKm: Number((distanceM / 1e3).toFixed(4)) } : {},
+    ...latitude !== void 0 ? { latitude } : {},
+    ...longitude !== void 0 ? { longitude } : {},
     ...speed && speed > 0 ? { paceSecPerKm: Number((1e3 / speed).toFixed(2)) } : {},
     ...asNumber(record.heartRate) !== void 0 ? { heartRate: asNumber(record.heartRate) } : {},
     ...asNumber(record.cadence) !== void 0 ? { cadence: asNumber(record.cadence) } : {},
@@ -2478,6 +2488,8 @@ function parseGarminCsv(buffer) {
     elapsedSec: Math.max(0, Math.round((item.timestamp.getTime() - start.getTime()) / 1e3)),
     timestamp: item.timestamp.toISOString(),
     ...item.distance !== void 0 ? { distanceKm: item.distance > 100 ? Number((item.distance / 1e3).toFixed(4)) : item.distance } : {},
+    ...toCoordinateDegrees(valueFor(item.row, ["latitude", "lat", "positionlat"]), 90) !== void 0 ? { latitude: toCoordinateDegrees(valueFor(item.row, ["latitude", "lat", "positionlat"]), 90) } : {},
+    ...toCoordinateDegrees(valueFor(item.row, ["longitude", "lon", "lng", "positionlong"]), 180) !== void 0 ? { longitude: toCoordinateDegrees(valueFor(item.row, ["longitude", "lon", "lng", "positionlong"]), 180) } : {},
     ...item.speed && item.speed > 0 ? { paceSecPerKm: Number((1e3 / item.speed).toFixed(2)) } : {},
     ...asNumber(valueFor(item.row, ["heartrate", "heart_rate"])) !== void 0 ? { heartRate: asNumber(valueFor(item.row, ["heartrate", "heart_rate"])) } : {},
     ...asNumber(valueFor(item.row, ["cadence"])) !== void 0 ? { cadence: asNumber(valueFor(item.row, ["cadence"])) } : {},
@@ -2536,6 +2548,8 @@ function toTimeSeries(points) {
       elapsedSec,
       timestamp: point.timestamp.toISOString(),
       ...cumulativeDistanceM > 0 ? { distanceKm: Number((cumulativeDistanceM / 1e3).toFixed(4)) } : {},
+      ...point.latitude !== void 0 ? { latitude: point.latitude } : {},
+      ...point.longitude !== void 0 ? { longitude: point.longitude } : {},
       ...paceSecPerKm && paceSecPerKm < 7200 ? { paceSecPerKm } : {},
       ...point.heartRate !== void 0 ? { heartRate: point.heartRate } : {},
       ...point.cadence !== void 0 ? { cadence: point.cadence } : {},
@@ -2646,6 +2660,8 @@ function parseActivityXml(buffer, sourceFormat) {
       if (name === "time") activePoint.timestamp = parseXmlDate(value);
       if (name === "ele" || name === "altitudemeters") activePoint.altitudeM = parseXmlNumber(value);
       if (name === "distancemeters") activePoint.distanceM = parseXmlNumber(value);
+      if (name === "latitudedegrees") activePoint.latitude = parseXmlNumber(value);
+      if (name === "longitudedegrees") activePoint.longitude = parseXmlNumber(value);
       if (name === "value" && (parent === "heartratebpm" || grandparent === "heartratebpm") || name === "hr") activePoint.heartRate = parseXmlNumber(value);
       if (name === "cadence" || name === "runcadence" || name === "cad") activePoint.cadence = parseXmlNumber(value);
       if (name === "watts" || name === "power") activePoint.power = parseXmlNumber(value);
@@ -2716,6 +2732,9 @@ function validateGarminOriginalKey(key) {
   if (!/^garmin-originals\/\d+\/[a-zA-Z0-9_-]+_[a-f0-9]{8}\.(fit|csv|gpx|tcx)$/i.test(key)) {
     throw new Error("\u7121\u6548\u7684 Garmin \u539F\u59CB\u6A94\u4F86\u6E90");
   }
+}
+function isGarminLegacyStagingKey(key) {
+  return /^garmin-staging\/\d+\/[a-zA-Z0-9_-]{8,}\.(fit|csv|gpx|tcx)$/i.test(key);
 }
 function decodeGarminChunk(base64) {
   const normalized = base64.replace(/\s/g, "");
@@ -4925,15 +4944,25 @@ var runningRouter = router({
   }),
   parseGarminRawFile: ownerProcedure.input(z2.object({
     fileName: z2.string().trim().min(5).max(180),
-    mimeType: z2.string().trim().max(120),
-    uploadId: z2.string().regex(/^[A-Za-z0-9_-]{12,80}$/),
-    chunkKeys: z2.array(z2.string().trim().min(20).max(500)).min(1).max(MAX_GARMIN_RAW_UPLOAD_CHUNKS)
+    mimeType: z2.string().trim().max(120).optional(),
+    uploadId: z2.string().regex(/^[A-Za-z0-9_-]{12,80}$/).optional(),
+    chunkKeys: z2.array(z2.string().trim().min(20).max(500)).min(1).max(MAX_GARMIN_RAW_UPLOAD_CHUNKS).optional(),
+    // Only accepted to let an already-open old client finish its in-flight import.
+    fileKey: z2.string().trim().min(20).max(500).optional()
+  }).refine((input) => Boolean(input.fileKey) || Boolean(input.uploadId && input.chunkKeys), {
+    message: "\u8ACB\u5148\u5B89\u5168\u4E0A\u8F09 Garmin \u539F\u59CB\u6A94"
   })).mutation(async ({ input }) => {
     const sourceFormat = garminRawFormatFromFilename(input.fileName);
     if (!sourceFormat) throw new Error("\u8ACB\u9078\u64C7 Garmin FIT\u3001CSV\u3001GPX \u6216 TCX \u539F\u59CB\u6A94");
-    validateGarminChunkKeys(input.chunkKeys, input.uploadId);
-    const chunks = await Promise.all(input.chunkKeys.map((key) => storageReadBuffer(key)));
-    const buffer = Buffer.concat(chunks);
+    let buffer;
+    if (input.fileKey) {
+      if (!isGarminLegacyStagingKey(input.fileKey)) throw new Error("\u7121\u6548\u7684 Garmin \u66AB\u5B58\u6A94\u4F86\u6E90");
+      buffer = await storageReadBuffer(input.fileKey);
+    } else {
+      validateGarminChunkKeys(input.chunkKeys, input.uploadId);
+      const chunks = await Promise.all(input.chunkKeys.map((key) => storageReadBuffer(key)));
+      buffer = Buffer.concat(chunks);
+    }
     if (buffer.length > MAX_GARMIN_RAW_FILE_BYTES) throw new Error("\u539F\u59CB Garmin \u6A94\u6848\u8D85\u904E 25MB \u9650\u5236");
     const stored = await storagePut(`garmin-originals/${OWNER_USER_ID}/${nanoid()}.${sourceFormat.toLowerCase()}`, buffer, input.mimeType || "application/octet-stream");
     const preview = parseGarminRawFile(buffer, input.fileName);
@@ -4951,10 +4980,18 @@ var runningRouter = router({
     if (!db) throw new Error("DB unavailable");
     const detectedFormat = garminRawFormatFromFilename(input.fileName);
     if (detectedFormat !== input.sourceFormat) throw new Error("\u539F\u59CB\u6A94\u683C\u5F0F\u8207\u526F\u6A94\u540D\u4E0D\u4E00\u81F4");
-    validateGarminOriginalKey(input.fileKey);
+    let rawFileKey = input.fileKey;
+    if (isGarminLegacyStagingKey(rawFileKey)) {
+      const legacyBuffer = await storageReadBuffer(rawFileKey);
+      if (legacyBuffer.length > MAX_GARMIN_RAW_FILE_BYTES) throw new Error("\u539F\u59CB Garmin \u6A94\u6848\u8D85\u904E 25MB \u9650\u5236");
+      const stored = await storagePut(`garmin-originals/${OWNER_USER_ID}/${nanoid()}.${input.sourceFormat.toLowerCase()}`, legacyBuffer, input.mimeType || "application/octet-stream");
+      rawFileKey = stored.key;
+    } else {
+      validateGarminOriginalKey(rawFileKey);
+    }
     const metadata = JSON.stringify({
-      rawFileKey: input.fileKey,
-      rawFileUrl: `/manus-storage/${input.fileKey}`,
+      rawFileKey,
+      rawFileUrl: `/manus-storage/${rawFileKey}`,
       rawFileName: input.fileName,
       rawFileFormat: input.sourceFormat,
       rawSampleCount: input.sampleCount
@@ -4964,7 +5001,7 @@ var runningRouter = router({
         SET garmin_details = COALESCE(garmin_details, '{}'::jsonb) || ${metadata}::jsonb
         WHERE id = ${input.runningLogId}
       `);
-    return { success: true, fileUrl: `/manus-storage/${input.fileKey}` };
+    return { success: true, fileUrl: `/manus-storage/${rawFileKey}` };
   }),
   addLog: publicProcedure.input(z2.object({
     date: z2.string(),
@@ -5007,6 +5044,8 @@ var runningRouter = router({
       elapsedSec: z2.number().int().nonnegative(),
       timestamp: z2.string().min(1).max(40),
       distanceKm: z2.number().optional(),
+      latitude: z2.number().min(-90).max(90).optional(),
+      longitude: z2.number().min(-180).max(180).optional(),
       paceSecPerKm: z2.number().optional(),
       heartRate: z2.number().optional(),
       cadence: z2.number().optional(),
@@ -5121,6 +5160,8 @@ var runningRouter = router({
       elapsedSec: z2.number().int().nonnegative(),
       timestamp: z2.string().min(1).max(40),
       distanceKm: z2.number().optional(),
+      latitude: z2.number().min(-90).max(90).optional(),
+      longitude: z2.number().min(-180).max(180).optional(),
       paceSecPerKm: z2.number().optional(),
       heartRate: z2.number().optional(),
       cadence: z2.number().optional(),

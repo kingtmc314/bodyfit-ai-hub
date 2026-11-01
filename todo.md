@@ -502,3 +502,10 @@
 - [x] Add GPX and TCX original running-file parsing with the same reviewed summary, laps and time-series data contract as FIT/CSV
 - [x] Replace cross-origin raw-file direct upload with a Vercel-compatible 2MB chunked upload flow; validate browser and server GPX upload, merge and parse without creating a run record
 - [x] Verify the Garmin vision request using representative multi-screenshot inputs, then run tests, production build, checkpoint, GitHub push and Vercel release
+
+## v3.14.6 GPX Route Map & Gradient Analysis
+- [x] Preserve Garmin GPS latitude/longitude in FIT, CSV, GPX and TCX time-series records while retaining the existing reviewed-before-save workflow
+- [x] Add an interactive Google Maps route visualisation, elevation profile, gradient zones and distance-based slope segment analysis to Garmin run details and the import preview
+- [x] Fix the iPhone 「更多」navigation drawer so its route list has a dedicated touch-scroll area and all secondary health pages remain reachable
+- [x] Verify Garmin running-field Google Sheets mappings remain complete, and complete GPS/model tests, browser preview checks, typecheck and production builds
+- [ ] Save checkpoint, push to BodyFit-only GitHub main and verify the v3.14.6 Vercel production deployment
