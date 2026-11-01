@@ -215,9 +215,9 @@ export default function Workout() {
   const createExPhotoRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
-  const { data: sessions = [], isLoading } = trpc.workout.getSessions.useQuery({
-    startDate: toHKDateString(new Date(Date.now() - 90 * 86400000)),
-  });
+  // Load the complete owner history. The History tab must not hide older sessions
+  // merely because they fall outside a rolling 90-day dashboard window.
+  const { data: sessions = [], isLoading } = trpc.workout.getSessions.useQuery();
   const { data: sessionDetail } = trpc.workout.getSessionWithSets.useQuery(
     { sessionId: activeSession?.id }, { enabled: !!activeSession?.id }
   );

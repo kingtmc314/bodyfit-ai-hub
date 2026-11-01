@@ -9,27 +9,27 @@
    Palette: sunrise orange · mineral teal · restorative violet
    ============================================================ */
 :root {
-  /* Core backgrounds — bright, airy, warm white */
-  --background: oklch(0.975 0.009 82);
-  --foreground: oklch(0.21 0.026 250);
+  /* Core backgrounds — warm but visibly layered */
+  --background: oklch(0.952 0.016 82);
+  --foreground: oklch(0.185 0.030 250);
 
-  /* Cards — pure white with warm tint */
-  --card: oklch(1.0 0 0);
-  --card-foreground: oklch(0.21 0.026 250);
-  --popover: oklch(1.0 0 0);
-  --popover-foreground: oklch(0.20 0.025 240);
+  /* Cards — clean white on a more legible warm canvas */
+  --card: oklch(0.995 0.004 82);
+  --card-foreground: oklch(0.185 0.030 250);
+  --popover: oklch(0.995 0.004 82);
+  --popover-foreground: oklch(0.18 0.028 240);
 
   /* Primary — vibrant energetic orange (sunrise) */
   --primary: oklch(0.66 0.19 44);
   --primary-foreground: oklch(1.0 0 0);
 
-  /* Secondary — soft warm peach */
-  --secondary: oklch(0.95 0.022 75);
-  --secondary-foreground: oklch(0.36 0.05 45);
+  /* Secondary — confident warm peach */
+  --secondary: oklch(0.91 0.042 75);
+  --secondary-foreground: oklch(0.30 0.064 45);
 
-  /* Muted — light warm grey */
-  --muted: oklch(0.945 0.012 82);
-  --muted-foreground: oklch(0.50 0.018 250);
+  /* Muted — visibly distinct yet calm */
+  --muted: oklch(0.905 0.021 82);
+  --muted-foreground: oklch(0.415 0.026 250);
 
   /* Accent — vibrant healthy green */
   --accent: oklch(0.61 0.16 165);
@@ -40,8 +40,8 @@
   --destructive-foreground: oklch(1.0 0 0);
 
   /* Borders & inputs */
-  --border: oklch(0.89 0.014 82);
-  --input: oklch(0.975 0.008 82);
+  --border: oklch(0.815 0.027 82);
+  --input: oklch(0.975 0.009 82);
   --ring: oklch(0.66 0.19 44);
   --radius: 1rem;
 
@@ -52,14 +52,14 @@
   --chart-4: oklch(0.80 0.18 85);   /* sunshine yellow */
   --chart-5: oklch(0.62 0.20 340);  /* coral pink */
 
-  /* Sidebar — warm white with subtle warmth */
-  --sidebar: oklch(0.995 0.004 82);
-  --sidebar-foreground: oklch(0.31 0.026 250);
+  /* Sidebar — warm white with clear navigation separation */
+  --sidebar: oklch(0.982 0.010 82);
+  --sidebar-foreground: oklch(0.255 0.030 250);
   --sidebar-primary: oklch(0.66 0.19 44);
   --sidebar-primary-foreground: oklch(1.0 0 0);
-  --sidebar-accent: oklch(0.96 0.017 75);
-  --sidebar-accent-foreground: oklch(0.31 0.026 250);
-  --sidebar-border: oklch(0.92 0.012 82);
+  --sidebar-accent: oklch(0.91 0.045 75);
+  --sidebar-accent-foreground: oklch(0.255 0.030 250);
+  --sidebar-border: oklch(0.84 0.024 82);
   --sidebar-ring: oklch(0.68 0.19 45);
 
   /* Custom fitness tokens */
@@ -176,9 +176,9 @@
    SUNNY CARD — warm shadow, subtle border
    ============================================================ */
 .card-sunny {
-  background: color-mix(in oklab, var(--card) 96%, white);
-  border: 1px solid color-mix(in oklab, var(--border) 86%, white);
-  box-shadow: 0 2px 12px -2px oklch(0.48 0.05 250 / 0.08), 0 1px 3px oklch(0 0 0 / 0.035);
+  background: color-mix(in oklab, var(--card) 94%, oklch(0.92 0.025 82));
+  border: 1px solid color-mix(in oklab, var(--border) 94%, oklch(0.60 0.05 44));
+  box-shadow: 0 3px 16px -4px oklch(0.34 0.045 250 / 0.13), 0 1px 3px oklch(0 0 0 / 0.06);
   transition: box-shadow 200ms cubic-bezier(0.23, 1, 0.32, 1), transform 150ms cubic-bezier(0.23, 1, 0.32, 1), border-color 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .card-sunny:hover {
@@ -188,10 +188,10 @@
 
 /* Metric stat card */
 .stat-card {
-  background: color-mix(in oklab, var(--card) 98%, white);
+  background: color-mix(in oklab, var(--card) 93%, var(--muted));
   border-radius: calc(var(--radius) + 0.25rem);
-  border: 1px solid color-mix(in oklab, var(--border) 88%, white);
-  box-shadow: 0 3px 14px -5px oklch(0.32 0.04 250 / 0.14);
+  border: 1px solid color-mix(in oklab, var(--border) 92%, oklch(0.62 0.05 44));
+  box-shadow: 0 4px 16px -6px oklch(0.28 0.045 250 / 0.20);
   transition: box-shadow 200ms cubic-bezier(0.23, 1, 0.32, 1), transform 180ms cubic-bezier(0.23, 1, 0.32, 1), border-color 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .stat-card:hover {
@@ -218,8 +218,19 @@
 
 /* Sunny gradient background */
 .gradient-sunny {
-  background: linear-gradient(135deg, oklch(0.68 0.19 45 / 0.10) 0%, oklch(0.62 0.18 145 / 0.07) 50%, oklch(0.62 0.18 230 / 0.05) 100%);
+  background: linear-gradient(135deg, oklch(0.68 0.19 45 / 0.17) 0%, oklch(0.62 0.18 145 / 0.12) 50%, oklch(0.62 0.18 230 / 0.10) 100%);
 }
+
+/* Higher-contrast operational surfaces shared by dialogs, tables, and controls. */
+:root:not(.dark) .bg-muted\/20 { background-color: color-mix(in oklab, var(--muted) 50%, transparent) !important; }
+:root:not(.dark) .bg-muted\/40 { background-color: color-mix(in oklab, var(--muted) 72%, var(--card)) !important; }
+:root:not(.dark) .bg-muted\/50 { background-color: color-mix(in oklab, var(--muted) 86%, var(--card)) !important; }
+:root:not(.dark) .bg-muted\/60 { background-color: color-mix(in oklab, var(--muted) 90%, var(--card)) !important; }
+:root:not(.dark) .text-muted-foreground { color: var(--muted-foreground); }
+:root:not(.dark) input,
+:root:not(.dark) textarea,
+:root:not(.dark) [role="combobox"] { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--border) 60%, transparent); }
+:focus-visible { outline: 3px solid color-mix(in oklab, var(--ring) 55%, transparent); outline-offset: 2px; }
 
 /* Hero gradient banner */
 .hero-gradient {

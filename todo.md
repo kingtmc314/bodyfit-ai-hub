@@ -479,4 +479,10 @@
 - [x] Add Shoe Locker multi-select status, brand, usage-count, mileage and retirement filters with compatible sorting
 - [x] Make the running energy laboratory surface follow the app light/dark theme without changing its simulation interactions
 - [x] Apply a non-destructive Supabase migration and validate record preservation, desktop/mobile UX, tests, production build, checkpoint and GitHub push
-- [ ] Verify the Vercel production release for v3.14.2 after the GitHub deployment pipeline reports the new build
+- [x] Verify the Vercel production release for v3.14.2 after the GitHub deployment pipeline reports the new build
+
+## v3.14.3 Colour Contrast & Surface Clarity
+- [x] Strengthen the global light-theme surfaces, borders, muted labels and sidebar selection without losing the warm BodyFit identity
+- [x] Refine card, panel, table and focus treatments for clearer hierarchy across light and dark modes
+- [x] Restore historical workout visibility by removing the accidental 90-day client query limit while retaining server-side owner isolation
+- [ ] Verify desktop/mobile colour contrast, automated tests, production build, checkpoint, GitHub push and Vercel release

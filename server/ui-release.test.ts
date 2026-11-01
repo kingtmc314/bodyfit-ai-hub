@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.14.2");
+    expect(APP_VERSION).toBe("3.14.3");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -150,5 +150,24 @@ describe("v3.14.2 complete running record workflow", () => {
     expect(runningSource).toContain("shoeBrandFilters");
     expect(stylesheetSource).toContain(".running-lab");
     expect(labSource).toContain("running-lab");
+  });
+});
+
+describe("v3.14.3 colour contrast and surface clarity", () => {
+  const stylesheetSource = readFileSync(new URL("../client/src/index.css", import.meta.url), "utf8");
+  const workoutSource = readFileSync(new URL("../client/src/pages/Workout.tsx", import.meta.url), "utf8");
+
+  it("uses visibly distinct light-theme surfaces, borders and muted labels while preserving dark-theme support", () => {
+    expect(stylesheetSource).toContain("--background: oklch(0.952 0.016 82)");
+    expect(stylesheetSource).toContain("--border: oklch(0.815 0.027 82)");
+    expect(stylesheetSource).toContain("--muted-foreground: oklch(0.415 0.026 250)");
+    expect(stylesheetSource).toContain("Higher-contrast operational surfaces");
+    expect(stylesheetSource).toContain(":focus-visible");
+    expect(stylesheetSource).toContain(".dark {");
+  });
+
+  it("does not exclude older owner workout sessions through a client-side 90-day query window", () => {
+    expect(workoutSource).toContain("trpc.workout.getSessions.useQuery();");
+    expect(workoutSource).not.toContain("Date.now() - 90 * 86400000");
   });
 });
