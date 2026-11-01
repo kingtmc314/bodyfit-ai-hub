@@ -501,4 +501,4 @@
 - [x] Add interactive per-second pace, heart-rate and elevation charts for runs that include Garmin FIT/CSV time-series data
 - [x] Add GPX and TCX original running-file parsing with the same reviewed summary, laps and time-series data contract as FIT/CSV
 - [x] Replace cross-origin raw-file direct upload with a Vercel-compatible 2MB chunked upload flow; validate browser and server GPX upload, merge and parse without creating a run record
-- [ ] Verify the Garmin vision request using representative multi-screenshot inputs, then run tests, production build, checkpoint, GitHub push and Vercel release
+- [x] Verify the Garmin vision request using representative multi-screenshot inputs, then run tests, production build, checkpoint, GitHub push and Vercel release
