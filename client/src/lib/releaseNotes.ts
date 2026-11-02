@@ -36,6 +36,18 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.15.2",
+    status: "released",
+    title: "部署更新自動復原",
+    summary: "已發布：避免瀏覽器保留舊版頁面時，因 Vercel 更新替換延遲載入檔案而停留在錯誤畫面。",
+    changes: {
+      added: ["新增 Vite preload 與動態模組載入失敗的偵測及單次安全自動重新載入。"],
+      removed: ["錯誤頁不再顯示包含資產網址的技術堆疊內容。"],
+      improved: ["偵測到新版本部署時，使用者無須手動清除快取；系統會自行刷新一次以取得最新頁面。"],
+      revised: ["如網絡中斷或嚴格私隱設定令自動復原無法安全執行，畫面會顯示繁體中文說明及手動重新載入按鈕，並避免重載循環。"],
+    },
+  },
+  {
     version: "3.15.1",
     status: "released",
     title: "跑步資料顯示修復",

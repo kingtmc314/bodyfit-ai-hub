@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.15.1");
+    expect(APP_VERSION).toBe("3.15.2");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -30,6 +30,18 @@ describe("Premium feature page hierarchy", () => {
     expect(nutritionSource).toContain("todayHKString()");
     expect(workoutSource).toContain("selectedDaySessions");
     expect(sleepSource).toContain("latest?.sleepScore");
+  });
+});
+
+describe("deployment asset recovery", () => {
+  const mainSource = readFileSync(new URL("../client/src/main.tsx", import.meta.url), "utf8");
+  const errorBoundarySource = readFileSync(new URL("../client/src/components/ErrorBoundary.tsx", import.meta.url), "utf8");
+
+  it("installs stale Vite chunk recovery and retains a guarded manual retry", () => {
+    expect(mainSource).toContain("installStaleAssetRecovery()");
+    expect(errorBoundarySource).toContain("recoverFromStaleAsset(error)");
+    expect(errorBoundarySource).toContain("STALE_ASSET_RELOAD_KEY");
+    expect(errorBoundarySource).toContain("重新載入頁面");
   });
 });
 

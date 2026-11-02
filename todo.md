@@ -532,6 +532,11 @@
 - [x] Restore running history, Garmin health brief and energy-lab history queries; add a regression test for the actual `running_logs` schema
 - [x] Run full tests/typecheck/build, checkpoint and push to BodyFit-only GitHub main; then verify production tRPC responses against saved data and Vercel deployment
 
+## v3.15.2 Deployment asset recovery
+- [x] Detect Vite preload and dynamically imported-chunk failures caused by a deployment asset change, then safely reload once instead of trapping the user on an error page
+- [x] Retain a clear manual retry state after the single automatic reload, and add unit/release coverage for stale-asset error detection
+- [ ] Checkpoint, push to BodyFit-only GitHub main and verify Vercel production
+
 ## v3.14.7 Spreadsheet-style health data entry
 - [x] Create a reusable Excel-style grid that accepts multi-cell clipboard paste, provides row-level validation and allows corrections before batch submission
 - [x] Add transactional-style row result APIs and table-entry actions for steps/stairs, heart rate, blood pressure, sleep and body composition, with all calendar values interpreted as Hong Kong dates

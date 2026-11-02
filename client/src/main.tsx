@@ -6,7 +6,11 @@ import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
+import { installStaleAssetRecovery } from "./lib/assetRecovery";
 import "./index.css";
+
+// Recover a browser that kept an old app shell across a Vercel deployment.
+installStaleAssetRecovery();
 
 const queryClient = new QueryClient();
 
