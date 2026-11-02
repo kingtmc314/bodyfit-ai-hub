@@ -36,6 +36,18 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.15.3",
+    status: "in-progress",
+    title: "健康表格輸入可靠性修復",
+    summary: "身體成份、心跳及睡眠的 Excel 式批量輸入現已直接儲存至 Supabase，不再因 Google Sheets 設定影響新增。",
+    changes: {
+      added: ["新增逐行獨立 Supabase 批量儲存器；個別列失敗時，其餘有效列仍會繼續保存。", "新增三個批量 API 的實際寫入、讀取與清理端到端驗證。"],
+      removed: ["移除身體成份、心跳及睡眠批量輸入對 Google Sheets 的前置同步要求。"],
+      improved: ["保留 Excel／Google Sheets 複製貼上的表格體驗、香港日期驗證、逐行結果、CSV 匯入及圖片匯入入口。"],
+      revised: ["提交結果與頁面說明統一標示為直接 Supabase 儲存，不再顯示外部試算表同步待處理訊息。"],
+    },
+  },
+  {
     version: "3.15.2",
     status: "released",
     title: "部署更新自動復原",

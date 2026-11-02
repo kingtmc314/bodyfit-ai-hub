@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.15.2");
+    expect(APP_VERSION).toBe("3.15.3");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -332,14 +332,13 @@ describe("v3.14.7 spreadsheet health entry and complete-history energy analysis"
     expect(rowSource).toContain("normalizeHKDateTime");
   });
 
-  it("uses Sheets first for body, sleep and heart-rate batch entries, while keeping chart-compatible database mirrors", () => {
-    expect(routerSource).toContain("mirrorSheetFirstBatch");
-    expect(routerSource).toContain('mirrorSheetFirstBatch("body"');
-    expect(routerSource).toContain('mirrorSheetFirstBatch("sleep"');
-    expect(routerSource).toContain('mirrorSheetFirstBatch("heartrate"');
-    expect(sheetsSource).toContain("upsertRowsToSheetByDate");
-    expect(sheetsSource).toContain("Sleep Score");
-    expect(sheetsSource).toContain("Avg HR");
+  it("writes body, sleep and heart-rate spreadsheet batches directly to Supabase", () => {
+    expect(routerSource).toContain("persistSupabaseBatch");
+    expect(routerSource).not.toContain("mirrorSheetFirstBatch");
+    expect(routerSource).not.toContain("upsertRowsToSheetByDate");
+    expect(bodySource).toContain("直接儲存至 Supabase");
+    expect(sleepSource).toContain("直接儲存至 Supabase");
+    expect(heartRateSource).toContain("直接儲存至 Supabase");
   });
 
   it("calculates the energy lab from all stored running data and keeps its analysis surfaces high contrast", () => {

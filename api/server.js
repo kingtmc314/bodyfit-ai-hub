@@ -1908,7 +1908,7 @@ function parseRows(rows, type) {
 import { google } from "googleapis";
 var SPREADSHEET_ID = "16MzWHNx9Njww8Ml3eq5tJEspmSkHcWxmaI9I5xTqsEU";
 var SHEET_TABS = {
-  body: "Body Fitness",
+  body: "Body",
   sleep: "Sleep",
   heartrate: "Heart Rate",
   running: "Running"
@@ -1917,10 +1917,22 @@ var BODY_COLUMNS = ["Date", "Weight (kg)", "BMI", "Body Fat %", "Fat Mass (kg)",
 var SLEEP_COLUMNS = ["Date", "Sleep Score", "Resting HR", "Body Battery", "Pulse Ox (%)", "Respiration", "HRV", "Quality", "Duration (h)", "Source", "Bedtime", "Wake Time", "Notes"];
 var HR_COLUMNS = ["Date", "Resting HR", "High HR", "HRV", "Source", "Notes", "Avg HR"];
 var RUNNING_COLUMNS = ["Date", "Running Type", "Route Type", "Running Shoes", "Distance (km)", "Duration (h)", "Duration (min)", "Duration (sec)", "Avg Pace", "Best Pace", "Avg HR", "Max HR", "Avg Cadence", "Max Cadence", "Avg Stride Length (m)", "Avg Vertical Ratio", "Vertical Oscillation (cm)", "Avg Ground Contact Time (ms)", "Calories", "Temperature (\xB0C)", "Humidity (%)", "Notes", "Wind Speed (km/h)", "Feels Like (\xB0C)", "Precipitation (mm)", "Weather Condition", "Weather Location", "Weather Observed At (HK)", "Weather Source", "Garmin Details", "Laps"];
+function sheetRangeFor(type, cells) {
+  const sheetName = SHEET_TABS[type].replace(/'/g, "''");
+  return `'${sheetName}'!${cells}`;
+}
+var rangeFor = sheetRangeFor;
+function normaliseServiceAccountKey(value) {
+  const key = value.replace(/\r\n?/g, "\n").trim();
+  return key.replace("-----BEGINPRIVATEKEY-----", "-----BEGIN PRIVATE KEY-----").replace("-----ENDPRIVATEKEY-----", "-----END PRIVATE KEY-----");
+}
 function getAuth() {
   const credJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (!credJson) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON not set");
   const credentials = JSON.parse(credJson);
+  if (typeof credentials.private_key === "string") {
+    credentials.private_key = normaliseServiceAccountKey(credentials.private_key);
+  }
   return new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"]
@@ -2010,10 +2022,9 @@ async function writeRowsToSheet(type, rows) {
     await ensureSheetHeaders(type);
     const auth = getAuth();
     const sheets = google.sheets({ version: "v4", auth });
-    const sheetName = SHEET_TABS[type];
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${sheetName}!A:Z`,
+      range: rangeFor(type, "A:ZZ"),
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: rows.map((row) => toSheetValues(type, row))
@@ -2024,52 +2035,6 @@ async function writeRowsToSheet(type, rows) {
     throw err;
   }
 }
-async function upsertRowsToSheetByDate(type, rows) {
-  if (!rows.length) return;
-  try {
-    await ensureSheetHeaders(type);
-    const auth = getAuth();
-    const sheets = google.sheets({ version: "v4", auth });
-    const sheetName = SHEET_TABS[type];
-    const existing = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${sheetName}!A2:A`
-    });
-    const rowForDate = /* @__PURE__ */ new Map();
-    (existing.data.values ?? []).forEach((entry, index) => {
-      const date2 = String(entry[0] ?? "").trim();
-      if (date2) rowForDate.set(date2, index + 2);
-    });
-    const updates = [];
-    const appended = [];
-    rows.forEach((row) => {
-      const date2 = String(row.date ?? "").trim();
-      const existingRow = rowForDate.get(date2);
-      if (existingRow) {
-        updates.push({ range: `${sheetName}!A${existingRow}`, values: [toSheetValues(type, row)] });
-      } else {
-        appended.push(row);
-      }
-    });
-    if (updates.length) {
-      await sheets.spreadsheets.values.batchUpdate({
-        spreadsheetId: SPREADSHEET_ID,
-        requestBody: { valueInputOption: "USER_ENTERED", data: updates }
-      });
-    }
-    if (appended.length) {
-      await sheets.spreadsheets.values.append({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${sheetName}!A:Z`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: { values: appended.map((row) => toSheetValues(type, row)) }
-      });
-    }
-  } catch (err) {
-    console.error(`[Sheets] upsertRowsToSheetByDate(${type}) error:`, err?.message);
-    throw err;
-  }
-}
 async function writeRowToSheet(type, rowData) {
   await writeRowsToSheet(type, [rowData]);
 }
@@ -2077,12 +2042,11 @@ async function ensureSheetHeaders(type) {
   try {
     const auth = getAuth();
     const sheets = google.sheets({ version: "v4", auth });
-    const sheetName = SHEET_TABS[type];
     const headers = type === "body" ? BODY_COLUMNS : type === "sleep" ? SLEEP_COLUMNS : type === "heartrate" ? HR_COLUMNS : RUNNING_COLUMNS;
     try {
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${sheetName}!A1:ZZ1`
+        range: rangeFor(type, "A1:ZZ1")
       });
       const firstRow = response.data.values?.[0];
       if (firstRow && firstRow.length > 0) {
@@ -2097,7 +2061,7 @@ async function ensureSheetHeaders(type) {
           }
           await sheets.spreadsheets.values.update({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${sheetName}!${columnName}1`,
+            range: rangeFor(type, `${columnName}1`),
             valueInputOption: "USER_ENTERED",
             requestBody: { values: [headers.slice(firstRow.length)] }
           });
@@ -2107,12 +2071,12 @@ async function ensureSheetHeaders(type) {
     } catch {
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
-        requestBody: { requests: [{ addSheet: { properties: { title: sheetName } } }] }
+        requestBody: { requests: [{ addSheet: { properties: { title: SHEET_TABS[type] } } }] }
       }).catch(() => void 0);
     }
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${sheetName}!A1`,
+      range: rangeFor(type, "A1"),
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [headers] }
     });
@@ -2796,6 +2760,23 @@ function normalizeHKDate(value) {
   return null;
 }
 
+// server/supabaseBatch.ts
+async function persistSupabaseBatch(rows, persistRow) {
+  const results = [];
+  for (const { rowIndex, data } of rows) {
+    try {
+      results.push({ rowIndex, status: await persistRow(data) });
+    } catch (error) {
+      results.push({
+        rowIndex,
+        status: "failed",
+        message: error instanceof Error ? error.message : "\u672A\u80FD\u5132\u5B58\u81F3 Supabase"
+      });
+    }
+  }
+  return results;
+}
+
 // server/routers.ts
 import Papa2 from "papaparse";
 var OWNER_USER_ID = 2;
@@ -2831,24 +2812,6 @@ function decodeGarminChunk(base64) {
   const chunk = Buffer.from(normalized, "base64");
   if (!chunk.length || chunk.length > GARMIN_RAW_UPLOAD_CHUNK_BYTES) throw new Error("Garmin \u539F\u59CB\u6A94\u5206\u6BB5\u5927\u5C0F\u7121\u6548");
   return chunk;
-}
-async function mirrorSheetFirstBatch(sheetType, rows, mirrorRow) {
-  try {
-    await upsertRowsToSheetByDate(sheetType, rows.map(({ data }) => ({ ...data, source: "app_spreadsheet" })));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Google Sheets \u540C\u6B65\u5931\u6557";
-    return rows.map(({ rowIndex }) => ({ rowIndex, status: "failed", message: `\u672A\u5BEB\u5165\uFF1A${message}` }));
-  }
-  const results = [];
-  for (const { rowIndex, data } of rows) {
-    try {
-      results.push({ rowIndex, status: await mirrorRow(data) });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "\u8CC7\u6599\u5EAB\u93E1\u50CF\u5931\u6557";
-      results.push({ rowIndex, status: "synced", message: `\u8A66\u7B97\u8868\u5DF2\u540C\u6B65\uFF1B\u8CC7\u6599\u5EAB\u93E1\u50CF\u7A0D\u5F8C\u91CD\u8A66\uFF08${message}\uFF09` });
-    }
-  }
-  return results;
 }
 var CARDIO_EXERCISE_NAMES = [
   "Stationary Bike",
@@ -3685,9 +3648,9 @@ var bodyRouter = router({
   })).min(1).max(100) })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    return mirrorSheetFirstBatch("body", input.rows, async (row) => {
+    return persistSupabaseBatch(input.rows, async (row) => {
       const existing = await db.select({ id: bodyComposition.id }).from(bodyComposition).where(and(eq2(bodyComposition.userId, OWNER_USER_ID), eq2(bodyComposition.date, row.date))).limit(1);
-      const data = { ...row, userId: OWNER_USER_ID, source: "sheets" };
+      const data = { ...row, userId: OWNER_USER_ID, source: "app_spreadsheet" };
       if (existing[0]) {
         await db.update(bodyComposition).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq2(bodyComposition.id, existing[0].id));
         return "updated";
@@ -3769,9 +3732,9 @@ var heartRateRouter = router({
   })).min(1).max(100) })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    return mirrorSheetFirstBatch("heartrate", input.rows, async (row) => {
+    return persistSupabaseBatch(input.rows, async (row) => {
       const existing = await db.select({ id: heartRateLogs.id }).from(heartRateLogs).where(and(eq2(heartRateLogs.userId, OWNER_USER_ID), eq2(heartRateLogs.date, row.date))).limit(1);
-      const data = { ...row, userId: OWNER_USER_ID, source: "sheets" };
+      const data = { ...row, userId: OWNER_USER_ID, source: "app_spreadsheet" };
       if (existing[0]) {
         await db.update(heartRateLogs).set({ ...data, updatedAt: /* @__PURE__ */ new Date() }).where(eq2(heartRateLogs.id, existing[0].id));
         return "updated";
@@ -3898,13 +3861,13 @@ var sleepRouter = router({
   })).min(1).max(100) })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    return mirrorSheetFirstBatch("sleep", input.rows, async (row) => {
+    return persistSupabaseBatch(input.rows, async (row) => {
       const existing = await db.select({ id: sleepLogs.id }).from(sleepLogs).where(and(eq2(sleepLogs.userId, OWNER_USER_ID), eq2(sleepLogs.date, row.date))).limit(1);
       const { score, quality, duration, restingHr, ...rest } = row;
       const data = {
         ...rest,
         userId: OWNER_USER_ID,
-        source: "sheets",
+        source: "app_spreadsheet",
         sleepScore: score,
         sleepQuality: quality,
         sleepDuration: duration,

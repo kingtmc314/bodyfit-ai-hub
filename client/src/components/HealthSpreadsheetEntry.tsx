@@ -99,7 +99,11 @@ export default function HealthSpreadsheetEntry({
       setResults(nextResults);
       const succeeded = response.filter((result) => result.status !== "failed").length;
       if (succeeded) onSuccess();
-      toast.success(`已完成 ${succeeded} 行；可保留畫面檢視每行結果`);
+      if (succeeded) {
+        toast.success(`已儲存 ${succeeded} 行至 Supabase；可保留畫面檢視每行結果`);
+      } else {
+        toast.error("沒有資料列可以儲存，請查看每行錯誤提示");
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "批量輸入未能完成，請稍後重試");
     } finally {
@@ -184,7 +188,7 @@ export default function HealthSpreadsheetEntry({
                 <strong>{validRows.length}</strong> 行可提交{invalidRows.length ? `；${invalidRows.length} 行需要修正` : "；所有已輸入行均有效"}。
               </div>
               <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                {invalidRows.slice(0, 2).map((entry) => `第 ${entry.rowIndex + 1} 行：${entry.errors.join("；")}`).join("　") || "提交後會顯示每行新增、更新、同步或失敗的結果。"}
+                {invalidRows.slice(0, 2).map((entry) => `第 ${entry.rowIndex + 1} 行：${entry.errors.join("；")}`).join("　") || "提交後會顯示每行新增、更新或失敗的 Supabase 儲存結果。"}
               </div>
             </div>
           )}
@@ -195,7 +199,7 @@ export default function HealthSpreadsheetEntry({
               <div className="flex flex-wrap gap-2">
                 {Object.values(results).sort((a, b) => a.rowIndex - b.rowIndex).map((result) => (
                   <span key={result.rowIndex} className={result.status === "failed" ? "rounded-full bg-destructive/10 px-2 py-1 text-destructive" : "rounded-full bg-emerald-500/10 px-2 py-1 text-emerald-700 dark:text-emerald-300"}>
-                    第 {result.rowIndex + 1} 行：{result.status === "created" ? "已新增" : result.status === "updated" ? "已更新" : result.status === "synced" ? "已同步" : result.message || "失敗"}
+                    第 {result.rowIndex + 1} 行：{result.status === "created" ? "已新增" : result.status === "updated" ? "已更新" : result.status === "synced" ? "已同步" : "失敗"}{result.message ? ` · ${result.message}` : ""}
                   </span>
                 ))}
               </div>

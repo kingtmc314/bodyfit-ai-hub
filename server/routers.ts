@@ -18,12 +18,13 @@ import { nanoid } from "nanoid";
 import { buildGarminVisionBatches, buildGarminVisionContent, mergeGarminExtractions, parseGarminExtraction } from "./garminImport";
 import { todayHK, daysAgoHK, toHKDateString } from "./hkTime";
 import { parseRows, detectDataType, type ImportDataType } from "./csvImport";
-import { ensureSheetHeaders, writeRowToSheet, upsertRowsToSheetByDate, type SheetDataType } from "./sheetsService";
+import { ensureSheetHeaders, writeRowToSheet } from "./sheetsService";
 import { buildProgressionSuggestion } from "@shared/progression";
 import { buildHistoricalBackfillCandidates, summariseHistoricalBackfill, type BackfillScope } from "@shared/runningBackfill";
 import { buildDateChunks, fetchHistoricalWeatherForDate, fetchHistoricalWeatherRange, HONG_KONG_WEATHER_LOCATION, resolveWeatherLocation } from "./weatherService";
 import { parseGarminRawFile } from "./garminFileImport";
 import { normalizeHKDate, type SpreadsheetSubmitResult } from "@shared/healthSpreadsheet";
+import { persistSupabaseBatch } from "./supabaseBatch";
 import Papa from "papaparse";
 // Fixed owner user ID - no login required
 const OWNER_USER_ID = 2;
@@ -68,37 +69,6 @@ function decodeGarminChunk(base64: string) {
   const chunk = Buffer.from(normalized, "base64");
   if (!chunk.length || chunk.length > GARMIN_RAW_UPLOAD_CHUNK_BYTES) throw new Error("Garmin 原始檔分段大小無效");
   return chunk;
-}
-
-type SpreadsheetBatchRow<T extends Record<string, unknown>> = { rowIndex: number; data: T };
-
-/**
- * Keeps Body Fitness, Sleep and Heart Rate Sheets authoritative for table-style entry.
- * The database only mirrors rows that have first been accepted by Google Sheets.
- */
-async function mirrorSheetFirstBatch<T extends Record<string, unknown>>(
-  sheetType: SheetDataType,
-  rows: SpreadsheetBatchRow<T>[],
-  mirrorRow: (row: T) => Promise<"created" | "updated">,
-): Promise<SpreadsheetSubmitResult[]> {
-  try {
-    await upsertRowsToSheetByDate(sheetType as Exclude<SheetDataType, "running">, rows.map(({ data }) => ({ ...data, source: "app_spreadsheet" })));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Google Sheets 同步失敗";
-    return rows.map(({ rowIndex }) => ({ rowIndex, status: "failed", message: `未寫入：${message}` }));
-  }
-
-  const results: SpreadsheetSubmitResult[] = [];
-  for (const { rowIndex, data } of rows) {
-    try {
-      results.push({ rowIndex, status: await mirrorRow(data) });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "資料庫鏡像失敗";
-      // The spreadsheet remains the accepted source; expose the exact mirror failure to the user.
-      results.push({ rowIndex, status: "synced", message: `試算表已同步；資料庫鏡像稍後重試（${message}）` });
-    }
-  }
-  return results;
 }
 
 // Cardio exercise names (must match BUILT_IN_EXERCISES in Workout.tsx)
@@ -1101,11 +1071,11 @@ const bodyRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      return mirrorSheetFirstBatch("body", input.rows, async (row) => {
+      return persistSupabaseBatch(input.rows, async (row) => {
         const existing = await db.select({ id: bodyComposition.id }).from(bodyComposition)
           .where(and(eq(bodyComposition.userId, OWNER_USER_ID), eq(bodyComposition.date, row.date)))
           .limit(1);
-        const data = { ...row, userId: OWNER_USER_ID, source: "sheets" };
+        const data = { ...row, userId: OWNER_USER_ID, source: "app_spreadsheet" };
         if (existing[0]) {
           await db.update(bodyComposition).set({ ...data, updatedAt: new Date() }).where(eq(bodyComposition.id, existing[0].id));
           return "updated";
@@ -1209,11 +1179,11 @@ const heartRateRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      return mirrorSheetFirstBatch("heartrate", input.rows, async (row) => {
+      return persistSupabaseBatch(input.rows, async (row) => {
         const existing = await db.select({ id: heartRateLogs.id }).from(heartRateLogs)
           .where(and(eq(heartRateLogs.userId, OWNER_USER_ID), eq(heartRateLogs.date, row.date)))
           .limit(1);
-        const data = { ...row, userId: OWNER_USER_ID, source: "sheets" };
+        const data = { ...row, userId: OWNER_USER_ID, source: "app_spreadsheet" };
         if (existing[0]) {
           await db.update(heartRateLogs).set({ ...data, updatedAt: new Date() }).where(eq(heartRateLogs.id, existing[0].id));
           return "updated";
@@ -1366,7 +1336,7 @@ const sleepRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      return mirrorSheetFirstBatch("sleep", input.rows, async (row) => {
+      return persistSupabaseBatch(input.rows, async (row) => {
         const existing = await db.select({ id: sleepLogs.id }).from(sleepLogs)
           .where(and(eq(sleepLogs.userId, OWNER_USER_ID), eq(sleepLogs.date, row.date)))
           .limit(1);
@@ -1374,7 +1344,7 @@ const sleepRouter = router({
         const data = {
           ...rest,
           userId: OWNER_USER_ID,
-          source: "sheets",
+          source: "app_spreadsheet",
           sleepScore: score,
           sleepQuality: quality,
           sleepDuration: duration,

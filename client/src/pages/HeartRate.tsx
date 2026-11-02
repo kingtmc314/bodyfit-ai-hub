@@ -179,9 +179,9 @@ export default function HeartRate() {
         open={showSpreadsheet}
         onOpenChange={setShowSpreadsheet}
         title="表格式輸入心跳數據"
-        description="可從 Excel 或 Google Sheets 直接貼上多天的靜息、最高及平均心率與 HRV。系統先驗證數值，通過後先同步 Heart Rate Google Sheet，再更新頁面圖表。"
+        description="可從 Excel 或 Google Sheets 直接貼上多天的靜息、最高及平均心率與 HRV。系統先驗證香港日期和數值，通過後直接儲存至 Supabase，再更新頁面圖表。"
         columns={HEALTH_SPREADSHEET_COLUMNS.heartRate}
-        sourceLabel="先同步 Heart Rate Google Sheet"
+        sourceLabel="直接儲存至 Supabase"
         prepareRow={(row, rowIndex) => prepareHealthSpreadsheetRow("heartRate", row, rowIndex)}
         submitRows={(rows) => batchMutation.mutateAsync({ rows: rows as any }) as any}
         onSuccess={() => { utils.heartRate.getAll.invalidate(); utils.charts.heartRateHistory.invalidate(); }}

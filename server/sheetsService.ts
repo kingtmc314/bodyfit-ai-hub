@@ -2,9 +2,9 @@ import { google } from "googleapis";
 
 const SPREADSHEET_ID = "16MzWHNx9Njww8Ml3eq5tJEspmSkHcWxmaI9I5xTqsEU";
 
-// Sheet tab names matching kingsrunai Body Fitness data naming convention
+// Sheet tab names in the connected BodyFit health workbook.
 const SHEET_TABS = {
-  body: "Body Fitness",
+  body: "Body",
   sleep: "Sleep",
   heartrate: "Heart Rate",
   running: "Running",
@@ -21,10 +21,30 @@ const RUNNING_COLUMNS = ["Date", "Running Type", "Route Type", "Running Shoes", 
 
 export type SheetSyncResult = { rowIndex: number; status: "created" | "updated" };
 
+export function sheetRangeFor(type: SheetDataType, cells: string): string {
+  // A1 notation requires quotes around names containing spaces (e.g. Body Fitness).
+  const sheetName = SHEET_TABS[type].replace(/'/g, "''");
+  return `'${sheetName}'!${cells}`;
+}
+
+const rangeFor = sheetRangeFor;
+
+export function normaliseServiceAccountKey(value: string): string {
+  const key = value.replace(/\r\n?/g, "\n").trim();
+  // Some secret managers remove spaces in PEM separators. The base64 payload remains
+  // intact, so restore the standard Google service-account PKCS#8 separators.
+  return key
+    .replace("-----BEGINPRIVATEKEY-----", "-----BEGIN PRIVATE KEY-----")
+    .replace("-----ENDPRIVATEKEY-----", "-----END PRIVATE KEY-----");
+}
+
 function getAuth() {
   const credJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (!credJson) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON not set");
   const credentials = JSON.parse(credJson);
+  if (typeof credentials.private_key === "string") {
+    credentials.private_key = normaliseServiceAccountKey(credentials.private_key);
+  }
   return new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
@@ -35,11 +55,10 @@ export async function readSheetData(type: SheetDataType): Promise<Record<string,
   try {
     const auth = getAuth();
     const sheets = google.sheets({ version: "v4", auth });
-    const sheetName = SHEET_TABS[type];
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${sheetName}!A:Z`,
+      range: rangeFor(type, "A:ZZ"),
     });
 
     const rows = response.data.values;
@@ -148,10 +167,9 @@ export async function writeRowsToSheet(type: SheetDataType, rows: Record<string,
     await ensureSheetHeaders(type);
     const auth = getAuth();
     const sheets = google.sheets({ version: "v4", auth });
-    const sheetName = SHEET_TABS[type];
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${sheetName}!A:Z`,
+      range: rangeFor(type, "A:ZZ"),
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: rows.map((row) => toSheetValues(type, row)),
@@ -173,10 +191,9 @@ export async function upsertRowsToSheetByDate(type: Exclude<SheetDataType, "runn
     await ensureSheetHeaders(type);
     const auth = getAuth();
     const sheets = google.sheets({ version: "v4", auth });
-    const sheetName = SHEET_TABS[type];
     const existing = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${sheetName}!A2:A`,
+      range: rangeFor(type, "A2:A"),
     });
     const rowForDate = new Map<string, number>();
     (existing.data.values ?? []).forEach((entry, index) => {
@@ -190,7 +207,7 @@ export async function upsertRowsToSheetByDate(type: Exclude<SheetDataType, "runn
       const date = String(row.date ?? "").trim();
       const existingRow = rowForDate.get(date);
       if (existingRow) {
-        updates.push({ range: `${sheetName}!A${existingRow}`, values: [toSheetValues(type, row)] });
+        updates.push({ range: rangeFor(type, `A${existingRow}`), values: [toSheetValues(type, row)] });
       } else {
         appended.push(row);
       }
@@ -205,7 +222,7 @@ export async function upsertRowsToSheetByDate(type: Exclude<SheetDataType, "runn
     if (appended.length) {
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${sheetName}!A:Z`,
+      range: rangeFor(type, "A:ZZ"),
         valueInputOption: "USER_ENTERED",
         requestBody: { values: appended.map((row) => toSheetValues(type, row)) },
       });
@@ -224,13 +241,12 @@ export async function ensureSheetHeaders(type: SheetDataType): Promise<void> {
   try {
     const auth = getAuth();
     const sheets = google.sheets({ version: "v4", auth });
-    const sheetName = SHEET_TABS[type];
     const headers = type === "body" ? BODY_COLUMNS : type === "sleep" ? SLEEP_COLUMNS : type === "heartrate" ? HR_COLUMNS : RUNNING_COLUMNS;
 
     try {
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${sheetName}!A1:ZZ1`,
+        range: rangeFor(type, "A1:ZZ1"),
       });
       const firstRow = response.data.values?.[0];
       if (firstRow && firstRow.length > 0) {
@@ -246,7 +262,7 @@ export async function ensureSheetHeaders(type: SheetDataType): Promise<void> {
           }
           await sheets.spreadsheets.values.update({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${sheetName}!${columnName}1`,
+            range: rangeFor(type, `${columnName}1`),
             valueInputOption: "USER_ENTERED",
             requestBody: { values: [headers.slice(firstRow.length)] },
           });
@@ -258,14 +274,14 @@ export async function ensureSheetHeaders(type: SheetDataType): Promise<void> {
       // synchronizing full running metrics without manual Sheet preparation.
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
-        requestBody: { requests: [{ addSheet: { properties: { title: sheetName } } }] },
+        requestBody: { requests: [{ addSheet: { properties: { title: SHEET_TABS[type] } } }] },
       }).catch(() => undefined);
     }
 
     // Write headers
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${sheetName}!A1`,
+      range: rangeFor(type, "A1"),
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [headers] },
     });

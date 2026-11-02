@@ -537,6 +537,13 @@
 - [x] Retain a clear manual retry state after the single automatic reload, and add unit/release coverage for stale-asset error detection
 - [ ] Checkpoint, push to BodyFit-only GitHub main and verify Vercel production
 
+## v3.15.3 Supabase spreadsheet batch reliability
+- [x] Remove the Google Sheets pre-sync requirement from Body Composition, Heart Rate and Sleep spreadsheet batches; write validated rows directly to Supabase instead
+- [x] Verify all three batch APIs create, query and then clean up isolated Supabase test rows without any Google Sheets request
+- [x] Retain Excel/Google Sheets clipboard compatibility, per-row validation, plain-text paste, image import and CSV import entry points while making the actual record store Supabase
+- [x] Run full tests/typecheck/build and confirm the table UI clearly reports direct Supabase storage
+- [ ] Checkpoint, push to BodyFit-only GitHub main and verify the Vercel production batch APIs
+
 ## v3.14.7 Spreadsheet-style health data entry
 - [x] Create a reusable Excel-style grid that accepts multi-cell clipboard paste, provides row-level validation and allows corrections before batch submission
 - [x] Add transactional-style row result APIs and table-entry actions for steps/stairs, heart rate, blood pressure, sleep and body composition, with all calendar values interpreted as Hong Kong dates

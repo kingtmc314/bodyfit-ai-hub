@@ -226,9 +226,9 @@ export default function Sleep() {
         open={showSpreadsheet}
         onOpenChange={setShowSpreadsheet}
         title="表格式輸入睡眠數據"
-        description="直接貼上 Excel 或 Google Sheets 多行睡眠數據。所有日期按香港日曆解讀；成功行會先寫入 Sleep Google Sheet，再同步至睡眠趨勢與恢復分析。"
+        description="直接貼上 Excel 或 Google Sheets 多行睡眠數據。所有日期按香港日曆解讀；成功行會直接儲存至 Supabase，再同步至睡眠趨勢與恢復分析。"
         columns={HEALTH_SPREADSHEET_COLUMNS.sleep}
-        sourceLabel="先同步 Sleep Google Sheet"
+        sourceLabel="直接儲存至 Supabase"
         prepareRow={(row, rowIndex) => prepareHealthSpreadsheetRow("sleep", row, rowIndex)}
         submitRows={(rows) => batchMutation.mutateAsync({ rows: rows as any }) as any}
         onSuccess={() => utils.sleep.getAll.invalidate()}

@@ -172,9 +172,9 @@ export default function BodyComposition() {
         open={showSpreadsheet}
         onOpenChange={setShowSpreadsheet}
         title="表格式輸入身體成份"
-        description="從 Excel 或 Google Sheets 複製多行資料後直接貼上。每行先驗證日期和數值範圍，通過後會先寫入 Body Fitness Google Sheet，再同步至應用程式圖表。"
+        description="從 Excel 或 Google Sheets 複製多行資料後直接貼上。每行先驗證香港日期和數值範圍，通過後會直接儲存至 Supabase，並更新應用程式圖表。"
         columns={HEALTH_SPREADSHEET_COLUMNS.body}
-        sourceLabel="先同步 Body Fitness Google Sheet"
+        sourceLabel="直接儲存至 Supabase"
         prepareRow={(row, rowIndex) => prepareHealthSpreadsheetRow("body", row, rowIndex)}
         submitRows={(rows) => batchMutation.mutateAsync({ rows: rows as any }) as any}
         onSuccess={() => utils.body.getAll.invalidate()}
