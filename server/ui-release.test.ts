@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.15.3");
+    expect(APP_VERSION).toBe("3.15.4");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -253,6 +253,15 @@ describe("v3.14.5 Garmin vision reliability and time-series review", () => {
     expect(routerSource).toContain("validateGarminChunkKeys");
     expect(routerSource).toContain("Buffer.concat(chunks)");
     expect(storageSource).toContain("storageReadBuffer");
+  });
+
+  it("keeps a same-file retry path and actionable raw-file import guidance after transient upload failures", () => {
+    expect(rawImporterSource).toContain("MAX_CHUNK_ATTEMPTS");
+    expect(rawImporterSource).toContain("再次嘗試");
+    expect(rawImporterSource).toContain("describeGarminRawImportFailure");
+    expect(rawImporterSource).toContain("請先解壓 Garmin ZIP 檔");
+    expect(releaseNotesSource).toContain('version: "3.15.4"');
+    expect(releaseNotesSource).toContain("同檔再次嘗試");
   });
 
   it("makes the customer-facing release history match the visible version", () => {

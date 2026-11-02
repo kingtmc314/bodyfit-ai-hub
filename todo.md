@@ -544,6 +544,12 @@
 - [x] Run full tests/typecheck/build and confirm the table UI clearly reports direct Supabase storage
 - [x] Checkpoint, push to BodyFit-only GitHub main and verify the Vercel production batch APIs
 
+## v3.15.4 Garmin historical raw-file import reliability
+- [x] Verify the chunk-key contract accepts the actual hash-suffixed storage keys returned by each 2MB upload chunk; add a regression test to prevent a mismatch
+- [x] Complete local and production end-to-end verification for staged GPX parsing across two chunks without creating a running-log record
+- [x] Add per-chunk automatic retries, same-file retry after failure, and clear ZIP/format/size/network recovery guidance; pass full tests, typecheck and production builds
+- [ ] Save checkpoint, push to BodyFit-only GitHub main, and verify the v3.15.4 Vercel production deployment
+
 ## v3.14.7 Spreadsheet-style health data entry
 - [x] Create a reusable Excel-style grid that accepts multi-cell clipboard paste, provides row-level validation and allows corrections before batch submission
 - [x] Add transactional-style row result APIs and table-entry actions for steps/stairs, heart rate, blood pressure, sleep and body composition, with all calendar values interpreted as Hong Kong dates

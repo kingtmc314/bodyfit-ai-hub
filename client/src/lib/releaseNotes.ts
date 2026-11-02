@@ -36,6 +36,18 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.15.4",
+    status: "in-progress",
+    title: "Garmin 原始檔匯入可靠性",
+    summary: "改善舊有 Garmin FIT、CSV、GPX、TCX 活動檔的分段上載與失敗復原，並保留先核對、後儲存的流程。",
+    changes: {
+      added: ["每個 2MB 原始檔分段會在短暫網絡問題時自動重試最多三次。", "失敗後保留已選檔案，提供「再次嘗試」而不需要重新選檔。", "新增實際含雜湊的儲存 key、分段合併與 GPX 解析回歸／端到端驗證。"],
+      removed: ["無。"],
+      improved: ["明確辨識 25MB 上限、ZIP 壓縮檔、格式不支援、損壞活動檔及臨時網絡問題。", "上載失敗提示改為可行的 Garmin Connect 匯出與重試指引。"],
+      revised: ["活動資料仍必須由使用者核對後按「套用到這次跑步」及「儲存」才會新增跑步紀錄。"],
+    },
+  },
+  {
     version: "3.15.3",
     status: "in-progress",
     title: "健康表格輸入可靠性修復",
@@ -248,12 +260,13 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
     feature: "Garmin 匯入與逐秒資料",
     status: "released",
     summary: "從連續截圖或原始活動檔核對後匯入，保留可用的逐秒表現、GPS 與海拔資料。",
-    lastRevisedVersion: "3.14.6",
-    lastRevisedDateHK: "2026年11月1日（香港）",
+    lastRevisedVersion: "3.15.4",
+    lastRevisedDateHK: "2026年11月2日（香港）",
     history: [
       { version: "3.14.2", dateHK: "2026年11月1日", description: "新增 Garmin 多截圖合併匯入及核對流程。" },
       { version: "3.14.5", dateHK: "2026年11月1日", description: "改善多圖分批可靠性並支援 FIT、CSV、GPX、TCX 逐秒資料。" },
       { version: "3.14.6", dateHK: "2026年11月1日", description: "保存 GPS 座標並加入路線與坡度視覺化。" },
+      { version: "3.15.4", dateHK: "2026年11月2日", description: "加入每段自動重試、同檔再次嘗試及 ZIP／格式／網絡失敗指引，並完成正式站分段 GPX 實測。" },
     ],
   },
   {

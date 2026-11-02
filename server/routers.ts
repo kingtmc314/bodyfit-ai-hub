@@ -41,7 +41,7 @@ function garminRawFormatFromFilename(fileName: string): GarminRawFileFormat | nu
     : null;
 }
 
-function validateGarminChunkKeys(chunkKeys: string[], uploadId: string) {
+export function validateGarminChunkKeys(chunkKeys: string[], uploadId: string) {
   const prefix = `garmin-chunks/${OWNER_USER_ID}/${uploadId}/`;
   if (!chunkKeys.length || chunkKeys.length > MAX_GARMIN_RAW_UPLOAD_CHUNKS) throw new Error("Garmin 原始檔分段數量無效");
   for (let index = 0; index < chunkKeys.length; index += 1) {

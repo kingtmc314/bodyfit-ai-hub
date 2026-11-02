@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import GarminTimeSeriesChart from "@/components/GarminTimeSeriesChart";
+import { describeGarminRawImportFailure, type GarminRawImportFailure } from "@shared/garminRawImportStatus";
 
 type GarminSourceFormat = "FIT" | "CSV" | "GPX" | "TCX";
 
@@ -27,6 +28,9 @@ type UploadState = "idle" | "uploading" | "parsing";
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const CHUNK_BYTES = 2 * 1024 * 1024;
+const MAX_CHUNK_ATTEMPTS = 3;
+
+const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 
 function readChunkBase64(chunk: Blob) {
   return new Promise<string>((resolve, reject) => {
@@ -53,14 +57,20 @@ export default function GarminRawFileImporter({
   const [stagedSource, setStagedSource] = useState<GarminStagedSource | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [chunkProgress, setChunkProgress] = useState<{ current: number; total: number } | null>(null);
+  const [failure, setFailure] = useState<GarminRawImportFailure | null>(null);
   const uploadChunk = trpc.running.uploadGarminRawChunk.useMutation();
   const parse = trpc.running.parseGarminRawFile.useMutation();
   const isBusy = uploadChunk.isPending || parse.isPending || uploadState !== "idle";
 
-  const chooseFile = async (selected?: File) => {
-    if (!selected) return;
+  const importFile = async (selected: File) => {
+    setPreview(null);
+    setStagedSource(null);
+    setFailure(null);
     if (!/\.(fit|csv|gpx|tcx)$/i.test(selected.name)) {
-      toast.error("請選擇 Garmin FIT、CSV、GPX 或 TCX 原始檔");
+      const isZip = /\.zip$/i.test(selected.name);
+      toast.error(isZip ? "請先解壓 Garmin ZIP 檔" : "請選擇 Garmin FIT、CSV、GPX 或 TCX 原始檔", {
+        description: isZip ? "目前請從壓縮檔內選擇單次活動的 .fit、.csv、.gpx 或 .tcx 原始檔。" : undefined,
+      });
       return;
     }
     if (selected.size === 0) {
@@ -72,9 +82,6 @@ export default function GarminRawFileImporter({
       return;
     }
 
-    setFile(selected);
-    setPreview(null);
-    setStagedSource(null);
     const uploadId = createUploadId();
     const totalChunks = Math.ceil(selected.size / CHUNK_BYTES);
     const chunkKeys: string[] = [];
@@ -84,8 +91,19 @@ export default function GarminRawFileImporter({
         setChunkProgress({ current: chunkIndex + 1, total: totalChunks });
         const start = chunkIndex * CHUNK_BYTES;
         const base64 = await readChunkBase64(selected.slice(start, Math.min(start + CHUNK_BYTES, selected.size)));
-        const uploaded = await uploadChunk.mutateAsync({ uploadId, chunkIndex, base64 });
-        chunkKeys.push(uploaded.fileKey);
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= MAX_CHUNK_ATTEMPTS; attempt += 1) {
+          try {
+            const uploaded = await uploadChunk.mutateAsync({ uploadId, chunkIndex, base64 });
+            chunkKeys.push(uploaded.fileKey);
+            lastError = undefined;
+            break;
+          } catch (error) {
+            lastError = error;
+            if (attempt < MAX_CHUNK_ATTEMPTS) await wait(attempt * 700);
+          }
+        }
+        if (lastError) throw lastError;
       }
       setUploadState("parsing");
       setChunkProgress(null);
@@ -100,13 +118,20 @@ export default function GarminRawFileImporter({
       setStagedSource({ fileKey: reviewedPreview.rawFileKey, sourceFormat: reviewedPreview.sourceFormat });
       toast.success("已讀取 Garmin 原始檔，請核對下方跑步資料後儲存");
     } catch (error) {
-      toast.error("無法讀取 Garmin 原始檔", {
-        description: error instanceof Error ? error.message : "請確認檔案是由 Garmin 匯出的 FIT、CSV、GPX 或 TCX。",
-      });
+      const recoveredFailure = describeGarminRawImportFailure(error);
+      setFailure(recoveredFailure);
+      toast.error(recoveredFailure.title, { description: recoveredFailure.description });
     } finally {
       setUploadState("idle");
       setChunkProgress(null);
+      if (inputRef.current) inputRef.current.value = "";
     }
+  };
+
+  const chooseFile = async (selected?: File) => {
+    if (!selected) return;
+    setFile(selected);
+    await importFile(selected);
   };
 
   const clear = () => {
@@ -115,6 +140,7 @@ export default function GarminRawFileImporter({
     setStagedSource(null);
     setUploadState("idle");
     setChunkProgress(null);
+    setFailure(null);
     if (inputRef.current) inputRef.current.value = "";
   };
 
@@ -150,6 +176,22 @@ export default function GarminRawFileImporter({
         {file && <span className="max-w-44 truncate text-xs font-medium text-foreground">{file.name}</span>}
         {file && <button type="button" onClick={clear} disabled={isBusy} className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"><X className="h-3.5 w-3.5" />清除</button>}
       </div>
+      {failure && file && (
+        <div className="mt-3 rounded-xl border border-amber-300/70 bg-amber-50/80 p-3 text-xs dark:border-amber-400/20 dark:bg-amber-950/20">
+          <div className="flex gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
+            <div className="min-w-0 flex-1">
+              <p className="font-bold text-amber-900 dark:text-amber-100">{failure.title}</p>
+              <p className="mt-1 leading-5 text-amber-800 dark:text-amber-200">{failure.description}</p>
+              {failure.retryable && (
+                <Button type="button" size="sm" variant="outline" disabled={isBusy} onClick={() => importFile(file)} className="mt-2 h-8 border-amber-400/70 bg-card text-xs text-amber-800 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-950/50">
+                  <Activity className="mr-1.5 h-3.5 w-3.5" />再次嘗試
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {preview && (
         <div className="mt-3 rounded-xl border border-sky-200/80 bg-card/85 p-3 dark:border-sky-400/15">
           <div className="flex flex-wrap items-center justify-between gap-2">
