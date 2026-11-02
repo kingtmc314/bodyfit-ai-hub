@@ -36,6 +36,18 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.15.1",
+    status: "released",
+    title: "跑步資料顯示修復",
+    summary: "已發布：修正既有跑步資料表的讀取條件，恢復跑步歷史、Garmin 簡報及能量實驗室的已儲存資料。",
+    changes: {
+      added: ["新增跑步資料表 schema 回歸測試，防止再次使用不存在的欄位篩選舊有紀錄。"],
+      removed: ["移除 running_logs 讀取程序中不存在的 user_id 過濾條件。"],
+      improved: ["跑步紀錄分頁、Garmin 健康數據簡報及能量實驗室會重新使用全部 421 筆已儲存跑步歷史。"],
+      revised: ["身體成份、睡眠、心跳、飲食、健身、步數及血壓仍維持既有 user_id 資料範圍；沒有刪除或遷移任何健康紀錄。"],
+    },
+  },
+  {
     version: "3.15.0",
     status: "released",
     title: "Garmin 健康數據簡報",

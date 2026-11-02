@@ -527,6 +527,11 @@
 - [x] Test aggregation contracts, missing-data states, HK-time formatting, visualisation contracts and production builds
 - [x] Save checkpoint, push the combined v3.15.0 release to BodyFit-only GitHub main, and verify Vercel production
 
+## v3.15.1 Running data display regression fix
+- [x] Remove invalid `running_logs.user_id` filters while retaining all existing running records and all user-scoped filters on other health tables
+- [x] Restore running history, Garmin health brief and energy-lab history queries; add a regression test for the actual `running_logs` schema
+- [ ] Run full tests/typecheck/build, checkpoint and push to BodyFit-only GitHub main; then verify production tRPC responses against saved data and Vercel deployment
+
 ## v3.14.7 Spreadsheet-style health data entry
 - [x] Create a reusable Excel-style grid that accepts multi-cell clipboard paste, provides row-level validation and allows corrections before batch submission
 - [x] Add transactional-style row result APIs and table-entry actions for steps/stairs, heart rate, blood pressure, sleep and body composition, with all calendar values interpreted as Hong Kong dates

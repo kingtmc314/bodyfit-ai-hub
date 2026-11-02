@@ -2621,8 +2621,10 @@ const runningRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
+      // `running_logs` is the legacy personal activity table and has no user_id
+      // column. Do not apply the owner filter used by the other health tables.
       const rows = await db.execute(
-        sql`SELECT * FROM running_logs WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC, id DESC LIMIT ${input.limit}`
+        sql`SELECT * FROM running_logs ORDER BY date DESC, id DESC LIMIT ${input.limit}`
       );
       return (rows as any).rows ?? rows;
     }),
@@ -2639,7 +2641,8 @@ const runningRouter = router({
       const db = await getDb();
       if (!db) return { rows: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
 
-      const conditions = [sql`user_id = ${OWNER_USER_ID}`];
+      // See getLogs: running_logs predates user-scoped tables and has no user_id.
+      const conditions = [] as ReturnType<typeof sql>[];
       if (input.runningType !== "all") conditions.push(sql`running_type = ${input.runningType}`);
       if (input.search) {
         const pattern = `%${input.search}%`;
@@ -2650,7 +2653,7 @@ const runningRouter = router({
           OR COALESCE(notes, '') ILIKE ${pattern}
         )`);
       }
-      const whereClause = sql.join(conditions, sql` AND `);
+      const whereClause = conditions.length ? sql.join(conditions, sql` AND `) : sql`TRUE`;
       const orderBy = input.sort === "date_asc" ? sql`date ASC, id ASC`
         : input.sort === "distance_desc" ? sql`distance_km DESC NULLS LAST, date DESC, id DESC`
           : input.sort === "pace_asc" ? sql`
@@ -2772,7 +2775,6 @@ const runningRouter = router({
                  COALESCE(time_series::text LIKE '%"power"%', false) AS has_power_samples,
                  COALESCE(time_series::text LIKE '%"altitudeM"%', false) AS has_altitude_samples
           FROM running_logs
-          WHERE user_id = ${OWNER_USER_ID}
           ORDER BY date DESC, id DESC
         `),
         db.execute(sql`
@@ -2930,7 +2932,7 @@ const runningRouter = router({
                average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
                vertical_oscillation_cm, avg_ground_contact_time_ms, calories, garmin_details, laps, time_series
         FROM running_logs
-        WHERE id = ${input.id} AND user_id = ${OWNER_USER_ID}
+        WHERE id = ${input.id}
         LIMIT 1
       `);
       return ((result as any).rows ?? result)[0] ?? null;
@@ -3237,14 +3239,12 @@ const runningRouter = router({
         db.execute(sql`
           SELECT id, average_pace, average_heart_rate, maximum_heart_rate, distance_km, running_type, route_type, date
           FROM running_logs
-          WHERE user_id = ${OWNER_USER_ID}
-            AND NULLIF(TRIM(COALESCE(average_pace, '')), '') IS NOT NULL
+          WHERE NULLIF(TRIM(COALESCE(average_pace, '')), '') IS NOT NULL
           ORDER BY date ASC
         `),
         db.execute(sql`
           SELECT COALESCE(running_type, '未分類') AS running_type, COUNT(*) AS count
           FROM running_logs
-          WHERE user_id = ${OWNER_USER_ID}
           GROUP BY COALESCE(running_type, '未分類')
           ORDER BY count DESC, running_type ASC
         `),
