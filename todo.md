@@ -548,7 +548,7 @@
 - [x] Verify the chunk-key contract accepts the actual hash-suffixed storage keys returned by each 2MB upload chunk; add a regression test to prevent a mismatch
 - [x] Complete local and production end-to-end verification for staged GPX parsing across two chunks without creating a running-log record
 - [x] Add per-chunk automatic retries, same-file retry after failure, and clear ZIP/format/size/network recovery guidance; pass full tests, typecheck and production builds
-- [ ] Save checkpoint, push to BodyFit-only GitHub main, and verify the v3.15.4 Vercel production deployment
+- [x] Save checkpoint, push to BodyFit-only GitHub main, and verify the v3.15.4 Vercel production deployment and live `3.15.4` asset
 
 ## v3.14.7 Spreadsheet-style health data entry
 - [x] Create a reusable Excel-style grid that accepts multi-cell clipboard paste, provides row-level validation and allows corrections before batch submission
