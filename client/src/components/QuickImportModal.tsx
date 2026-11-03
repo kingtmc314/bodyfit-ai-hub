@@ -1,13 +1,14 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Camera, FileSpreadsheet, Upload, Loader2, CheckCircle2, X, AlertCircle } from "lucide-react";
-import { todayHKString } from "@/lib/hkTime";
+import { prepareReportPhoto, type PreparedReportPhoto } from "@/lib/prepareReportPhoto";
+import InBodyReportImporter from "@/components/InBodyReportImporter";
 
 export type ImportDataType = "body" | "heartrate" | "sleep";
 
@@ -53,22 +54,21 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [extractedData, setExtractedData] = useState<any>(null);
-  const [selectedDate, setSelectedDate] = useState(todayHKString());
+  const [selectedDate, setSelectedDate] = useState("");
+  const [preparing, setPreparing] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const requestId = useRef(0);
+  const preparedPhoto = useRef<PreparedReportPhoto | null>(null);
+  const selectedFile = useRef<File | null>(null);
+  const busy = useRef(false);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => () => { requestId.current += 1; }, []);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
 
-  const extractMutation = trpc.imageImport.extract.useMutation({
-    onSuccess: (data) => {
-      setExtractedData(data);
-      // If the AI detected a date, use it
-      if (data.date) setSelectedDate(data.date);
-    },
-    onError: (err) => {
-      toast.error(`AI 提取失敗: ${err.message}`);
-    },
-  });
-
+  const extractMutation = trpc.imageImport.extract.useMutation();
   const saveMutation = trpc.imageImport.save.useMutation({
     onSuccess: () => {
       toast.success(`✅ 已儲存圖片中的健康數據！`);
@@ -83,27 +83,58 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
     },
   });
 
-  const handleFile = useCallback((file: File) => {
-    if (!file.type.startsWith("image/")) {
-      toast.error("請上傳圖片檔案");
-      return;
+  async function extractPhoto(file: File, id: number) {
+    busy.current = true;
+    setError(null);
+    setPreparing(!preparedPhoto.current);
+    setExtracting(true);
+    try {
+      const photo = preparedPhoto.current ?? await prepareReportPhoto(file);
+      if (id !== requestId.current) return;
+      preparedPhoto.current = photo;
+      setImageBase64(photo.base64);
+      setImagePreviewUrl(`data:${photo.mimeType};base64,${photo.base64}`);
+      setPreparing(false);
+      const data = await extractMutation.mutateAsync({
+        base64: photo.base64, mimeType: photo.mimeType, dataType,
+      });
+      if (id !== requestId.current) return;
+      setExtractedData(data);
+      const date = "date" in data ? data.date : null;
+      setSelectedDate(typeof date === "string" ? date : "");
+    } catch (cause) {
+      if (id === requestId.current) setError(cause instanceof Error ? cause.message : "未能處理相片，請重試或改選 JPEG 相片。");
+    } finally {
+      if (id === requestId.current) {
+        busy.current = false;
+        setPreparing(false);
+        setExtracting(false);
+      }
     }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("圖片必須小於 10MB");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      const base64 = result.split(",")[1];
-      setImageBase64(base64);
-      setImagePreviewUrl(result);
-      setExtractedData(null);
-      extractMutation.mutate({ base64, mimeType: file.type, dataType });
-    };
-    reader.readAsDataURL(file);
-  }, [dataType, extractMutation]);
-
+  }
+  const handleFile = (file: File) => {
+    const id = ++requestId.current;
+    selectedFile.current = file;
+    preparedPhoto.current = null;
+    setImageBase64(null);
+    setImagePreviewUrl(null);
+    setExtractedData(null);
+    setSelectedDate("");
+    void extractPhoto(file, id);
+  };
+  const clearPhoto = () => {
+    requestId.current += 1;
+    selectedFile.current = null;
+    preparedPhoto.current = null;
+    busy.current = false;
+    setImageBase64(null);
+    setImagePreviewUrl(null);
+    setExtractedData(null);
+    setSelectedDate("");
+    setPreparing(false);
+    setExtracting(false);
+    setError(null);
+  };
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
@@ -112,7 +143,7 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
   }, [handleFile]);
 
   const handleSave = () => {
-    if (!extractedData || !imageBase64) return;
+    if (!extractedData || !imageBase64 || !selectedDate || busy.current || saveMutation.isPending) return;
     const dt = (extractedData.detectedType && extractedData.detectedType !== "unknown" ? extractedData.detectedType : dataType) as "body" | "sleep" | "heartrate" | "nutrition";
     saveMutation.mutate({
       dataType: dt,
@@ -135,7 +166,7 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
   const renderExtractedFields = () => {
     if (!extractedData) return null;
     const fields = getRelevantFields();
-    const entries = Object.entries(fields).filter(([, v]) => v != null && v !== 0);
+    const entries = Object.entries(fields).filter(([, v]) => v != null);
 
     if (entries.length === 0) {
       // Try showing all non-null fields across all sections
@@ -143,7 +174,7 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
       for (const section of ["body", "sleep", "heartrate", "nutrition"] as const) {
         if (extractedData[section]) {
           Object.entries(extractedData[section]).forEach(([k, v]) => {
-            if (v != null && v !== 0) allFields.push([k, v as number]);
+            if (v != null) allFields.push([k, v as number]);
           });
         }
       }
@@ -192,7 +223,7 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
     if (!extractedData) return false;
     for (const section of ["body", "sleep", "heartrate", "nutrition"] as const) {
       if (extractedData[section]) {
-        const hasValues = Object.values(extractedData[section]).some((v) => v != null && v !== 0);
+        const hasValues = Object.values(extractedData[section]).some((v) => v != null);
         if (hasValues) return true;
       }
     }
@@ -216,7 +247,8 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
             <img src={imagePreviewUrl} alt="Preview" className="max-h-40 max-w-full rounded-lg mx-auto object-contain" />
             <button
               className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs"
-              onClick={(e) => { e.stopPropagation(); setImageBase64(null); setImagePreviewUrl(null); setExtractedData(null); }}
+              aria-label="移除相片"
+              onClick={(e) => { e.stopPropagation(); clearPhoto(); }}
             >
               <X className="w-3 h-3" />
             </button>
@@ -228,14 +260,29 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
             <p className="text-xs text-muted-foreground">支援 Garmin、Apple Health、體脂秤截圖</p>
           </div>
         )}
-        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+        <input ref={fileInputRef} aria-label="從相簿選取圖片" type="file" accept="image/*,.heic,.heif" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) handleFile(f); }} />
+        <input ref={cameraInputRef} aria-label="拍攝圖片" type="file" accept="image/*,.heic,.heif" capture="environment" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) handleFile(f); }} />
       </div>
 
+      <div className="grid grid-cols-2 gap-2">
+        <Button variant="outline" className="gap-2" disabled={saveMutation.isPending} onClick={() => cameraInputRef.current?.click()}><Camera className="w-4 h-4" /> 拍攝相片</Button>
+        <Button variant="outline" disabled={saveMutation.isPending} onClick={() => fileInputRef.current?.click()}>從相簿選取</Button>
+      </div>
+      <p className="text-xs text-muted-foreground">保留整張圖片並先在裝置壓縮成安全大小的 JPEG；辨識後需核對日期及數據，確認才會儲存。</p>
+      {error && (
+        <div role="alert" className="space-y-2 rounded-lg bg-amber-50 dark:bg-amber-950/20 p-3 text-sm">
+          <p className="break-words">{error}</p>
+          <p>相片已保留，可重試辨識，或改選清晰的 JPEG 相片。</p>
+          <Button variant="outline" disabled={extracting} onClick={() => {
+            if (selectedFile.current && !busy.current) void extractPhoto(selectedFile.current, ++requestId.current);
+          }}>重試辨識</Button>
+        </div>
+      )}
       {/* Extracting State */}
-      {extractMutation.isPending && (
+      {extracting && (
         <div className="flex items-center gap-3 p-3 bg-primary/5 rounded-lg">
           <Loader2 className="w-4 h-4 animate-spin text-primary" />
-          <span className="text-sm">AI 正在分析圖片…</span>
+          <span role="status" className="text-sm">{preparing ? "正在壓縮整張圖片…" : "AI 正在分析圖片…"}</span>
         </div>
       )}
 
@@ -246,18 +293,21 @@ function PhotoImportTab({ dataType, onSuccess, onClose }: { dataType: ImportData
       {extractedData && (
         <div className="space-y-3 pt-2 border-t border-border">
           <div className="flex items-center gap-3">
-            <label className="text-sm font-medium w-16 flex-shrink-0">日期</label>
+            <label htmlFor="quick-import-date" className="text-sm font-medium w-16 flex-shrink-0">日期</label>
             <Input
+              id="quick-import-date"
               type="date"
+              required
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
               className="flex-1"
             />
           </div>
+          {!selectedDate && <p className="text-sm text-amber-600">未能確認圖片日期，請先選擇正確日期才儲存。</p>}
           <Button
             className="w-full gap-2"
             onClick={handleSave}
-            disabled={saveMutation.isPending || !hasExtractedData}
+            disabled={saveMutation.isPending || extracting || !hasExtractedData || !selectedDate}
           >
             {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
             儲存至 {DATA_TYPE_LABELS[dataType].zh}
@@ -401,6 +451,17 @@ function CsvImportTab({ dataType, onSuccess, onClose }: { dataType: ImportDataTy
 // ─── Main Modal ────────────────────────────────────────────────────────────────
 export default function QuickImportModal({ open, onClose, dataType, onSuccess }: QuickImportModalProps) {
   const label = DATA_TYPE_LABELS[dataType];
+  const [mode, setMode] = useState<"inbody" | "photo" | "csv">("inbody");
+  useEffect(() => { if (!open) setMode("inbody"); }, [open, dataType]);
+  if (dataType === "body" && mode === "inbody") {
+    return <InBodyReportImporter
+      open={open}
+      onOpenChange={next => { if (!next) onClose(); }}
+      onSaved={() => { onSuccess?.(); onClose(); }}
+      onGenericImport={() => setMode("photo")}
+      onCsvImport={() => setMode("csv")}
+    />;
+  }
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -410,8 +471,10 @@ export default function QuickImportModal({ open, onClose, dataType, onSuccess }:
             <span className={`w-2.5 h-2.5 rounded-full ${label.color}`} />
             匯入 {label.zh}
           </DialogTitle>
+          <DialogDescription className="sr-only">選取相片或 CSV，核對預覽後確認儲存。</DialogDescription>
         </DialogHeader>
-        <Tabs defaultValue="photo">
+        {dataType === "body" && <Button variant="outline" onClick={() => setMode("inbody")}>返回 InBody 紙本報告</Button>}
+        <Tabs value={mode === "csv" ? "csv" : "photo"} onValueChange={value => setMode(value as "photo" | "csv")}>
           <TabsList className="w-full">
             <TabsTrigger value="photo" className="flex-1 gap-1.5">
               <Camera className="w-3.5 h-3.5" /> 照片匯入

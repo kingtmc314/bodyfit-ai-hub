@@ -13,12 +13,14 @@
  *     onExtracted={(fields) => { setForm(f => ({ ...f, ...fields })); }}
  *   />
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Camera, Loader2, CheckCircle2, AlertCircle, X, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { prepareReportPhoto, type PreparedReportPhoto } from "@/lib/prepareReportPhoto";
+import { normalizeTRPCTransportError } from "@/lib/apiResponseGuard";
 
 export type ScreenshotDataType = "running" | "steps" | "body" | "sleep" | "heartrate";
 
@@ -142,14 +144,22 @@ export default function ScreenshotImporter({ dataType, onExtracted, className }:
   const cameraRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<{ fields: Record<string, string>; confidence: string; notes: string } | null>(null);
   const [applied, setApplied] = useState(false);
+  const [prepared, setPrepared] = useState<PreparedReportPhoto | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const request = useRef(0);
+  useEffect(() => () => { request.current += 1; }, []);
+  const extractMutation = trpc.imageImport.extract.useMutation();
+  const busy = preparing || extractMutation.isPending;
 
-  const extractMutation = trpc.imageImport.extract.useMutation({
-    onSuccess: (data) => {
+  const extractPrepared = async (photo: PreparedReportPhoto, token: number) => {
+    try {
+      const data = await extractMutation.mutateAsync({ base64: photo.base64, mimeType: photo.mimeType, dataType });
+      if (token !== request.current) return;
       const fields = toFormFields(dataType, data as Record<string, unknown>);
       const nonEmpty = Object.keys(fields).filter(k => fields[k] !== "" && fields[k] != null);
       if (nonEmpty.length === 0) {
-        toast.error("AI 未能從截圖中識別到相關數據，請嘗試更清晰的截圖");
-        return;
+        throw new Error("AI 未能從截圖中識別到相關數據，請嘗試更清晰的截圖");
       }
       setPreview({
         fields,
@@ -157,23 +167,30 @@ export default function ScreenshotImporter({ dataType, onExtracted, className }:
         notes: (data as any).notes ?? "",
       });
       setApplied(false);
-    },
-    onError: (err) => {
-      toast.error("截圖分析失敗：" + err.message);
-    },
-  });
-
-  const handleFile = (file: File) => {
-    if (!file.type.startsWith("image/")) {
-      toast.error("請上傳圖片檔案");
-      return;
+      setError(null);
+    } catch (err) {
+      if (token !== request.current) return;
+      const message = normalizeTRPCTransportError(err).message;
+      setError(message);
+      toast.error("截圖分析失敗：" + message);
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const base64 = (e.target?.result as string).split(",")[1];
-      extractMutation.mutate({ base64, mimeType: file.type, dataType });
-    };
-    reader.readAsDataURL(file);
+  };
+
+  const handleFile = async (file: File) => {
+    const token = ++request.current;
+    setPreview(null); setApplied(false); setError(null); setPrepared(null); setPreparing(true);
+    try {
+      const photo = await prepareReportPhoto(file);
+      if (token !== request.current) return;
+      setPrepared(photo); setPreparing(false);
+      await extractPrepared(photo, token);
+    } catch (err) {
+      if (token !== request.current) return;
+      const message = normalizeTRPCTransportError(err).message;
+      setError(message); toast.error(message);
+    } finally {
+      if (token === request.current) setPreparing(false);
+    }
   };
 
   const handleApply = () => {
@@ -184,8 +201,10 @@ export default function ScreenshotImporter({ dataType, onExtracted, className }:
   };
 
   const handleDismiss = () => {
+    request.current += 1;
     setPreview(null);
     setApplied(false);
+    setPrepared(null); setError(null); setPreparing(false);
   };
 
   return (
@@ -214,28 +233,33 @@ export default function ScreenshotImporter({ dataType, onExtracted, className }:
           variant="outline"
           size="sm"
           className="gap-1.5 text-xs h-8 border-dashed border-primary/40 text-primary hover:bg-primary/5"
-          disabled={extractMutation.isPending}
+          disabled={busy}
           onClick={() => fileRef.current?.click()}
         >
-          {extractMutation.isPending ? (
+          {busy ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
           ) : (
             <Sparkles className="w-3.5 h-3.5" />
           )}
-          {extractMutation.isPending ? "AI 分析中…" : "從截圖讀取數據"}
+          {preparing ? "正在壓縮相片…" : extractMutation.isPending ? "AI 分析中…" : "從截圖讀取數據"}
         </Button>
         <Button
           type="button"
           variant="ghost"
           size="sm"
           className="gap-1 text-xs h-8 text-muted-foreground"
-          disabled={extractMutation.isPending}
+          disabled={busy}
           onClick={() => cameraRef.current?.click()}
         >
           <Camera className="w-3.5 h-3.5" />
           拍照
         </Button>
       </div>
+
+      {error && <div role="alert" className="mt-2 space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+        <p>{error}</p>
+        {prepared && <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void extractPrepared(prepared, ++request.current)}>重試分析（不用重新上載）</Button>}
+      </div>}
 
       {/* Extracted preview panel */}
       {preview && (

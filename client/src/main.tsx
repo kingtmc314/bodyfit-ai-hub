@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
 import { installStaleAssetRecovery } from "./lib/assetRecovery";
+import { normalizeTRPCTransportError, validateTRPCResponse } from "./lib/apiResponseGuard";
 import "./index.css";
 
 // Recover a browser that kept an old app shell across a Vercel deployment.
@@ -48,11 +49,16 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
-      fetch(input, init) {
-        return globalThis.fetch(input, {
-          ...(init ?? {}),
-          credentials: "include",
-        });
+      async fetch(input, init) {
+        try {
+          const response = await globalThis.fetch(input, {
+            ...(init ?? {}),
+            credentials: "include",
+          });
+          return validateTRPCResponse(response);
+        } catch (error) {
+          throw normalizeTRPCTransportError(error);
+        }
       },
     }),
   ],

@@ -36,6 +36,18 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.15.9",
+    status: "released",
+    title: "iPhone 相片匯入及統一 InBody 入口修復",
+    summary: "修正舊照片匯入沒有壓縮而超過 Vercel 限制，Safari 只顯示 pattern 錯誤的問題；身體成份的匯入與影相報告統一為可選範本的入口。",
+    changes: {
+      added: ["相片匯入增加原圖全框 JPEG 壓縮、後置相機、相簿及不用重新上載的辨識重試；身體成份頁內顯示版本，方便在 Life Hub 嵌入畫面核對。"],
+      removed: ["移除一般照片直接傳送大型原檔 base64 的行為，以及把私有相對圖片網址直接交給外部視覺模型的錯誤。"],
+      improved: ["按匯入預設開啟 InBody 紙本範本，同時保留一般截圖、CSV、手動及表格輸入；缺少報告日期時必須核對，零值不再被隱藏。", "辨識前驗證圖片位元組及容量；413 或非 JSON 回應顯示可操作中文指引，不再只回傳 Safari pattern 訊息。"],
+      revised: ["一般照片及表單內截圖入口沿用整頁壓縮；辨識仍只作核對預覽，確認前不新增健康紀錄。", "保留現有 Supabase 保存、歷史紀錄及 InBody 相片去重，不更改跑步、地圖或 FIT 分析資料。"],
+    },
+  },
+  {
     version: "3.15.8",
     status: "released",
     title: "InBody 影相範本與 FIT 連續數據分析",

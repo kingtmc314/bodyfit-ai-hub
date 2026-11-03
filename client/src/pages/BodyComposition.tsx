@@ -13,7 +13,7 @@ import { Plus, Scale, Trash2, Edit2, Loader2, TrendingUp, TrendingDown, Minus, U
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import QuickImportModal from "@/components/QuickImportModal";
 import ScreenshotImporter from "@/components/ScreenshotImporter";
-import InBodyReportImporter from "@/components/InBodyReportImporter";
+import { APP_VERSION } from "@/lib/appMeta";
 import InBodyReportDetails from "@/components/InBodyReportDetails";
 import HealthSpreadsheetEntry from "@/components/HealthSpreadsheetEntry";
 import { HEALTH_SPREADSHEET_COLUMNS, prepareHealthSpreadsheetRow } from "@/lib/healthSpreadsheetRows";
@@ -44,7 +44,6 @@ export default function BodyComposition() {
   const [showDialog, setShowDialog] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showSpreadsheet, setShowSpreadsheet] = useState(false);
-  const [showInBody, setShowInBody] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
 
@@ -152,12 +151,12 @@ export default function BodyComposition() {
       <div className="hero-gradient rounded-2xl p-5 text-white">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <h1 className="text-xl font-extrabold text-white">{t('body.title')}</h1>
+            <h1 className="text-xl font-extrabold text-white">{t('body.title')} <Badge variant="outline" className="border-white/40 text-white text-xs align-middle">v{APP_VERSION}</Badge></h1>
             <p className="text-white/70 text-sm mt-0.5">{t('body.subtitle')}</p>
           </div>
           {isOwner && (
             <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => setShowInBody(true)}>
+              <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => setShowImport(true)}>
                 <Camera className="w-4 h-4" /> 影相報告
               </Button>
               <Button size="sm" variant="outline" className="gap-2 bg-white/20 border-white/40 text-white hover:bg-white/30" onClick={() => setShowImport(true)}>
@@ -174,12 +173,6 @@ export default function BodyComposition() {
         </div>
       </div>
       <QuickImportModal open={showImport} onClose={() => setShowImport(false)} dataType="body" onSuccess={() => utils.body.getAll.invalidate()} />
-      <InBodyReportImporter
-        open={showInBody}
-        onOpenChange={setShowInBody}
-        onSaved={() => { void utils.body.invalidate(); }}
-        onGenericImport={() => { setShowInBody(false); setEditEntry(null); setForm({ ...defaultForm, date: todayHKString() }); setShowDialog(true); }}
-      />
       <HealthSpreadsheetEntry
         open={showSpreadsheet}
         onOpenChange={setShowSpreadsheet}
@@ -380,7 +373,7 @@ export default function BodyComposition() {
           <DialogHeader><DialogTitle>{editEntry ? "Edit Body Metrics" : "Log Body Metrics"}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              {!editEntry && <div className="mb-3 space-y-1.5"><label className="text-xs font-semibold text-muted-foreground">輸入範本</label><Select value="general" onValueChange={(value) => { if (value === "inbody") { setShowDialog(false); setShowInBody(true); } }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="general">一般手動／身體數據截圖</SelectItem><SelectItem value="inbody">InBody 紙本報告 · 影相辨識</SelectItem></SelectContent></Select></div>}
+              {!editEntry && <div className="mb-3 space-y-1.5"><label className="text-xs font-semibold text-muted-foreground">輸入範本</label><Select value="general" onValueChange={(value) => { if (value === "inbody") { setShowDialog(false); setShowImport(true); } }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="general">一般手動／身體數據截圖</SelectItem><SelectItem value="inbody">InBody 紙本報告 · 影相辨識</SelectItem></SelectContent></Select></div>}
               <ScreenshotImporter
                 dataType="body"
                 onExtracted={(fields) => setForm((p: any) => ({ ...p, ...fields }))}

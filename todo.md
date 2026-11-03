@@ -591,3 +591,10 @@
 - [x] Include compact full-history continuous evidence in running AI analysis/race predictions and qualified continuous pace in compatible energy-lab calibration (FIT evidence prioritized within prompt capacity; all-history/monthly features retained and omissions disclosed)
 - [x] Verify no-data/manual-history fallback, all-history coverage, prediction evidence UI and existing running dynamics/Sheets compatibility with regression tests (291 tests; real all-history API complete; live read-only AI finished in 35.43s with all eight sections, FIT evidence and limitations; bounded 45s AI deadline within 60s Vercel limit)
 - [x] Verify FIT all-history evidence and InBody template in Vercel production after release (complete 421/421 history; 10 FIT sources present at verification; real production AI completed in 34.87s with FIT evidence and limitations; no test health writes)
+
+## v3.15.9 iPhone generic photo import reliability
+- [x] Reproduce exact legacy input: original 3,672,029-byte photo produces 4,896,110-byte JSON, Vercel 413 non-JSON FUNCTION_PAYLOAD_TOO_LARGE; no health writes
+- [x] Bound generic screenshot/photo payloads with whole-frame JPEG preparation and guard 413/non-JSON responses before tRPC parsing; fix external vision's relative private-storage image URL with validated inline image data
+- [x] Unify body Import/Photo Report entry around InBody default, retain general screenshot and CSV templates, add rear camera/retry/date safeguards and visible embedded-page version
+- [x] Validate actual original photo through the same generic path without saving health records (1,660,870-byte normalized request, HTTP200 JSON in13.66s, correct printed date and review); retain real-photo InBody coverage from v3.15.8 plus unified-entry DOM tests; all306 tests, typecheck, web/Vercel builds and visible v3.15.9 pass
+- [ ] Save checkpoint, immediately push BodyFit GitHub main, verify Vercel production and final release record

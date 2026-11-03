@@ -43,6 +43,7 @@ export interface InBodyReportImporterProps {
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
   onGenericImport?: () => void;
+  onCsvImport?: () => void;
 }
 
 type MetricKey = keyof InBodyReport["metrics"];
@@ -147,6 +148,7 @@ export default function InBodyReportImporter({
   onOpenChange,
   onSaved,
   onGenericImport,
+  onCsvImport,
 }: InBodyReportImporterProps) {
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
@@ -380,20 +382,22 @@ export default function InBodyReportImporter({
             disabled={saving}
             className="mt-1 h-11 w-full rounded-xl border border-emerald-500/25 bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500/30 disabled:opacity-50"
             onChange={event => {
-              if (
-                event.target.value === "generic" &&
-                !saveLock.current &&
-                onGenericImport
-              ) {
-                close(false);
-                onGenericImport();
-              }
+              if (saveLock.current) return;
+              const navigate = event.target.value === "generic"
+                ? onGenericImport
+                : event.target.value === "csv" ? onCsvImport : undefined;
+              if (!navigate) return;
+              requestId.current += 1;
+              extractLock.current = false;
+              setExtracting(false);
+              navigate();
             }}
           >
             <option value="inbody-paper-v1">InBody 紙本報告</option>
             <option value="generic" disabled={!onGenericImport}>
               一般身體數據截圖
             </option>
+            <option value="csv" disabled={!onCsvImport}>CSV 匯入</option>
           </select>
         </DialogHeader>
 
