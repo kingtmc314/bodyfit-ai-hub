@@ -570,4 +570,4 @@
 - [x] Add loading/error/retry states, failed-script cleanup, timeout and safe Google Maps overlay lifecycle
 - [x] Add a native OpenStreetMap tile fallback with original GPS overlay, start/end markers, drag, zoom and fit-to-route; retain visible attribution and normal browser tile caching without prefetch
 - [x] Verify a saved run with 9,842 GPS points and six loaded street tiles, narrow map layout and hidden Google controls in the browser; all 187 tests, typecheck, web/Vercel builds and visible v3.15.6/release history pass
-- [ ] Save checkpoint, immediately push BodyFit GitHub main and verify Vercel production map rendering
+- [x] Save checkpoint, immediately push BodyFit GitHub main and verify Vercel production map rendering (c808516b: Vercel success; live v3.15.6, 9,842 original GPS points, all six street tiles loaded; no health data changed)
