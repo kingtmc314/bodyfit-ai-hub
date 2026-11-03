@@ -577,4 +577,4 @@
 - [x] Memoize the brief raw samples and separate map construction/retry from live route-overlay updates, preserving fallback and zoom during unrelated parent renders
 - [x] Add one-second countdown/sample-identity, callback rerender, in-flight SDK update, fallback DOM/zoom retention and overlay cleanup regression coverage
 - [x] Observe real Garmin Brief for 15 seconds with advancing countdown: zero loading transitions, same map/fallback DOM, same zoom, all 9,842 GPS points and six street tiles; 192 tests, typecheck and web/Vercel builds pass
-- [ ] Save checkpoint, immediately push BodyFit GitHub main and verify stable maps in Vercel production
+- [x] Save checkpoint, immediately push BodyFit GitHub main and verify stable maps in Vercel production (f9e64810 success; live v3.15.7 observed for 20 seconds: zero loading transitions, same map/fallback DOM, zoom preserved, countdown advancing, 9,842 GPS points and six loaded street tiles)
