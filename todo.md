@@ -584,10 +584,10 @@
 - [x] Extract primary, water/FFM/WHR/control and five-segment lean/fat metrics accurately; preserve printed HK date/time, null missing data and flag uncertainty/reference-range confusion (actual provided photo: 11 metrics and all five segments correct; visceral fat left blank)
 - [x] Persist reviewed fields and report/source metadata to the existing Life-OS Supabase without Google Sheets dependency, while preserving manual records and preventing duplicate file retries (real object-storage and PostgreSQL temporary-table transaction/dedup E2E passed; no health records created)
 - [x] Add report details/history display, regression tests, real photo extraction validation without writing health records, mobile/browser checks, visible version/release notes and production builds (291 tests; browser: one real photo extraction, two mocked save attempts, retry success without re-upload; TypeScript and web/Vercel builds passed)
-- [ ] Checkpoint, immediately push BodyFit GitHub main and verify Vercel production
+- [x] Checkpoint, immediately push BodyFit GitHub main and verify Vercel production (a6f1cdb6 Vercel success; live v3.15.8 InBody template, rear camera/gallery and review-before-save verified; invalid source rejected without health writes)
 
 ### v3.15.8 additional request: use FIT continuous data in running analysis and predictions
 - [x] Analyze available timestamped FIT samples with honest coverage, time weighting, gaps/pauses and missing-value handling; never fabricate physiological measurements
 - [x] Include compact full-history continuous evidence in running AI analysis/race predictions and qualified continuous pace in compatible energy-lab calibration (FIT evidence prioritized within prompt capacity; all-history/monthly features retained and omissions disclosed)
 - [x] Verify no-data/manual-history fallback, all-history coverage, prediction evidence UI and existing running dynamics/Sheets compatibility with regression tests (291 tests; real all-history API complete; live read-only AI finished in 35.43s with all eight sections, FIT evidence and limitations; bounded 45s AI deadline within 60s Vercel limit)
-- [ ] Verify FIT all-history evidence and InBody template in Vercel production after release
+- [x] Verify FIT all-history evidence and InBody template in Vercel production after release (complete 421/421 history; 10 FIT sources present at verification; real production AI completed in 34.87s with FIT evidence and limitations; no test health writes)
