@@ -558,3 +558,9 @@
 - [x] Test clipboard-grid parsing, HK date normalization, validation, batch results and Google Sheets source/sync contracts; complete UI checks and production builds
 - [x] Complete clipboard-grid, Hong Kong date, validation, Google Sheets source/sync, all-history running analysis, mobile UI and production-build verification
 - [x] Save checkpoint, push to BodyFit-only GitHub main and verify the v3.14.7 Vercel production deployment
+
+## v3.15.5 Garmin direct-to-record save
+- [x] Save parsed raw activity, source reference and chart data directly after upload, without Apply then Save; show saving/saved/failure states and retry save without re-upload
+- [x] Attach to a selected historical run without overwriting manual summary, shoe, weather or race data; deduplicate file retries and safely match unique history
+- [x] Verify automatic saves, duplicate prevention, failure recovery, Hong Kong dates, existing running fields and Google Sheets synchronization with tests and UI checks (167 tests; real FIT/object-storage/PostgreSQL temp-table rollback E2E; browser save-failure retry: 1 upload, 1 parse, 2 save attempts; manual data preserved; FIT mm/m/cm/steps-min conversions corrected)
+- [ ] Update visible version/release history, build, checkpoint, immediately push BodyFit-only GitHub main and verify production

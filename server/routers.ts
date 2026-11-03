@@ -23,6 +23,7 @@ import { buildProgressionSuggestion } from "@shared/progression";
 import { buildHistoricalBackfillCandidates, summariseHistoricalBackfill, type BackfillScope } from "@shared/runningBackfill";
 import { buildDateChunks, fetchHistoricalWeatherForDate, fetchHistoricalWeatherRange, HONG_KONG_WEATHER_LOCATION, resolveWeatherLocation } from "./weatherService";
 import { parseGarminRawFile } from "./garminFileImport";
+import { saveGarminImport } from "./garminDirectSave";
 import { normalizeHKDate, type SpreadsheetSubmitResult } from "@shared/healthSpreadsheet";
 import { persistSupabaseBatch } from "./supabaseBatch";
 import Papa from "papaparse";
@@ -2951,6 +2952,18 @@ const runningRouter = router({
       const stored = await storagePut(`garmin-originals/${OWNER_USER_ID}/${nanoid()}.${sourceFormat.toLowerCase()}`, buffer, input.mimeType || "application/octet-stream");
       const preview = parseGarminRawFile(buffer, input.fileName);
       return { ...preview, rawFileKey: stored.key };
+    }),
+
+  saveGarminImport: ownerProcedure
+    .input(z.object({
+      fileKey: z.string().trim().min(20).max(500),
+      fileName: z.string().trim().min(5).max(180),
+      mimeType: z.string().trim().max(120).optional(),
+      runningLogId: z.number().int().positive().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      validateGarminOriginalKey(input.fileKey);
+      return saveGarminImport(input);
     }),
 
   saveGarminRawSource: ownerProcedure

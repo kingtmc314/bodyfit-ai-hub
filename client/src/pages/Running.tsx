@@ -151,7 +151,9 @@ export default function Running() {
   const [showDialog, setShowDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
-  const [garminRawFile, setGarminRawFile] = useState<{ fileName: string; mimeType: string; fileKey: string; sourceFormat: "FIT" | "CSV" | "GPX" | "TCX"; sampleCount: number } | null>(null);
+  const [garminImportBusy, setGarminImportBusy] = useState(false);
+  const [garminDirectSaved, setGarminDirectSaved] = useState(false);
+  const [garminUnconfirmed, setGarminUnconfirmed] = useState(false);
   const [timeSeriesRun, setTimeSeriesRun] = useState<{ label: string; samples: Array<Record<string, unknown>> } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [aiWeeks, setAiWeeks] = useState(12);
@@ -302,54 +304,30 @@ export default function Running() {
   const photoUploaderRef = useRef<LogPhotoUploaderRef>(null);
 
   // ─── Mutations ───────────────────────────────────────────────────────────────
-  const saveGarminRawSourceMutation = trpc.running.saveGarminRawSource.useMutation();
-  const persistGarminRawSource = async (runningLogId: number) => {
-    if (!garminRawFile) return;
-    await saveGarminRawSourceMutation.mutateAsync({
-      runningLogId,
-      fileName: garminRawFile.fileName,
-      mimeType: garminRawFile.mimeType,
-      fileKey: garminRawFile.fileKey,
-      sourceFormat: garminRawFile.sourceFormat,
-      sampleCount: garminRawFile.sampleCount,
-    });
-  };
   const addMutation = trpc.running.addLog.useMutation({
     onSuccess: async (newRecord) => {
       if (photoUploaderRef.current?.hasStagedFiles()) {
         await photoUploaderRef.current.uploadStagedFiles(newRecord.id);
-      }
-      try {
-        await persistGarminRawSource(newRecord.id);
-      } catch (error) {
-        toast.error("跑步已儲存，但 Garmin 原始檔未能保存", { description: error instanceof Error ? error.message : "可重新編輯這筆跑步後再上載。" });
       }
       utils.running.getLogs.invalidate();
       utils.running.getStats.invalidate();
       toast.success(t("running.add_record"));
       setShowDialog(false);
       setForm(defaultForm);
-      setGarminRawFile(null);
+      setGarminDirectSaved(false);
     },
     onError: (e) => toast.error(t("common.error") + ": " + e.message),
   });
 
   const updateMutation = trpc.running.updateLog.useMutation({
     onSuccess: async () => {
-      if (editEntry?.id) {
-        try {
-          await persistGarminRawSource(Number(editEntry.id));
-        } catch (error) {
-          toast.error("跑步已更新，但 Garmin 原始檔未能保存", { description: error instanceof Error ? error.message : "可再試一次上載。" });
-        }
-      }
       utils.running.getLogs.invalidate();
       utils.running.getStats.invalidate();
       toast.success(t("common.success"));
       setEditEntry(null);
       setShowDialog(false);
       setForm(defaultForm);
-      setGarminRawFile(null);
+      setGarminDirectSaved(false);
     },
     onError: (e) => toast.error(t("common.error") + ": " + e.message),
   });
@@ -416,7 +394,7 @@ export default function Running() {
   const openAdd = () => {
     setEditEntry(null);
     setForm(defaultForm);
-    setGarminRawFile(null);
+    setGarminDirectSaved(false);
     setShowDialog(true);
   };
 
@@ -458,11 +436,12 @@ export default function Running() {
       timeSeries: row.time_series ?? [],
       notes: row.notes ?? "",
     });
-    setGarminRawFile(null);
+    setGarminDirectSaved(false);
     setShowDialog(true);
   };
 
   const handleSave = () => {
+    if (garminImportBusy || garminUnconfirmed) return;
     const payload: any = {
       date: form.date,
       runningType: form.runningType || undefined,
@@ -1816,12 +1795,12 @@ export default function Running() {
       </Tabs>
 
       {/* Add / Edit Dialog */}
-      <Dialog open={showDialog} onOpenChange={(o) => { setShowDialog(o); if (!o) { setEditEntry(null); setForm(defaultForm); setGarminRawFile(null); } }}>
+      <Dialog open={showDialog} onOpenChange={(o) => { if (garminImportBusy) return; setShowDialog(o); if (!o) { setEditEntry(null); setForm(defaultForm); setGarminDirectSaved(false); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editEntry ? t("running.edit_record") : t("running.add_record")}</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-3 py-2">
+          <fieldset disabled={garminImportBusy} className="grid min-w-0 grid-cols-2 gap-3 py-2">
             <div className="col-span-2">
               <ScreenshotImporter
                 dataType="running"
@@ -1834,21 +1813,16 @@ export default function Running() {
                 }}
               />
               <GarminRawFileImporter
-                onExtracted={(preview, sourceFile, stagedSource) => {
-                  setForm((previous: any) => ({
-                    ...previous,
-                    ...preview.fields,
-                    garminDetails: { ...previous.garminDetails, ...preview.garminDetails },
-                    laps: preview.laps,
-                    timeSeries: preview.timeSeries,
-                  }));
-                  setGarminRawFile({
-                    fileName: sourceFile.name,
-                    mimeType: sourceFile.type || "application/octet-stream",
-                    fileKey: stagedSource.fileKey,
-                    sourceFormat: stagedSource.sourceFormat,
-                    sampleCount: preview.timeSeries.length,
-                  });
+                runningLogId={editEntry ? Number(editEntry.id) : undefined}
+                onBusyChange={setGarminImportBusy}
+                onUnconfirmedChange={setGarminUnconfirmed}
+                onSaved={(saved) => {
+                  // A directly saved import must become an edit target immediately.
+                  // Manual changes afterwards UPDATE this id; never INSERT it again.
+                  setEditEntry({ id: saved.id });
+                  setGarminDirectSaved(true);
+                  setForm({ ...defaultForm, ...saved.fields, garminDetails: saved.garminDetails, laps: saved.laps, timeSeries: saved.timeSeries });
+                  void utils.running.invalidate();
                 }}
               />
             </div>
@@ -1982,12 +1956,12 @@ export default function Running() {
               <label className="text-xs font-medium text-muted-foreground mb-1 block">截圖上載</label>
               <LogPhotoUploader ref={photoUploaderRef} logId={editEntry ? Number(editEntry.id) : null} type="running" />
             </div>
-          </div>
+          </fieldset>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowDialog(false); setEditEntry(null); setForm(defaultForm); }}>{t("running.cancel")}</Button>
-            <Button onClick={handleSave} disabled={addMutation.isPending || updateMutation.isPending} className="hero-gradient text-white">
+            <Button variant="outline" disabled={garminImportBusy} onClick={() => { setShowDialog(false); setEditEntry(null); setForm(defaultForm); }}>{garminDirectSaved ? "完成／關閉" : t("running.cancel")}</Button>
+            <Button onClick={handleSave} disabled={garminImportBusy || garminUnconfirmed || addMutation.isPending || updateMutation.isPending} className="hero-gradient text-white">
               {(addMutation.isPending || updateMutation.isPending) ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-              {t("running.save")}
+              {garminUnconfirmed ? "請先重試原始檔儲存" : garminDirectSaved ? "儲存其他修改" : t("running.save")}
             </Button>
           </DialogFooter>
         </DialogContent>

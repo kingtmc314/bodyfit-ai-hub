@@ -1,4 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "../../../server/routers";
 import { FileChartColumnIncreasing, FileUp, Loader2, X, CheckCircle2, Activity, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -24,7 +26,8 @@ type GarminStagedSource = {
   sourceFormat: GarminSourceFormat;
 };
 
-type UploadState = "idle" | "uploading" | "parsing";
+type UploadState = "idle" | "uploading" | "parsing" | "saving";
+export type GarminDirectSaved = inferRouterOutputs<AppRouter>["running"]["saveGarminImport"];
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const CHUNK_BYTES = 2 * 1024 * 1024;
@@ -47,9 +50,15 @@ function createUploadId() {
 }
 
 export default function GarminRawFileImporter({
-  onExtracted,
+  runningLogId,
+  onSaved,
+  onBusyChange,
+  onUnconfirmedChange,
 }: {
-  onExtracted: (preview: GarminRawPreview, file: File, stagedSource: GarminStagedSource) => void;
+  runningLogId?: number;
+  onSaved: (saved: GarminDirectSaved) => void;
+  onBusyChange?: (busy: boolean) => void;
+  onUnconfirmedChange?: (unconfirmed: boolean) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -58,14 +67,45 @@ export default function GarminRawFileImporter({
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [chunkProgress, setChunkProgress] = useState<{ current: number; total: number } | null>(null);
   const [failure, setFailure] = useState<GarminRawImportFailure | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<GarminDirectSaved | null>(null);
   const uploadChunk = trpc.running.uploadGarminRawChunk.useMutation();
   const parse = trpc.running.parseGarminRawFile.useMutation();
-  const isBusy = uploadChunk.isPending || parse.isPending || uploadState !== "idle";
+  const saveImport = trpc.running.saveGarminImport.useMutation();
+  const isBusy = uploadChunk.isPending || parse.isPending || saveImport.isPending || uploadState !== "idle";
+  useEffect(() => { onBusyChange?.(isBusy); }, [isBusy, onBusyChange]);
+  useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
+  useEffect(() => { onUnconfirmedChange?.(!!preview && !saved); }, [preview, saved, onUnconfirmedChange]);
+  useEffect(() => () => onUnconfirmedChange?.(false), [onUnconfirmedChange]);
+
+  const persistImport = async (selected: File, source: GarminStagedSource) => {
+    setUploadState("saving");
+    setSaveError(null);
+    try {
+      const result = await saveImport.mutateAsync({
+        fileKey: source.fileKey,
+        fileName: selected.name,
+        mimeType: selected.type || "application/octet-stream",
+        runningLogId,
+      });
+      setSaved(result);
+      onSaved(result);
+      toast.success(result.action === "duplicate" ? "此原始檔已保存，沒有重複新增" : result.sampleCount ? "原始檔與圖表已直接保存到跑步紀錄" : "原始檔與活動摘要已保存（檔案沒有曲線樣本）");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "儲存連線暫時中斷，請重試。";
+      setSaveError(message);
+      toast.error("原始檔已上載，但跑步紀錄尚未確認儲存", { description: message });
+    } finally {
+      setUploadState("idle");
+    }
+  };
 
   const importFile = async (selected: File) => {
     setPreview(null);
     setStagedSource(null);
     setFailure(null);
+    setSaveError(null);
+    setSaved(null);
     if (!/\.(fit|csv|gpx|tcx)$/i.test(selected.name)) {
       const isZip = /\.zip$/i.test(selected.name);
       toast.error(isZip ? "請先解壓 Garmin ZIP 檔" : "請選擇 Garmin FIT、CSV、GPX 或 TCX 原始檔", {
@@ -115,8 +155,9 @@ export default function GarminRawFileImporter({
       });
       const reviewedPreview = parsed as GarminRawPreview;
       setPreview(reviewedPreview);
-      setStagedSource({ fileKey: reviewedPreview.rawFileKey, sourceFormat: reviewedPreview.sourceFormat });
-      toast.success("已讀取 Garmin 原始檔，請核對下方跑步資料後儲存");
+      const source = { fileKey: reviewedPreview.rawFileKey, sourceFormat: reviewedPreview.sourceFormat };
+      setStagedSource(source);
+      await persistImport(selected, source);
     } catch (error) {
       const recoveredFailure = describeGarminRawImportFailure(error);
       setFailure(recoveredFailure);
@@ -141,16 +182,15 @@ export default function GarminRawFileImporter({
     setUploadState("idle");
     setChunkProgress(null);
     setFailure(null);
+    setSaveError(null);
+    setSaved(null);
     if (inputRef.current) inputRef.current.value = "";
-  };
-
-  const apply = () => {
-    if (!preview || !file || !stagedSource) return;
-    onExtracted(preview, file, stagedSource);
   };
 
   const actionLabel = uploadState === "uploading"
     ? `安全上載 ${chunkProgress?.current ?? 1}/${chunkProgress?.total ?? 1}…`
+    : uploadState === "saving" || saveImport.isPending
+      ? "正在保存跑步與圖表…"
     : uploadState === "parsing" || parse.isPending
       ? "讀取原始檔…"
       : "選擇 FIT／CSV／GPX／TCX";
@@ -162,7 +202,7 @@ export default function GarminRawFileImporter({
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">Garmin Original Data</p>
           <h3 className="mt-0.5 text-sm font-bold text-foreground">匯入 FIT／CSV／GPX／TCX 原始檔</h3>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">直接讀取逐秒配速、心率、步頻、功率及海拔資料。大型檔案會分段安全上載，先核對摘要再存成同一筆跑步紀錄。</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">選檔後自動上載、解析並直接保存跑步與圖表，不需再按「套用」或「儲存」。{runningLogId ? "原始資料會附加到正在編輯的紀錄，保留既有摘要、跑鞋及天氣。" : "自動按香港日期、距離與時間配對唯一歷史紀錄；沒有相符紀錄才新增。"} 清除預覽不會刪除已保存紀錄。</p>
         </div>
       </div>
       <input ref={inputRef} type="file" accept=".fit,.csv,.gpx,.tcx,application/octet-stream,text/csv,application/gpx+xml,application/vnd.garmin.tcx+xml" className="hidden" onChange={(event) => chooseFile(event.target.files?.[0])} />
@@ -194,6 +234,8 @@ export default function GarminRawFileImporter({
       )}
       {preview && (
         <div className="mt-3 rounded-xl border border-sky-200/80 bg-card/85 p-3 dark:border-sky-400/15">
+          {saved && <div role="status" className="mb-3 rounded-lg bg-emerald-500/10 p-3 text-xs text-emerald-800 dark:text-emerald-200"><p className="font-bold">{saved.action === "duplicate" ? "已保存過此檔案，沒有重複新增" : saved.sampleCount ? "跑步圖表已儲存" : "原始檔及活動摘要已儲存（沒有曲線樣本）"}</p><p className="mt-1">{saved.date} · 紀錄 #{saved.id} · {saved.action === "created" ? "已新增跑步紀錄" : "已附加到既有跑步紀錄"}。{saved.sampleCount > 0 ? "關閉視窗後仍可從「查看全部」開啟逐秒曲線。" : "原始檔未提供曲線樣本，不會產生虛構圖表。"}</p>{saved.syncWarning && <p className="mt-1">{saved.syncWarning}</p>}</div>}
+          {saveError && <div role="alert" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><p className="font-bold">跑步紀錄尚未確認儲存</p><p className="mt-1 leading-5">{saveError}</p><Button type="button" size="sm" variant="outline" className="mt-2" disabled={isBusy} onClick={() => file && stagedSource && persistImport(file, stagedSource)}>重試儲存（不用重新上載）</Button></div>}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" /><p className="text-xs font-bold text-foreground">已讀取 {preview.sourceFormat} 資料</p></div>
             <Badge className="bg-sky-600 text-white">{preview.timeSeries.length.toLocaleString()} 個逐秒樣本</Badge>
@@ -206,7 +248,6 @@ export default function GarminRawFileImporter({
           </div>
           {preview.timeSeries.length > 0 && <GarminTimeSeriesChart timeSeries={preview.timeSeries} runLabel={file?.name} className="mt-3" />}
           {preview.warnings.length > 0 && <div className="mt-2.5 rounded-lg bg-amber-400/10 px-2.5 py-2 text-[11px] leading-4 text-amber-800 dark:text-amber-200"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />{preview.warnings.join(" ")}</div>}
-          <Button type="button" size="sm" className="mt-3 h-8 rounded-lg bg-sky-600 text-xs text-white hover:bg-sky-700" onClick={apply}><Activity className="mr-1.5 h-3.5 w-3.5" />套用到這次跑步</Button>
         </div>
       )}
     </section>

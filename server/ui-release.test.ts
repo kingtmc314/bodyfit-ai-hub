@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.15.4");
+    expect(APP_VERSION).toBe("3.15.5");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -454,5 +454,29 @@ describe("v3.15.0 Garmin health data briefing", () => {
     expect(chartSource).toContain("cadence: toPositiveNumber");
     expect(chartSource).toContain("power: toPositiveNumber");
     expect(releaseNotesSource).toContain('version: "3.15.0"');
+  });
+});
+
+describe("v3.15.5 Garmin direct save workflow", () => {
+  const importer = readFileSync(new URL("../client/src/components/GarminRawFileImporter.tsx", import.meta.url), "utf8");
+  const running = readFileSync(new URL("../client/src/pages/Running.tsx", import.meta.url), "utf8");
+  const notes = readFileSync(new URL("../client/src/lib/releaseNotes.ts", import.meta.url), "utf8");
+  it("automatically saves parsed sources and retries persistence without re-uploading", () => {
+    expect(importer).toContain("await persistImport(selected, source)");
+    expect(importer).toContain("saveGarminImport.useMutation()");
+    expect(importer).toContain("重試儲存（不用重新上載）");
+    expect(importer).toContain("原始檔已上載，但跑步紀錄尚未確認儲存");
+    expect(importer).toContain("saved.action === \"duplicate\"");
+    expect(importer).not.toContain("onExtracted(");
+    expect(importer).not.toContain("onClick={apply}");
+  });
+  it("turns successful imports into edits and protects in-flight or unconfirmed saves", () => {
+    expect(running).toContain("setEditEntry({ id: saved.id })");
+    expect(running).toContain("runningLogId={editEntry ? Number(editEntry.id) : undefined}");
+    expect(running).toContain("if (garminImportBusy || garminUnconfirmed) return");
+    expect(running).toContain("void utils.running.invalidate()");
+    expect(running).toContain("儲存其他修改");
+    expect(running).not.toContain("persistGarminRawSource");
+    expect(notes).toContain('version: "3.15.5"');
   });
 });

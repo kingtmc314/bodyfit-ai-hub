@@ -1168,7 +1168,7 @@ var systemRouter = router({
 
 // server/routers.ts
 import { z as z2 } from "zod";
-import { eq as eq2, and, desc, gte, like, or, sql as sql2, inArray } from "drizzle-orm";
+import { eq as eq2, and, desc, gte, like, or, sql as sql3, inArray } from "drizzle-orm";
 
 // server/_core/llm.ts
 var ensureArray = (value) => Array.isArray(value) ? value : [value];
@@ -2367,6 +2367,7 @@ import Papa from "papaparse";
 import sax from "sax";
 var MAX_SAMPLES = 1e4;
 var asNumber = (value) => {
+  if (value === null || value === void 0 || typeof value === "string" && !value.trim()) return void 0;
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : void 0;
 };
@@ -2396,7 +2397,7 @@ function metricFields(session, samples, sourceFormat) {
   const last = samples.at(-1);
   const durationSec = asNumber(session.totalTimerTime) ?? (last ? last.elapsedSec : void 0);
   const distanceM = asNumber(session.totalDistance);
-  const distanceKm = distanceM && distanceM > 100 ? distanceM / 1e3 : asNumber(session.distanceKm) ?? last?.distanceKm;
+  const distanceKm = distanceM && distanceM > 0 ? distanceM / 1e3 : asNumber(session.distanceKm) ?? last?.distanceKm;
   const avgSpeed = asNumber(session.avgSpeed) ?? asNumber(session.averageSpeed);
   const maxSpeed = asNumber(session.maxSpeed) ?? asNumber(session.maximumSpeed);
   const paceSeconds = distanceKm && durationSec ? durationSec / distanceKm : avgSpeed ? 1e3 / avgSpeed : void 0;
@@ -2431,7 +2432,9 @@ function metricFields(session, samples, sourceFormat) {
   ];
   for (const [source, target] of pairs) {
     const value = asNumber(session[source]);
-    if (value !== void 0) fields[target] = String(value);
+    if (value === void 0) continue;
+    const normalized = sourceFormat === "FIT" ? source === "avgStepLength" ? value / 1e3 : source === "avgVerticalOscillation" ? value / 10 : source === "avgRunningCadence" || source === "maxRunningCadence" ? value * 2 : value : value;
+    fields[target] = String(Number(normalized.toFixed(4)));
   }
   const warnings = [];
   if (!samples.length) warnings.push("\u539F\u59CB\u6A94\u6C92\u6709\u53EF\u8B80\u53D6\u7684\u9010\u79D2 Record \u6A23\u672C\uFF1B\u5DF2\u53EA\u586B\u5165\u6D3B\u52D5\u6458\u8981\u3002");
@@ -2454,7 +2457,7 @@ function metricFields(session, samples, sourceFormat) {
     warnings
   };
 }
-function mapFitRecord(record, startedAt) {
+function mapFitRecord(record, startedAt, cadenceMultiplier = 1) {
   const timestamp2 = asDate(record.timestamp);
   if (!timestamp2) return null;
   const speed = asNumber(record.enhancedSpeed) ?? asNumber(record.speed);
@@ -2470,7 +2473,7 @@ function mapFitRecord(record, startedAt) {
     ...longitude !== void 0 ? { longitude } : {},
     ...speed && speed > 0 ? { paceSecPerKm: Number((1e3 / speed).toFixed(2)) } : {},
     ...asNumber(record.heartRate) !== void 0 ? { heartRate: asNumber(record.heartRate) } : {},
-    ...asNumber(record.cadence) !== void 0 ? { cadence: asNumber(record.cadence) } : {},
+    ...asNumber(record.cadence) !== void 0 ? { cadence: asNumber(record.cadence) * cadenceMultiplier } : {},
     ...asNumber(record.power) !== void 0 ? { power: asNumber(record.power) } : {},
     ...altitudeM !== void 0 ? { altitudeM } : {},
     ...asNumber(record.temperature) !== void 0 ? { temperatureC: asNumber(record.temperature) } : {}
@@ -2483,9 +2486,9 @@ function parseGarminFit(buffer) {
   const { messages, errors } = decoder.read({ applyScaleAndOffset: true, expandComponents: true, convertDateTimesToDates: true, mergeHeartRates: true });
   const recordMessages = messages.recordMesgs ?? [];
   const firstTimestamp = recordMessages.map((record) => asDate(record.timestamp)).find((date2) => !!date2) ?? asDate(messages.sessionMesgs?.[0]?.startTime) ?? /* @__PURE__ */ new Date();
-  const sourceSamples = recordMessages.map((record) => mapFitRecord(record, firstTimestamp)).filter((sample) => !!sample);
-  const samples = keepChartSamples(sourceSamples);
   const session = messages.sessionMesgs?.[0] ?? {};
+  const sourceSamples = recordMessages.map((record) => mapFitRecord(record, firstTimestamp, session.sport === "running" ? 2 : 1)).filter((sample) => !!sample);
+  const samples = keepChartSamples(sourceSamples);
   const preview = metricFields(session, samples, "FIT");
   preview.laps = (messages.lapMesgs ?? []).map((lap, index) => {
     const distance = asNumber(lap.totalDistance);
@@ -2513,7 +2516,7 @@ function parseGarminCsv(buffer) {
     const speed = asNumber(valueFor(row, ["enhancedspeed", "speed"]));
     return timestamp2 && !Number.isNaN(timestamp2.getTime()) ? { timestamp: timestamp2, distance, speed, row } : null;
   }).filter(Boolean);
-  const start = timed[0]?.timestamp ?? /* @__PURE__ */ new Date();
+  const start = timed[0]?.timestamp;
   const sourceSamples = timed.map((item) => ({
     elapsedSec: Math.max(0, Math.round((item.timestamp.getTime() - start.getTime()) / 1e3)),
     timestamp: item.timestamp.toISOString(),
@@ -2739,6 +2742,219 @@ function parseGarminRawFile(buffer, filename) {
   throw new Error("\u8ACB\u9078\u64C7 Garmin FIT\u3001CSV\u3001GPX \u6216 TCX \u539F\u59CB\u6A94");
 }
 
+// server/garminDirectSave.ts
+import { createHash } from "node:crypto";
+import { sql as sql2 } from "drizzle-orm";
+var SUMMARY_COLUMNS = {
+  date: "date",
+  runningType: "running_type",
+  routeType: "route_type",
+  runningShoes: "running_shoes",
+  distanceKm: "distance_km",
+  hour: "hour",
+  minutes: "minutes",
+  second: "second",
+  averagePace: "average_pace",
+  bestPace: "best_pace",
+  averageHeartRate: "average_heart_rate",
+  maximumHeartRate: "maximum_heart_rate",
+  averageCadence: "average_cadence",
+  maxCadence: "max_cadence",
+  avgStrideLengthM: "avg_stride_length_m",
+  avgVerticalRatio: "avg_vertical_ratio",
+  verticalOscillationCm: "vertical_oscillation_cm",
+  avgGroundContactTimeMs: "avg_ground_contact_time_ms",
+  calories: "calories",
+  temperature: "temperature",
+  humidity: "humidity",
+  windSpeed: "wind_speed",
+  apparentTemp: "apparent_temp",
+  precipitation: "precipitation",
+  weatherCode: "weather_code",
+  weatherCondition: "weather_condition",
+  weatherLocation: "weather_location",
+  weatherObservedAt: "weather_observed_at",
+  weatherSource: "weather_source",
+  notes: "notes"
+};
+var ROW_COLUMNS = sql2.raw(`id, ${Object.values(SUMMARY_COLUMNS).map((column) => column === "date" ? "date::text AS date" : column).join(", ")}, garmin_details, laps, time_series`);
+var INTEGER_FIELDS = /* @__PURE__ */ new Set(["hour", "minutes", "second", "averageHeartRate", "maximumHeartRate", "calories", "weatherCode"]);
+var TEXT_FIELDS = /* @__PURE__ */ new Set(["date", "runningType", "routeType", "runningShoes", "averagePace", "bestPace", "weatherCondition", "weatherLocation", "weatherObservedAt", "weatherSource", "notes"]);
+var AMBIGUOUS_MATCH = "\u540C\u65E5\u6709\u591A\u7B46\u76F8\u8FD1\u8DD1\u6B65\u7D00\u9304\uFF0C\u7121\u6CD5\u5B89\u5168\u5224\u65B7\uFF1B\u8ACB\u958B\u555F\u8981\u9644\u52A0\u7684\u6B77\u53F2\u7D00\u9304\uFF0C\u6309\u300C\u7DE8\u8F2F\u300D\u5F8C\u91CD\u65B0\u4E0A\u8F09\u539F\u59CB\u6A94\u3002";
+function finiteNumber(value) {
+  if (value === null || value === void 0 || String(value).trim() === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+function isValidGarminDate(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date2 = /* @__PURE__ */ new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date2.getTime()) && date2.toISOString().slice(0, 10) === value;
+}
+function validateGarminSummary(fields) {
+  if (!isValidGarminDate(fields.date)) throw new Error("\u539F\u59CB\u6A94\u7F3A\u5C11\u6709\u6548\u7684\u9999\u6E2F\u6D3B\u52D5\u65E5\u671F\uFF1B\u4E0D\u6703\u4EE5\u4ECA\u5929\u65E5\u671F\u5EFA\u7ACB\u7D00\u9304\uFF0C\u8ACB\u91CD\u65B0\u532F\u51FA Garmin \u539F\u59CB\u6A94\u3002");
+  const distanceKm = finiteNumber(fields.distanceKm);
+  const parts = [fields.hour, fields.minutes, fields.second].map((value) => value === void 0 ? 0 : finiteNumber(value));
+  if (parts.some((value) => value === null || value < 0)) throw new Error("\u539F\u59CB\u6A94\u7684\u8DD1\u6B65\u6642\u9593\u7121\u6548\uFF0C\u672A\u5EFA\u7ACB\u7D00\u9304\u3002");
+  const durationSec = (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0);
+  if (distanceKm === null || distanceKm <= 0 || !Number.isFinite(durationSec) || durationSec <= 0) {
+    throw new Error("\u539F\u59CB\u6A94\u5FC5\u9808\u5305\u542B\u5927\u65BC\u96F6\u7684\u8DDD\u96E2\u53CA\u8DD1\u6B65\u6642\u9593\uFF0C\u672A\u5EFA\u7ACB\u7D00\u9304\uFF1B\u8ACB\u4F7F\u7528\u5B8C\u6574\u7684 Garmin \u6D3B\u52D5\u539F\u59CB\u6A94\u3002");
+  }
+  return { date: fields.date, distanceKm, durationSec };
+}
+function selectGarminHistoryMatch(candidates, summary) {
+  if (candidates.some((candidate) => candidate.date === summary.date && ((finiteNumber(candidate.distanceKm) ?? 0) <= 0 || (finiteNumber(candidate.durationSec) ?? 0) <= 0))) throw new Error("\u540C\u65E5\u6709\u7F3A\u5C11\u8DDD\u96E2\u6216\u6642\u9593\u7684\u8DD1\u6B65\u7D00\u9304\uFF0C\u7121\u6CD5\u5B89\u5168\u5224\u65B7\u662F\u5426\u91CD\u8907\uFF1B\u8ACB\u958B\u555F\u8981\u9644\u52A0\u7684\u6B77\u53F2\u7D00\u9304\uFF0C\u6309\u300C\u7DE8\u8F2F\u300D\u5F8C\u91CD\u65B0\u4E0A\u8F09\u539F\u59CB\u6A94\u3002");
+  const matches = candidates.filter((candidate) => {
+    const distance = finiteNumber(candidate.distanceKm);
+    const duration = finiteNumber(candidate.durationSec);
+    return candidate.date === summary.date && distance !== null && distance > 0 && duration !== null && duration > 0 && Math.abs(distance - summary.distanceKm) <= Math.max(0.1, summary.distanceKm * 0.02) && Math.abs(duration - summary.durationSec) <= Math.max(60, summary.durationSec * 0.02);
+  });
+  if (matches.length > 1) throw new Error(AMBIGUOUS_MATCH);
+  return matches[0] ?? null;
+}
+function jsonObject(value) {
+  if (typeof value === "string") {
+    try {
+      return jsonObject(JSON.parse(value));
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+function jsonArray(value) {
+  if (typeof value === "string") {
+    try {
+      return jsonArray(JSON.parse(value));
+    } catch {
+      return [];
+    }
+  }
+  return Array.isArray(value) ? value : [];
+}
+function resultFromRow(row, action) {
+  const fields = {};
+  for (const [field, column] of Object.entries(SUMMARY_COLUMNS)) fields[field] = row[column] === null || row[column] === void 0 ? "" : String(row[column]);
+  fields.weatherTime = fields.weatherObservedAt.match(/T(\d{2}:\d{2})/)?.[1] ?? "";
+  const timeSeries = jsonArray(row.time_series);
+  return {
+    id: Number(row.id),
+    action,
+    date: fields.date,
+    sampleCount: timeSeries.length,
+    fields,
+    garminDetails: jsonObject(row.garmin_details),
+    laps: jsonArray(row.laps),
+    timeSeries
+  };
+}
+function rowsFrom(result) {
+  return result.rows;
+}
+async function saveGarminImport(input) {
+  const buffer = await storageReadBuffer(input.fileKey);
+  const preview = parseGarminRawFile(buffer, input.fileName);
+  if (!input.fileKey.toLowerCase().endsWith(`.${preview.sourceFormat.toLowerCase()}`)) throw new Error("\u539F\u59CB\u6A94\u683C\u5F0F\u8207\u526F\u6A94\u540D\u4E0D\u4E00\u81F4");
+  const summary = validateGarminSummary(preview.fields);
+  const rawFileHash = createHash("sha256").update(buffer).digest("hex");
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const result = await db.transaction(async (tx) => {
+    const hashLock = BigInt.asIntN(64, BigInt(`0x${rawFileHash.slice(0, 16)}`)).toString();
+    await tx.execute(sql2`SELECT pg_advisory_xact_lock(${hashLock}::bigint)`);
+    await tx.execute(sql2`SELECT pg_advisory_xact_lock(hashtextextended(${`garmin-date:${summary.date}`}, 0))`);
+    const duplicates = rowsFrom(await tx.execute(sql2`
+      SELECT ${ROW_COLUMNS} FROM running_logs
+      WHERE garmin_details->>'rawFileHash' = ${rawFileHash}
+      ORDER BY id LIMIT 2 FOR UPDATE
+    `));
+    if (duplicates.length > 1) throw new Error("\u76F8\u540C\u539F\u59CB\u6A94\u5DF2\u9023\u7D50\u591A\u7B46\u7D00\u9304\uFF0C\u8ACB\u5148\u6AA2\u67E5\u6B77\u53F2\u7D00\u9304\uFF1B\u672C\u6B21\u672A\u66F4\u6539\u8CC7\u6599\u3002");
+    if (duplicates[0]) {
+      if (input.runningLogId !== void 0 && Number(duplicates[0].id) !== input.runningLogId) {
+        throw new Error("\u9019\u500B Garmin \u539F\u59CB\u6A94\u5DF2\u9023\u7D50\u53E6\u4E00\u7B46\u8DD1\u6B65\u7D00\u9304\uFF0C\u4E0D\u80FD\u8986\u84CB\u76EE\u524D\u9078\u53D6\u7684\u7D00\u9304\uFF1B\u8ACB\u7DE8\u8F2F\u5DF2\u9023\u7D50\u7684\u7D00\u9304\u3002");
+      }
+      if (duplicates[0].date !== summary.date) throw new Error("\u539F\u59CB\u6A94\u7684\u9999\u6E2F\u6D3B\u52D5\u65E5\u671F\u8207\u5DF2\u9023\u7D50\u7D00\u9304\u4E0D\u7B26\uFF0C\u672A\u66F4\u6539\u8CC7\u6599\u3002");
+      return resultFromRow(duplicates[0], "duplicate");
+    }
+    let target;
+    if (input.runningLogId !== void 0) {
+      target = rowsFrom(await tx.execute(sql2`SELECT ${ROW_COLUMNS} FROM running_logs WHERE id = ${input.runningLogId} LIMIT 1 FOR UPDATE`))[0];
+      if (!target) throw new Error("\u627E\u4E0D\u5230\u8981\u9644\u52A0\u7684\u8DD1\u6B65\u7D00\u9304\uFF0C\u8ACB\u91CD\u65B0\u958B\u555F\u6B77\u53F2\u7D00\u9304\u3002");
+      if (target.date !== summary.date) throw new Error(`\u539F\u59CB\u6A94\u7684\u9999\u6E2F\u6D3B\u52D5\u65E5\u671F\uFF08${summary.date}\uFF09\u8207\u6240\u9078\u7D00\u9304\uFF08${target.date}\uFF09\u4E0D\u7B26\uFF0C\u672A\u9644\u52A0\u6A94\u6848\uFF1B\u8ACB\u7DE8\u8F2F\u6B63\u78BA\u7684\u6B77\u53F2\u7D00\u9304\u3002`);
+    } else {
+      const history = rowsFrom(await tx.execute(sql2`
+        SELECT id, date::text AS date, distance_km, hour, minutes, second FROM running_logs
+        WHERE date = ${summary.date} ORDER BY id LIMIT 101 FOR UPDATE
+      `));
+      if (history.length > 100) throw new Error(AMBIGUOUS_MATCH);
+      const match = selectGarminHistoryMatch(history.map((row) => ({
+        id: Number(row.id),
+        date: row.date,
+        distanceKm: row.distance_km,
+        durationSec: (finiteNumber(row.hour) ?? 0) * 3600 + (finiteNumber(row.minutes) ?? 0) * 60 + (finiteNumber(row.second) ?? 0)
+      })), summary);
+      if (match) target = rowsFrom(await tx.execute(sql2`SELECT ${ROW_COLUMNS} FROM running_logs WHERE id = ${match.id} LIMIT 1 FOR UPDATE`))[0];
+      if (match && !target) throw new Error("\u8DD1\u6B65\u7D00\u9304\u5DF2\u8B8A\u66F4\uFF0C\u8ACB\u91CD\u65B0\u958B\u555F\u6B77\u53F2\u7D00\u9304\u5F8C\u518D\u8A66\u3002");
+    }
+    if (target) {
+      const existingHash = jsonObject(target.garmin_details).rawFileHash;
+      if (existingHash && existingHash !== rawFileHash) throw new Error("\u9019\u7B46\u8DD1\u6B65\u7D00\u9304\u5DF2\u9023\u7D50\u4E0D\u540C\u7684 Garmin \u539F\u59CB\u6A94\uFF0C\u70BA\u514D\u8986\u84CB\u73FE\u6709\u66F2\u7DDA\uFF0C\u672C\u6B21\u672A\u66F4\u6539\u8CC7\u6599\uFF1B\u8ACB\u6AA2\u67E5\u6240\u9078\u6B77\u53F2\u7D00\u9304\u3002");
+    }
+    const metadata = {
+      ...preview.garminDetails,
+      rawFileKey: input.fileKey,
+      rawFileUrl: `/manus-storage/${input.fileKey}`,
+      rawFileName: input.fileName,
+      rawFileFormat: preview.sourceFormat,
+      rawSampleCount: preview.garminDetails.rawSampleCount ?? preview.timeSeries.length,
+      rawFileHash
+    };
+    if (target) {
+      const updated = rowsFrom(await tx.execute(sql2`
+        UPDATE running_logs SET
+          garmin_details = COALESCE(garmin_details, '{}'::jsonb) || ${JSON.stringify(metadata)}::jsonb,
+          laps = ${JSON.stringify(preview.laps)}::jsonb,
+          time_series = ${JSON.stringify(preview.timeSeries)}::jsonb
+        WHERE id = ${Number(target.id)} RETURNING ${ROW_COLUMNS}
+      `))[0];
+      if (!updated) throw new Error("\u672A\u80FD\u9644\u52A0 Garmin \u8CC7\u6599\uFF0C\u8ACB\u91CD\u8A66\u3002");
+      return resultFromRow(updated, "attached");
+    }
+    const fields = {
+      ...preview.fields,
+      hour: String(Math.floor(summary.durationSec / 3600)),
+      minutes: String(Math.floor(summary.durationSec % 3600 / 60)),
+      second: String(Math.round(summary.durationSec % 60))
+    };
+    const entries = Object.entries(SUMMARY_COLUMNS);
+    const values = entries.map(([field]) => {
+      const value = fields[field];
+      if (TEXT_FIELDS.has(field)) return value ?? null;
+      const number = finiteNumber(value);
+      return number !== null && INTEGER_FIELDS.has(field) ? Math.round(number) : number;
+    });
+    const inserted = rowsFrom(await tx.execute(sql2`
+      INSERT INTO running_logs (${sql2.raw(entries.map(([, column]) => column).join(", "))}, garmin_details, laps, time_series)
+      VALUES (${sql2.join(values.map((value) => sql2`${value}`), sql2`, `)},
+        ${JSON.stringify(metadata)}::jsonb, ${JSON.stringify(preview.laps)}::jsonb, ${JSON.stringify(preview.timeSeries)}::jsonb)
+      RETURNING ${ROW_COLUMNS}
+    `))[0];
+    if (!inserted) throw new Error("\u672A\u80FD\u5EFA\u7ACB Garmin \u8DD1\u6B65\u7D00\u9304\uFF0C\u8ACB\u91CD\u8A66\u3002");
+    return resultFromRow(inserted, "created");
+  });
+  if (result.action === "created") {
+    try {
+      await ensureSheetHeaders("running");
+      const sheetFields = Object.fromEntries(Object.entries(result.fields).filter(([, value]) => value !== ""));
+      await writeRowToSheet("running", { ...sheetFields, garminDetails: result.garminDetails, laps: result.laps });
+    } catch (error) {
+      console.warn("[Sheets] Garmin run committed but Sheets sync failed:", error instanceof Error ? error.message : error);
+      result.syncWarning = "\u8DD1\u6B65\u7D00\u9304\u53CA Garmin \u539F\u59CB\u8CC7\u6599\u5DF2\u5132\u5B58\uFF0C\u4F46 Google Sheets \u540C\u6B65\u672A\u5B8C\u6210\uFF1B\u8ACB\u7A0D\u5F8C\u6AA2\u67E5\u8A66\u7B97\u8868\uFF0C\u52FF\u91CD\u8907\u5EFA\u7ACB\u7D00\u9304\u3002";
+    }
+  }
+  return result;
+}
+
 // shared/healthSpreadsheet.ts
 function isRealCalendarDate(value) {
   const [year, month, day] = value.split("-").map(Number);
@@ -2842,8 +3058,8 @@ var nutritionRouter = router({
     if (!db) return [];
     return db.select().from(mealLogs).where(and(
       eq2(mealLogs.userId, OWNER_USER_ID),
-      sql2`${mealLogs.logDate} >= ${input.startDate}::date`,
-      sql2`${mealLogs.logDate} <= ${input.endDate}::date`
+      sql3`${mealLogs.logDate} >= ${input.startDate}::date`,
+      sql3`${mealLogs.logDate} <= ${input.endDate}::date`
     )).orderBy(desc(mealLogs.logDate));
   }),
   // Add meal log
@@ -3076,8 +3292,8 @@ var workoutRouter = router({
     const db = await getDb();
     if (!db) return [];
     const conditions = [eq2(workoutSessions.userId, OWNER_USER_ID)];
-    if (input?.startDate) conditions.push(sql2`${workoutSessions.startTime} >= ${/* @__PURE__ */ new Date(input.startDate + "T00:00:00+08:00")}`);
-    if (input?.endDate) conditions.push(sql2`${workoutSessions.startTime} <= ${/* @__PURE__ */ new Date(input.endDate + "T23:59:59+08:00")}`);
+    if (input?.startDate) conditions.push(sql3`${workoutSessions.startTime} >= ${/* @__PURE__ */ new Date(input.startDate + "T00:00:00+08:00")}`);
+    if (input?.endDate) conditions.push(sql3`${workoutSessions.startTime} <= ${/* @__PURE__ */ new Date(input.endDate + "T23:59:59+08:00")}`);
     return db.select().from(workoutSessions).where(and(...conditions)).orderBy(desc(workoutSessions.startTime));
   }),
   // Get session with sets
@@ -3104,15 +3320,15 @@ var workoutRouter = router({
       startTime: workoutSessions.startTime
     }).from(workoutSessions).where(and(
       eq2(workoutSessions.userId, OWNER_USER_ID),
-      sql2`${workoutSessions.startTime} >= ${dayStart}`,
-      sql2`${workoutSessions.startTime} <= ${dayEnd}`
+      sql3`${workoutSessions.startTime} >= ${dayStart}`,
+      sql3`${workoutSessions.startTime} <= ${dayEnd}`
     )).orderBy(desc(workoutSessions.startTime));
     const caloriesBurned = sessions.reduce((sum, s) => sum + (s.caloriesBurned ?? 0), 0);
-    const runningRows = await db.select({ calories: runningLogs.calories }).from(runningLogs).where(sql2`${runningLogs.date} = ${input.date}`);
+    const runningRows = await db.select({ calories: runningLogs.calories }).from(runningLogs).where(sql3`${runningLogs.date} = ${input.date}`);
     const runningBurned = runningRows.reduce((s, r) => s + (r.calories ?? 0), 0);
     const stepsRows = await db.select({ calories: dailySteps.calories }).from(dailySteps).where(and(
       eq2(dailySteps.userId, OWNER_USER_ID),
-      sql2`${dailySteps.date} = ${input.date}`
+      sql3`${dailySteps.date} = ${input.date}`
     ));
     const stepsBurned = stepsRows.reduce((s, r) => s + (r.calories ?? 0), 0);
     const totalBurned = caloriesBurned + runningBurned + stepsBurned;
@@ -3171,7 +3387,7 @@ var workoutRouter = router({
         if (newStart && newEnd && newEnd > newStart) {
           const durationMin = Math.max(1, Math.round((newEnd.getTime() - newStart.getTime()) / 6e4));
           data.duration = durationMin;
-          const volumeResult = await db.execute(sql2`
+          const volumeResult = await db.execute(sql3`
               SELECT COALESCE(SUM(reps * weight), 0) as total
               FROM workout_sets WHERE session_id = ${id}
               AND reps IS NOT NULL AND weight IS NOT NULL
@@ -3234,7 +3450,7 @@ var workoutRouter = router({
       calories: rest.calories ?? null,
       notes: rest.notes ?? null
     });
-    const volumeResult = await db.execute(sql2`
+    const volumeResult = await db.execute(sql3`
         SELECT COALESCE(SUM(reps * weight), 0) as total
         FROM workout_sets
         WHERE session_id = ${rest.sessionId} AND reps IS NOT NULL AND weight IS NOT NULL
@@ -3280,7 +3496,7 @@ var workoutRouter = router({
   getFavourites: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.execute(sql2`
+    const rows = await db.execute(sql3`
         SELECT exercise_name FROM favourite_exercises
         WHERE user_id = ${OWNER_USER_ID}
         ORDER BY created_at DESC
@@ -3290,19 +3506,19 @@ var workoutRouter = router({
   toggleFavourite: ownerProcedure.input(z2.object({ exerciseName: z2.string().min(1) })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const existing = await db.execute(sql2`
+    const existing = await db.execute(sql3`
         SELECT id FROM favourite_exercises
         WHERE user_id = ${OWNER_USER_ID} AND exercise_name = ${input.exerciseName}
       `);
     const rows = existing.rows ?? existing;
     if (rows.length > 0) {
-      await db.execute(sql2`
+      await db.execute(sql3`
           DELETE FROM favourite_exercises
           WHERE user_id = ${OWNER_USER_ID} AND exercise_name = ${input.exerciseName}
         `);
       return { isFavourite: false };
     } else {
-      await db.execute(sql2`
+      await db.execute(sql3`
           INSERT INTO favourite_exercises (user_id, exercise_name)
           VALUES (${OWNER_USER_ID}, ${input.exerciseName})
         `);
@@ -3363,7 +3579,7 @@ var workoutRouter = router({
     const endTime = /* @__PURE__ */ new Date();
     const startTime = session.startTime ? new Date(session.startTime) : endTime;
     const durationMin = Math.max(1, Math.round((endTime.getTime() - startTime.getTime()) / 6e4));
-    const volumeResult = await db.execute(sql2`
+    const volumeResult = await db.execute(sql3`
         SELECT COALESCE(SUM(reps * weight), 0) as total
         FROM workout_sets WHERE session_id = ${input.id}
         AND reps IS NOT NULL AND weight IS NOT NULL
@@ -3378,7 +3594,7 @@ var workoutRouter = router({
       totalVolume,
       updatedAt: /* @__PURE__ */ new Date()
     }).where(eq2(workoutSessions.id, input.id));
-    const exerciseCountResult = await db.execute(sql2`
+    const exerciseCountResult = await db.execute(sql3`
         SELECT COUNT(DISTINCT exercise_id) as cnt
         FROM workout_sets WHERE session_id = ${input.id}
       `);
@@ -3493,7 +3709,7 @@ Provide a brief trend analysis and exactly 3 specific recommendations covering: 
   getExercisePRs: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return {};
-    const rows = await db.execute(sql2`
+    const rows = await db.execute(sql3`
         SELECT ws.exercise_name, MAX(ws.weight) as max_weight
         FROM workout_sets ws
         INNER JOIN workout_sessions sess ON ws.session_id = sess.id
@@ -3513,7 +3729,7 @@ Provide a brief trend analysis and exactly 3 specific recommendations covering: 
   getPRHistory: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.execute(sql2`
+    const rows = await db.execute(sql3`
         WITH ranked_weights AS (
           SELECT
             ws.exercise_name,
@@ -3564,9 +3780,9 @@ Provide a brief trend analysis and exactly 3 specific recommendations covering: 
     }).from(workoutSets).innerJoin(workoutSessions, eq2(workoutSets.sessionId, workoutSessions.id)).where(and(
       eq2(workoutSessions.userId, OWNER_USER_ID),
       eq2(workoutSets.exerciseName, input.exerciseName),
-      sql2`${workoutSessions.endTime} IS NOT NULL`,
-      sql2`${workoutSets.reps} IS NOT NULL`,
-      sql2`${workoutSets.weight} IS NOT NULL`
+      sql3`${workoutSessions.endTime} IS NOT NULL`,
+      sql3`${workoutSets.reps} IS NOT NULL`,
+      sql3`${workoutSets.weight} IS NOT NULL`
     )).orderBy(desc(workoutSets.createdAt)).limit(12);
     return buildProgressionSuggestion(rows);
   })
@@ -3627,8 +3843,8 @@ var bodyRouter = router({
       weight: bodyComposition.weight
     }).from(bodyComposition).where(and(
       eq2(bodyComposition.userId, OWNER_USER_ID),
-      sql2`${bodyComposition.date} <= ${input.date}`,
-      sql2`${bodyComposition.weight} IS NOT NULL`
+      sql3`${bodyComposition.date} <= ${input.date}`,
+      sql3`${bodyComposition.weight} IS NOT NULL`
     )).orderBy(desc(bodyComposition.date)).limit(1);
     return rows[0] ?? null;
   }),
@@ -3759,7 +3975,7 @@ var heartRateRouter = router({
   getMaxHr: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return { maxHr: null };
-    const result = await db.select({ maxHr: sql2`MAX(${heartRateLogs.highHr})` }).from(heartRateLogs).where(eq2(heartRateLogs.userId, OWNER_USER_ID));
+    const result = await db.select({ maxHr: sql3`MAX(${heartRateLogs.highHr})` }).from(heartRateLogs).where(eq2(heartRateLogs.userId, OWNER_USER_ID));
     return { maxHr: result[0]?.maxHr ?? null };
   })
 });
@@ -3966,15 +4182,15 @@ var insightsRouter = router({
     const weekAgo = /* @__PURE__ */ new Date(weekAgoStr + "T00:00:00+08:00");
     const monthAgoStr = daysAgoHK(30);
     const [meals, sessions, workoutSetRows, body, sleep, hr, running, steps, bloodPressure, goals, profile] = await Promise.all([
-      db.select().from(mealLogs).where(and(eq2(mealLogs.userId, OWNER_USER_ID), sql2`${mealLogs.logDate} >= ${weekAgoStr}::date`)).limit(50),
-      db.select().from(workoutSessions).where(and(eq2(workoutSessions.userId, OWNER_USER_ID), sql2`${workoutSessions.startTime} >= ${weekAgo}`)),
-      db.select().from(workoutSets).innerJoin(workoutSessions, eq2(workoutSets.sessionId, workoutSessions.id)).where(and(eq2(workoutSessions.userId, OWNER_USER_ID), sql2`${workoutSessions.startTime} >= ${weekAgo}`)).limit(100),
+      db.select().from(mealLogs).where(and(eq2(mealLogs.userId, OWNER_USER_ID), sql3`${mealLogs.logDate} >= ${weekAgoStr}::date`)).limit(50),
+      db.select().from(workoutSessions).where(and(eq2(workoutSessions.userId, OWNER_USER_ID), sql3`${workoutSessions.startTime} >= ${weekAgo}`)),
+      db.select().from(workoutSets).innerJoin(workoutSessions, eq2(workoutSets.sessionId, workoutSessions.id)).where(and(eq2(workoutSessions.userId, OWNER_USER_ID), sql3`${workoutSessions.startTime} >= ${weekAgo}`)).limit(100),
       db.select().from(bodyComposition).where(eq2(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc(bodyComposition.date)).limit(10),
       db.select().from(sleepLogs).where(and(eq2(sleepLogs.userId, OWNER_USER_ID), gte(sleepLogs.date, weekAgoStr))),
       db.select().from(heartRateLogs).where(and(eq2(heartRateLogs.userId, OWNER_USER_ID), gte(heartRateLogs.date, weekAgoStr))),
-      db.select().from(runningLogs).where(sql2`${runningLogs.date} >= ${weekAgoStr}`).orderBy(desc(runningLogs.date)).limit(10),
-      db.select().from(dailySteps).where(and(eq2(dailySteps.userId, OWNER_USER_ID), sql2`${dailySteps.date} >= ${weekAgoStr}::date`)),
-      db.select().from(bloodPressureLogs).where(and(eq2(bloodPressureLogs.userId, OWNER_USER_ID), sql2`${bloodPressureLogs.measuredAt} >= ${weekAgo}`)).orderBy(desc(bloodPressureLogs.measuredAt)).limit(20),
+      db.select().from(runningLogs).where(sql3`${runningLogs.date} >= ${weekAgoStr}`).orderBy(desc(runningLogs.date)).limit(10),
+      db.select().from(dailySteps).where(and(eq2(dailySteps.userId, OWNER_USER_ID), sql3`${dailySteps.date} >= ${weekAgoStr}::date`)),
+      db.select().from(bloodPressureLogs).where(and(eq2(bloodPressureLogs.userId, OWNER_USER_ID), sql3`${bloodPressureLogs.measuredAt} >= ${weekAgo}`)).orderBy(desc(bloodPressureLogs.measuredAt)).limit(20),
       db.select().from(healthGoals).where(and(eq2(healthGoals.userId, OWNER_USER_ID), eq2(healthGoals.isActive, true))).limit(10),
       db.select().from(userProfile).where(eq2(userProfile.userId, OWNER_USER_ID)).limit(1)
     ]);
@@ -4061,25 +4277,25 @@ var dashboardRouter = router({
     const weekAgoDate = /* @__PURE__ */ new Date(weekAgoStr + "T00:00:00+08:00");
     const [todayMeals, recentSessions, latestBody, latestSleep, latestHr, weekMeals, todayWorkouts, todayRunning, todayStepsRows, profileRows, todayCardioSets] = await Promise.all([
       db.select().from(mealLogs).where(and(eq2(mealLogs.userId, OWNER_USER_ID), eq2(mealLogs.logDate, todayStr))),
-      db.select().from(workoutSessions).where(and(eq2(workoutSessions.userId, OWNER_USER_ID), sql2`${workoutSessions.startTime} >= ${weekAgoDate}`)).orderBy(desc(workoutSessions.startTime)).limit(7),
+      db.select().from(workoutSessions).where(and(eq2(workoutSessions.userId, OWNER_USER_ID), sql3`${workoutSessions.startTime} >= ${weekAgoDate}`)).orderBy(desc(workoutSessions.startTime)).limit(7),
       db.select().from(bodyComposition).where(eq2(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc(bodyComposition.date)).limit(2),
       db.select().from(sleepLogs).where(eq2(sleepLogs.userId, OWNER_USER_ID)).orderBy(desc(sleepLogs.date)).limit(1),
       db.select().from(heartRateLogs).where(eq2(heartRateLogs.userId, OWNER_USER_ID)).orderBy(desc(heartRateLogs.date)).limit(1),
-      db.select().from(mealLogs).where(and(eq2(mealLogs.userId, OWNER_USER_ID), sql2`${mealLogs.logDate} >= ${weekAgoStr}::date`)),
+      db.select().from(mealLogs).where(and(eq2(mealLogs.userId, OWNER_USER_ID), sql3`${mealLogs.logDate} >= ${weekAgoStr}::date`)),
       // Today's workout sessions
-      db.select({ id: workoutSessions.id, name: workoutSessions.name, duration: workoutSessions.duration, caloriesBurned: workoutSessions.caloriesBurned }).from(workoutSessions).where(and(eq2(workoutSessions.userId, OWNER_USER_ID), sql2`${workoutSessions.startTime} >= ${todayStart}`, sql2`${workoutSessions.startTime} <= ${todayEnd}`)),
+      db.select({ id: workoutSessions.id, name: workoutSessions.name, duration: workoutSessions.duration, caloriesBurned: workoutSessions.caloriesBurned }).from(workoutSessions).where(and(eq2(workoutSessions.userId, OWNER_USER_ID), sql3`${workoutSessions.startTime} >= ${todayStart}`, sql3`${workoutSessions.startTime} <= ${todayEnd}`)),
       // Today's running logs
-      db.select({ id: runningLogs.id, distanceKm: runningLogs.distanceKm, calories: runningLogs.calories }).from(runningLogs).where(sql2`${runningLogs.date} = ${todayStr}`),
+      db.select({ id: runningLogs.id, distanceKm: runningLogs.distanceKm, calories: runningLogs.calories }).from(runningLogs).where(sql3`${runningLogs.date} = ${todayStr}`),
       // Today's steps
-      db.select({ id: dailySteps.id, steps: dailySteps.steps, floorsClimbed: dailySteps.floorsClimbed, calories: dailySteps.calories }).from(dailySteps).where(and(eq2(dailySteps.userId, OWNER_USER_ID), sql2`${dailySteps.date} = ${todayStr}`)),
+      db.select({ id: dailySteps.id, steps: dailySteps.steps, floorsClimbed: dailySteps.floorsClimbed, calories: dailySteps.calories }).from(dailySteps).where(and(eq2(dailySteps.userId, OWNER_USER_ID), sql3`${dailySteps.date} = ${todayStr}`)),
       // User profile for Mifflin-St Jeor BMR
       db.select().from(userProfile).where(eq2(userProfile.userId, OWNER_USER_ID)).limit(1),
       // Today's cardio sets calories (from workout_sets joined with today's sessions)
       db.select({ calories: workoutSets.calories, exerciseName: workoutSets.exerciseName, duration: workoutSets.duration, distance: workoutSets.distance }).from(workoutSets).innerJoin(workoutSessions, eq2(workoutSets.sessionId, workoutSessions.id)).where(and(
         eq2(workoutSessions.userId, OWNER_USER_ID),
-        sql2`${workoutSessions.startTime} >= ${todayStart}`,
-        sql2`${workoutSessions.startTime} <= ${todayEnd}`,
-        sql2`${workoutSets.exerciseName} = ANY(${sql2.raw(`ARRAY[${CARDIO_EXERCISE_NAMES.map((n) => `'${n.replace(/'/g, "''")}' `).join(",")}]::text[]`)})`
+        sql3`${workoutSessions.startTime} >= ${todayStart}`,
+        sql3`${workoutSessions.startTime} <= ${todayEnd}`,
+        sql3`${workoutSets.exerciseName} = ANY(${sql3.raw(`ARRAY[${CARDIO_EXERCISE_NAMES.map((n) => `'${n.replace(/'/g, "''")}' `).join(",")}]::text[]`)})`
       ))
     ]);
     const todayCalories = todayMeals.reduce((s, m) => s + (m.calories ?? 0), 0);
@@ -4304,7 +4520,7 @@ var csvImportRouter = router({
     } else if (input.dataType === "running") {
       for (const r of rows) {
         try {
-          await db.execute(sql2`
+          await db.execute(sql3`
               INSERT INTO running_logs (
                 date, running_type, route_type, running_shoes, distance_km, hour, minutes, second,
                 average_pace, best_pace, average_heart_rate, maximum_heart_rate,
@@ -4369,7 +4585,7 @@ var chartsRouter = router({
       bmi: bodyComposition.bmi
     }).from(bodyComposition).where(and(
       eq2(bodyComposition.userId, OWNER_USER_ID),
-      sql2`${bodyComposition.date} >= ${sinceStr}`
+      sql3`${bodyComposition.date} >= ${sinceStr}`
     )).orderBy(bodyComposition.date);
   }),
   // Fetch sleep history for charting
@@ -4393,7 +4609,7 @@ var chartsRouter = router({
       waketime: sleepLogs.waketime
     }).from(sleepLogs).where(and(
       eq2(sleepLogs.userId, OWNER_USER_ID),
-      sql2`${sleepLogs.date} >= ${sinceStr}`
+      sql3`${sleepLogs.date} >= ${sinceStr}`
     )).orderBy(sleepLogs.date);
     const toHrs = (v) => v != null && v > 24 ? Math.round(v / 60 * 10) / 10 : v;
     return rows.map((r) => ({
@@ -4417,15 +4633,15 @@ var chartsRouter = router({
       avgHr: heartRateLogs.avgHr
     }).from(heartRateLogs).where(and(
       eq2(heartRateLogs.userId, OWNER_USER_ID),
-      sql2`${heartRateLogs.date} >= ${sinceStr}`
+      sql3`${heartRateLogs.date} >= ${sinceStr}`
     )).orderBy(heartRateLogs.date);
     const sleepHrvRows = await db.select({
       date: sleepLogs.date,
       hrv: sleepLogs.hrv
     }).from(sleepLogs).where(and(
       eq2(sleepLogs.userId, OWNER_USER_ID),
-      sql2`${sleepLogs.date} >= ${sinceStr}`,
-      sql2`${sleepLogs.hrv} IS NOT NULL`
+      sql3`${sleepLogs.date} >= ${sinceStr}`,
+      sql3`${sleepLogs.hrv} IS NOT NULL`
     )).orderBy(sleepLogs.date);
     const hrvByDate = new Map(sleepHrvRows.map((r) => [r.date, r.hrv]));
     const allDates = /* @__PURE__ */ new Set([...hrRows.map((r) => r.date), ...sleepHrvRows.map((r) => r.date)]);
@@ -4448,13 +4664,13 @@ var chartsRouter = router({
     const sinceStr = daysAgoHK(input.days);
     const sinceDate = /* @__PURE__ */ new Date(sinceStr + "T00:00:00+08:00");
     return db.select({
-      date: sql2`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
+      date: sql3`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
       duration: workoutSessions.duration,
       totalVolume: workoutSessions.totalVolume,
       name: workoutSessions.name
     }).from(workoutSessions).where(and(
       eq2(workoutSessions.userId, OWNER_USER_ID),
-      sql2`${workoutSessions.startTime} >= ${sinceDate}`
+      sql3`${workoutSessions.startTime} >= ${sinceDate}`
     )).orderBy(workoutSessions.startTime);
   }),
   // Weekly exercise calories burned breakdown (workout + running + steps)
@@ -4464,23 +4680,23 @@ var chartsRouter = router({
     const sinceDate = new Date(Date.now() - input.weeks * 7 * 864e5);
     const sinceDateStr = sinceDate.toISOString().slice(0, 10);
     const workoutRows = await db.select({
-      date: sql2`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
-      calories: sql2`COALESCE(SUM(${workoutSessions.caloriesBurned}), 0)`.as("calories")
+      date: sql3`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
+      calories: sql3`COALESCE(SUM(${workoutSessions.caloriesBurned}), 0)`.as("calories")
     }).from(workoutSessions).where(and(
       eq2(workoutSessions.userId, OWNER_USER_ID),
-      sql2`${workoutSessions.startTime} >= ${sinceDate}`,
-      sql2`${workoutSessions.endTime} IS NOT NULL`
-    )).groupBy(sql2`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`);
+      sql3`${workoutSessions.startTime} >= ${sinceDate}`,
+      sql3`${workoutSessions.endTime} IS NOT NULL`
+    )).groupBy(sql3`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`);
     const runningRows = await db.select({
       date: runningLogs.date,
-      calories: sql2`COALESCE(SUM(${runningLogs.calories}), 0)`.as("calories")
-    }).from(runningLogs).where(sql2`${runningLogs.date} >= ${sinceDateStr}`).groupBy(runningLogs.date);
+      calories: sql3`COALESCE(SUM(${runningLogs.calories}), 0)`.as("calories")
+    }).from(runningLogs).where(sql3`${runningLogs.date} >= ${sinceDateStr}`).groupBy(runningLogs.date);
     const stepsRows = await db.select({
       date: dailySteps.date,
-      calories: sql2`COALESCE(SUM(${dailySteps.calories}), 0)`.as("calories")
+      calories: sql3`COALESCE(SUM(${dailySteps.calories}), 0)`.as("calories")
     }).from(dailySteps).where(and(
       eq2(dailySteps.userId, OWNER_USER_ID),
-      sql2`${dailySteps.date} >= ${sinceDateStr}`
+      sql3`${dailySteps.date} >= ${sinceDateStr}`
     )).groupBy(dailySteps.date);
     const weekMap = {};
     const getWeekLabel = (dateStr) => {
@@ -4531,13 +4747,13 @@ var chartsRouter = router({
       "Jacob's Ladder"
     ];
     const cardioSets = await db.select({
-      date: sql2`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
+      date: sql3`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
       calories: workoutSets.calories,
       duration: workoutSets.duration,
       exerciseName: workoutSets.exerciseName
     }).from(workoutSets).innerJoin(workoutSessions, eq2(workoutSets.sessionId, workoutSessions.id)).where(and(
       eq2(workoutSessions.userId, OWNER_USER_ID),
-      sql2`${workoutSessions.startTime} >= ${sinceDate}`,
+      sql3`${workoutSessions.startTime} >= ${sinceDate}`,
       inArray(workoutSets.exerciseName, CARDIO_NAMES_LIST)
     ));
     const dayMap = {};
@@ -4559,15 +4775,15 @@ var chartsRouter = router({
     if (!db) return [];
     const sinceStr = daysAgoHK(input.days);
     const rows = await db.select({
-      date: sql2`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`.as("date"),
-      totalCalories: sql2`COALESCE(SUM(${mealLogs.calories}), 0)`.as("totalCalories"),
-      totalProtein: sql2`COALESCE(SUM(${mealLogs.protein}), 0)`.as("totalProtein"),
-      totalCarbs: sql2`COALESCE(SUM(${mealLogs.carbs}), 0)`.as("totalCarbs"),
-      totalFat: sql2`COALESCE(SUM(${mealLogs.fat}), 0)`.as("totalFat")
+      date: sql3`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`.as("date"),
+      totalCalories: sql3`COALESCE(SUM(${mealLogs.calories}), 0)`.as("totalCalories"),
+      totalProtein: sql3`COALESCE(SUM(${mealLogs.protein}), 0)`.as("totalProtein"),
+      totalCarbs: sql3`COALESCE(SUM(${mealLogs.carbs}), 0)`.as("totalCarbs"),
+      totalFat: sql3`COALESCE(SUM(${mealLogs.fat}), 0)`.as("totalFat")
     }).from(mealLogs).where(and(
       eq2(mealLogs.userId, OWNER_USER_ID),
-      sql2`${mealLogs.logDate} >= ${sinceStr}::date`
-    )).groupBy(sql2`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`).orderBy(sql2`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`);
+      sql3`${mealLogs.logDate} >= ${sinceStr}::date`
+    )).groupBy(sql3`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`).orderBy(sql3`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`);
     return rows;
   })
 });
@@ -5002,7 +5218,7 @@ var runningRouter = router({
   getActiveShoes: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.execute(sql2`
+    const rows = await db.execute(sql3`
         SELECT id, shoes_name, brand, status, firstusedate, retirement_date
         FROM running_shoes
         WHERE status != 'Retired'
@@ -5014,7 +5230,7 @@ var runningRouter = router({
     const db = await getDb();
     if (!db) return [];
     const rows = await db.execute(
-      sql2`SELECT * FROM running_logs ORDER BY date DESC, id DESC LIMIT ${input.limit}`
+      sql3`SELECT * FROM running_logs ORDER BY date DESC, id DESC LIMIT ${input.limit}`
     );
     return rows.rows ?? rows;
   }),
@@ -5028,31 +5244,31 @@ var runningRouter = router({
     const db = await getDb();
     if (!db) return { rows: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
     const conditions = [];
-    if (input.runningType !== "all") conditions.push(sql2`running_type = ${input.runningType}`);
+    if (input.runningType !== "all") conditions.push(sql3`running_type = ${input.runningType}`);
     if (input.search) {
       const pattern = `%${input.search}%`;
-      conditions.push(sql2`(
+      conditions.push(sql3`(
           COALESCE(running_type, '') ILIKE ${pattern}
           OR COALESCE(running_shoes, '') ILIKE ${pattern}
           OR COALESCE(route_type, '') ILIKE ${pattern}
           OR COALESCE(notes, '') ILIKE ${pattern}
         )`);
     }
-    const whereClause = conditions.length ? sql2.join(conditions, sql2` AND `) : sql2`TRUE`;
-    const orderBy = input.sort === "date_asc" ? sql2`date ASC, id ASC` : input.sort === "distance_desc" ? sql2`distance_km DESC NULLS LAST, date DESC, id DESC` : input.sort === "pace_asc" ? sql2`
+    const whereClause = conditions.length ? sql3.join(conditions, sql3` AND `) : sql3`TRUE`;
+    const orderBy = input.sort === "date_asc" ? sql3`date ASC, id ASC` : input.sort === "distance_desc" ? sql3`distance_km DESC NULLS LAST, date DESC, id DESC` : input.sort === "pace_asc" ? sql3`
               CASE
                 WHEN TRIM(COALESCE(average_pace, '')) ~ '^[0-9]+:[0-9]{2}(\\.[0-9]+)?$'
                   THEN SPLIT_PART(TRIM(average_pace), ':', 1)::numeric * 60 + SPLIT_PART(TRIM(average_pace), ':', 2)::numeric
                 WHEN TRIM(COALESCE(average_pace, '')) ~ '^[0-9]+(\\.[0-9]+)?$'
                   THEN TRIM(average_pace)::numeric * 60
                 ELSE NULL
-              END ASC NULLS LAST, date DESC, id DESC` : input.sort === "hr_asc" ? sql2`average_heart_rate ASC NULLS LAST, date DESC, id DESC` : sql2`date DESC, id DESC`;
-    const countResult = await db.execute(sql2`SELECT COUNT(*)::int AS total FROM running_logs WHERE ${whereClause}`);
+              END ASC NULLS LAST, date DESC, id DESC` : input.sort === "hr_asc" ? sql3`average_heart_rate ASC NULLS LAST, date DESC, id DESC` : sql3`date DESC, id DESC`;
+    const countResult = await db.execute(sql3`SELECT COUNT(*)::int AS total FROM running_logs WHERE ${whereClause}`);
     const total = Number((countResult.rows ?? countResult)[0]?.total ?? 0);
     const totalPages = Math.max(1, Math.ceil(total / input.pageSize));
     const page = Math.min(input.page, totalPages);
     const offset = (page - 1) * input.pageSize;
-    const rows = await db.execute(sql2`
+    const rows = await db.execute(sql3`
         SELECT * FROM running_logs
         WHERE ${whereClause}
         ORDER BY ${orderBy}
@@ -5066,9 +5282,9 @@ var runningRouter = router({
   })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
-    const distanceWhere = input.distanceBand === "short" ? sql2`distance_km < 5` : input.distanceBand === "medium" ? sql2`distance_km >= 5 AND distance_km < 10` : input.distanceBand === "long" ? sql2`distance_km >= 10 AND distance_km < 21.1` : input.distanceBand === "ultra" ? sql2`distance_km >= 21.1` : sql2`TRUE`;
-    const routeWhere = input.routeType === "all" ? sql2`TRUE` : sql2`route_type = ${input.routeType}`;
-    const rows = await db.execute(sql2`
+    const distanceWhere = input.distanceBand === "short" ? sql3`distance_km < 5` : input.distanceBand === "medium" ? sql3`distance_km >= 5 AND distance_km < 10` : input.distanceBand === "long" ? sql3`distance_km >= 10 AND distance_km < 21.1` : input.distanceBand === "ultra" ? sql3`distance_km >= 21.1` : sql3`TRUE`;
+    const routeWhere = input.routeType === "all" ? sql3`TRUE` : sql3`route_type = ${input.routeType}`;
+    const rows = await db.execute(sql3`
         SELECT
           running_shoes AS shoe,
           COUNT(*)::int AS runs,
@@ -5090,7 +5306,7 @@ var runningRouter = router({
   getStats: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return null;
-    const rows = await db.execute(sql2`
+    const rows = await db.execute(sql3`
         SELECT
           COUNT(*) as total_runs,
           SUM(distance_km::numeric) as total_distance,
@@ -5105,13 +5321,13 @@ var runningRouter = router({
           MAX(date) as last_run
         FROM running_logs
       `);
-    const typeRows = await db.execute(sql2`
+    const typeRows = await db.execute(sql3`
         SELECT running_type, COUNT(*) as count, SUM(distance_km::numeric) as total_km
         FROM running_logs
         GROUP BY running_type
         ORDER BY count DESC
       `);
-    const monthlyRows = await db.execute(sql2`
+    const monthlyRows = await db.execute(sql3`
         SELECT
           SUBSTRING(date, 1, 7) as month,
           COUNT(*) as runs,
@@ -5133,7 +5349,7 @@ var runningRouter = router({
     const db = await getDb();
     if (!db) return null;
     const [runResult, sleepResult, heartResult, bodyResult] = await Promise.all([
-      db.execute(sql2`
+      db.execute(sql3`
           SELECT id, date, running_type, route_type, distance_km, hour, minutes, second,
                  average_pace, best_pace, average_heart_rate, maximum_heart_rate,
                  average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
@@ -5146,14 +5362,14 @@ var runningRouter = router({
           FROM running_logs
           ORDER BY date DESC, id DESC
         `),
-      db.execute(sql2`
+      db.execute(sql3`
           SELECT date, sleep_score, sleep_duration, body_battery, hrv, resting_hr, pulse_ox, respiration
           FROM sleep_logs
           WHERE user_id = ${OWNER_USER_ID}
           ORDER BY date DESC
           LIMIT 120
         `),
-      db.execute(sql2`
+      db.execute(sql3`
           SELECT date, resting_hr, high_hr, hrv, avg_hr,
                  zone1_minutes, zone2_minutes, zone3_minutes, zone4_minutes, zone5_minutes
           FROM heart_rate_logs
@@ -5161,7 +5377,7 @@ var runningRouter = router({
           ORDER BY date DESC
           LIMIT 120
         `),
-      db.execute(sql2`
+      db.execute(sql3`
           SELECT date, weight, body_fat_pct, muscle_mass, bmi
           FROM body_composition
           WHERE user_id = ${OWNER_USER_ID}
@@ -5335,7 +5551,7 @@ var runningRouter = router({
   getGarminRunDetail: publicProcedure.input(z2.object({ id: z2.number().int().positive() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return null;
-    const result = await db.execute(sql2`
+    const result = await db.execute(sql3`
         SELECT id, date, running_type, route_type, distance_km, hour, minutes, second,
                average_pace, best_pace, average_heart_rate, maximum_heart_rate,
                average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
@@ -5385,6 +5601,15 @@ var runningRouter = router({
     const preview = parseGarminRawFile(buffer, input.fileName);
     return { ...preview, rawFileKey: stored.key };
   }),
+  saveGarminImport: ownerProcedure.input(z2.object({
+    fileKey: z2.string().trim().min(20).max(500),
+    fileName: z2.string().trim().min(5).max(180),
+    mimeType: z2.string().trim().max(120).optional(),
+    runningLogId: z2.number().int().positive().optional()
+  })).mutation(async ({ input }) => {
+    validateGarminOriginalKey(input.fileKey);
+    return saveGarminImport(input);
+  }),
   saveGarminRawSource: ownerProcedure.input(z2.object({
     runningLogId: z2.number().int().positive(),
     fileName: z2.string().trim().min(1).max(180),
@@ -5413,7 +5638,7 @@ var runningRouter = router({
       rawFileFormat: input.sourceFormat,
       rawSampleCount: input.sampleCount
     });
-    await db.execute(sql2`
+    await db.execute(sql3`
         UPDATE running_logs
         SET garmin_details = COALESCE(garmin_details, '{}'::jsonb) || ${metadata}::jsonb
         WHERE id = ${input.runningLogId}
@@ -5476,11 +5701,11 @@ var runningRouter = router({
     if (!db) throw new Error("DB unavailable");
     let shoesId = null;
     if (input.runningShoes) {
-      const shoeRow = await db.execute(sql2`SELECT id FROM running_shoes WHERE shoes_name = ${input.runningShoes} LIMIT 1`);
+      const shoeRow = await db.execute(sql3`SELECT id FROM running_shoes WHERE shoes_name = ${input.runningShoes} LIMIT 1`);
       const found = (shoeRow.rows ?? shoeRow)[0];
       if (found) shoesId = Number(found.id);
     }
-    const result = await db.execute(sql2`
+    const result = await db.execute(sql3`
         INSERT INTO running_logs (
           date, running_type, route_type, running_shoes, shoes_id, distance_km, hour, minutes, second,
           average_pace, best_pace, average_heart_rate, maximum_heart_rate,
@@ -5592,41 +5817,41 @@ var runningRouter = router({
     if (!db) throw new Error("DB unavailable");
     const { id, ...fields } = input;
     if (fields.runningShoes !== void 0) {
-      const shoeRow = await db.execute(sql2`SELECT id FROM running_shoes WHERE shoes_name = ${fields.runningShoes} LIMIT 1`);
+      const shoeRow = await db.execute(sql3`SELECT id FROM running_shoes WHERE shoes_name = ${fields.runningShoes} LIMIT 1`);
       const found = (shoeRow.rows ?? shoeRow)[0];
       fields.shoesId = found ? Number(found.id) : null;
     }
     const setClauses = Object.entries(fields).filter(([, v]) => v !== void 0).map(([k, v]) => {
       const col = k.replace(/([A-Z])/g, "_$1").toLowerCase();
       if (k === "garminDetails" || k === "laps" || k === "timeSeries") {
-        return sql2`${sql2.raw(col)} = ${JSON.stringify(v)}::jsonb`;
+        return sql3`${sql3.raw(col)} = ${JSON.stringify(v)}::jsonb`;
       }
-      return sql2`${sql2.raw(col)} = ${v}`;
+      return sql3`${sql3.raw(col)} = ${v}`;
     });
     if (!setClauses.length) return { success: true };
-    await db.execute(sql2`UPDATE running_logs SET ${sql2.join(setClauses, sql2`, `)} WHERE id = ${id}`);
+    await db.execute(sql3`UPDATE running_logs SET ${sql3.join(setClauses, sql3`, `)} WHERE id = ${id}`);
     return { success: true };
   }),
   deleteLog: ownerProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    await db.execute(sql2`DELETE FROM running_logs WHERE id = ${input.id}`);
+    await db.execute(sql3`DELETE FROM running_logs WHERE id = ${input.id}`);
     return { success: true };
   }),
   getLabPersonalization: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return { body: null, baselinePaceSecPerKm: null, maxHeartRate: null, restingHeartRate: null, runTypeDistribution: [], historicalRunCount: 0, baselineRunCount: 0, historicalRuns: [] };
     const [profileRows, bodyRows, heartRows, runningRows, typeRows] = await Promise.all([
-      db.execute(sql2`SELECT height FROM user_profile WHERE user_id = ${OWNER_USER_ID} LIMIT 1`),
-      db.execute(sql2`SELECT weight, body_fat_pct, muscle_mass, date FROM body_composition WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
-      db.execute(sql2`SELECT resting_hr, high_hr FROM heart_rate_logs WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
-      db.execute(sql2`
+      db.execute(sql3`SELECT height FROM user_profile WHERE user_id = ${OWNER_USER_ID} LIMIT 1`),
+      db.execute(sql3`SELECT weight, body_fat_pct, muscle_mass, date FROM body_composition WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
+      db.execute(sql3`SELECT resting_hr, high_hr FROM heart_rate_logs WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
+      db.execute(sql3`
           SELECT id, average_pace, average_heart_rate, maximum_heart_rate, distance_km, running_type, route_type, date
           FROM running_logs
           WHERE NULLIF(TRIM(COALESCE(average_pace, '')), '') IS NOT NULL
           ORDER BY date ASC
         `),
-      db.execute(sql2`
+      db.execute(sql3`
           SELECT COALESCE(running_type, '未分類') AS running_type, COUNT(*) AS count
           FROM running_logs
           GROUP BY COALESCE(running_type, '未分類')
@@ -5707,12 +5932,12 @@ var runningRouter = router({
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     const [logRows, raceRows] = await Promise.all([
-      input.scope === "races" ? Promise.resolve([]) : db.execute(sql2`
+      input.scope === "races" ? Promise.resolve([]) : db.execute(sql3`
           SELECT id, date, route_type, temperature, humidity, wind_speed, apparent_temp, precipitation,
                  weather_code, weather_condition, weather_location
           FROM running_logs WHERE date BETWEEN ${input.startDate} AND ${input.endDate} ORDER BY date DESC
         `),
-      input.scope === "logs" ? Promise.resolve([]) : db.execute(sql2`
+      input.scope === "logs" ? Promise.resolve([]) : db.execute(sql3`
           SELECT id, date, temperature, humidity, wind_speed, apparent_temp, precipitation,
                  weather_code, weather_condition, weather_location
           FROM races WHERE date BETWEEN ${input.startDate} AND ${input.endDate} ORDER BY date DESC
@@ -5740,12 +5965,12 @@ var runningRouter = router({
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     const [logRows, raceRows] = await Promise.all([
-      input.scope === "races" ? Promise.resolve([]) : db.execute(sql2`
+      input.scope === "races" ? Promise.resolve([]) : db.execute(sql3`
           SELECT id, date, route_type, temperature, humidity, wind_speed, apparent_temp, precipitation,
                  weather_code, weather_condition, weather_location
           FROM running_logs WHERE date BETWEEN ${input.startDate} AND ${input.endDate} ORDER BY date ASC
         `),
-      input.scope === "logs" ? Promise.resolve([]) : db.execute(sql2`
+      input.scope === "logs" ? Promise.resolve([]) : db.execute(sql3`
           SELECT id, date, location, temperature, humidity, wind_speed, apparent_temp, precipitation,
                  weather_code, weather_condition, weather_location
           FROM races WHERE date BETWEEN ${input.startDate} AND ${input.endDate} ORDER BY date ASC
@@ -5789,7 +6014,7 @@ var runningRouter = router({
       try {
         const sets = [];
         if (candidate.needsRouteType && input.routeType) {
-          sets.push(sql2`route_type = ${input.routeType}`);
+          sets.push(sql3`route_type = ${input.routeType}`);
           routeTypeUpdates += 1;
         }
         if (candidate.needsWeather) {
@@ -5800,24 +6025,24 @@ var runningRouter = router({
             skippedNoData += 1;
           } else {
             sets.push(
-              sql2`temperature = ${weather.temperature}`,
-              sql2`humidity = ${weather.humidity}`,
-              sql2`wind_speed = ${weather.windSpeed}`,
-              sql2`apparent_temp = ${weather.apparentTemp}`,
-              sql2`precipitation = ${weather.precipitation}`,
-              sql2`weather_code = ${weather.weatherCode}`,
-              sql2`weather_condition = ${weather.weatherCondition}`,
-              sql2`weather_location = ${weather.weatherLocation}`,
-              sql2`weather_observed_at = ${weather.weatherObservedAt}`,
-              sql2`weather_source = ${weather.weatherSource}`
+              sql3`temperature = ${weather.temperature}`,
+              sql3`humidity = ${weather.humidity}`,
+              sql3`wind_speed = ${weather.windSpeed}`,
+              sql3`apparent_temp = ${weather.apparentTemp}`,
+              sql3`precipitation = ${weather.precipitation}`,
+              sql3`weather_code = ${weather.weatherCode}`,
+              sql3`weather_condition = ${weather.weatherCondition}`,
+              sql3`weather_location = ${weather.weatherLocation}`,
+              sql3`weather_observed_at = ${weather.weatherObservedAt}`,
+              sql3`weather_source = ${weather.weatherSource}`
             );
             weatherUpdates += 1;
           }
         }
         if (!sets.length) continue;
-        sets.push(sql2`updated_at = NOW()`);
+        sets.push(sql3`updated_at = NOW()`);
         const table = candidate.kind === "log" ? "running_logs" : "races";
-        await db.execute(sql2`UPDATE ${sql2.raw(table)} SET ${sql2.join(sets, sql2`, `)} WHERE id = ${candidate.id}`);
+        await db.execute(sql3`UPDATE ${sql3.raw(table)} SET ${sql3.join(sets, sql3`, `)} WHERE id = ${candidate.id}`);
       } catch (error) {
         failures.push({ id: candidate.id, kind: candidate.kind, message: error instanceof Error ? error.message : "\u66F4\u65B0\u5931\u6557" });
       }
@@ -5869,7 +6094,7 @@ var runningRouter = router({
   getAIAnalysis: ownerProcedure.input(z2.object({ weeks: z2.number().optional().default(12) })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const recentRows = await db.execute(sql2`
+    const recentRows = await db.execute(sql3`
         SELECT date, running_type, running_shoes, distance_km, hour, minutes, second,
                average_pace, best_pace, average_heart_rate, maximum_heart_rate,
                average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
@@ -5881,7 +6106,7 @@ var runningRouter = router({
       `);
     const logs = recentRows.rows ?? recentRows;
     if (!logs.length) return { analysis: "\u76EE\u524D\u6C92\u6709\u8DB3\u5920\u7684\u8DD1\u6B65\u8A18\u9304\u3002" };
-    const statsRows = await db.execute(sql2`
+    const statsRows = await db.execute(sql3`
         SELECT
           COUNT(*) as total_runs,
           SUM(distance_km::numeric) as total_distance,
@@ -5915,7 +6140,7 @@ var runningRouter = router({
       r.running_shoes ? `\u8DD1\u978B:${r.running_shoes}` : "",
       r.notes ? `\u5099\u8A3B:${r.notes}` : ""
     ].filter(Boolean).join(", ")).join("\\n");
-    const upcomingRaceRows = await db.execute(sql2`
+    const upcomingRaceRows = await db.execute(sql3`
         SELECT race_name, date, distance_km, location
         FROM races
         WHERE date >= TO_CHAR(NOW(), 'YYYY-MM-DD')
@@ -5923,7 +6148,7 @@ var runningRouter = router({
         LIMIT 10
       `);
     const upcomingRaces = upcomingRaceRows.rows ?? upcomingRaceRows;
-    const pastRaceRows = await db.execute(sql2`
+    const pastRaceRows = await db.execute(sql3`
         SELECT race_name, date, distance_km, finish_time, finish_hr, finish_min, finish_sec, is_pb, overall_place, gender_group_place, age_group_place, location, notes
         FROM races
         WHERE date < TO_CHAR(NOW(), 'YYYY-MM-DD')
@@ -5932,7 +6157,7 @@ var runningRouter = router({
         LIMIT 20
       `);
     const pastRaces = pastRaceRows.rows ?? pastRaceRows;
-    const activeShoeRows = await db.execute(sql2`
+    const activeShoeRows = await db.execute(sql3`
         SELECT s.shoes_name, s.brand, s.model,
           COALESCE(s.initial_km::numeric, 0) + COALESCE(SUM(r.distance_km::numeric), 0) AS total_km
         FROM running_shoes s
@@ -6025,7 +6250,7 @@ ${activeShoeSummary || "\u66AB\u7121\u8DD1\u978B\u8A18\u9304"}
   })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const runRows = await db.execute(sql2`
+    const runRows = await db.execute(sql3`
         SELECT date, running_type, distance_km, hour, minutes, second,
                average_pace, best_pace, average_heart_rate, maximum_heart_rate,
                average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
@@ -6033,29 +6258,29 @@ ${activeShoeSummary || "\u66AB\u7121\u8DD1\u978B\u8A18\u9304"}
         FROM running_logs ORDER BY date DESC LIMIT 60
       `);
     const runs = runRows.rows ?? runRows;
-    const raceRows = await db.execute(sql2`
+    const raceRows = await db.execute(sql3`
         SELECT race_name, date, distance_km, finish_hr, finish_min, finish_sec, finish_time, is_pb, overall_place, location
         FROM races ORDER BY date DESC LIMIT 30
       `);
     const allRaces = raceRows.rows ?? raceRows;
-    const bodyRows = await db.execute(sql2`
+    const bodyRows = await db.execute(sql3`
         SELECT weight, body_fat_pct, muscle_mass, bmi, bmr, visceral_fat
         FROM body_composition ORDER BY date DESC LIMIT 1
       `);
     const body = (bodyRows.rows ?? bodyRows)[0] ?? null;
-    const hrRows = await db.execute(sql2`
+    const hrRows = await db.execute(sql3`
         SELECT resting_hr, high_hr, hrv, avg_hr, zone1_minutes, zone2_minutes, zone3_minutes, zone4_minutes, zone5_minutes
         FROM heart_rate_logs ORDER BY date DESC LIMIT 1
       `);
     const hr = (hrRows.rows ?? hrRows)[0] ?? null;
-    const sleepRows = await db.execute(sql2`
+    const sleepRows = await db.execute(sql3`
         SELECT AVG(sleep_score) as avg_score, AVG(sleep_duration) as avg_duration,
                AVG(hrv) as avg_hrv, AVG(resting_hr) as avg_resting_hr,
                AVG(body_battery) as avg_battery, AVG(deep_sleep) as avg_deep
         FROM sleep_logs WHERE date >= TO_CHAR(NOW() - interval '14 days', 'YYYY-MM-DD')
       `);
     const sleep = (sleepRows.rows ?? sleepRows)[0] ?? null;
-    const shoeRows = await db.execute(sql2`
+    const shoeRows = await db.execute(sql3`
         SELECT s.shoes_name, s.brand,
           COALESCE(s.initial_km::numeric, 0) + COALESCE(SUM(r.distance_km::numeric), 0) AS total_km
         FROM running_shoes s
@@ -6178,7 +6403,7 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   getShoes: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.execute(sql2`
+    const rows = await db.execute(sql3`
         SELECT s.*,
           COALESCE(s.initial_km::numeric, 0) + COALESCE(SUM(r.distance_km::numeric), 0) AS total_km,
           COALESCE(COUNT(r.id), 0) AS run_count,
@@ -6206,7 +6431,7 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    await db.execute(sql2`
+    await db.execute(sql3`
         INSERT INTO running_shoes (shoes_name, brand, model, status, purchase_date, retirement_date, initial_km, max_km, notes, price, firstusedate, photo_url)
         VALUES (${input.shoesName}, ${input.brand ?? null}, ${input.model ?? null}, ${input.status ?? "Active"},
           ${input.purchaseDate ?? null}, ${input.retirementDate ?? null}, ${input.initialKm ?? 0},
@@ -6295,13 +6520,13 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   deleteShoe: ownerProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    await db.execute(sql2`DELETE FROM running_shoes WHERE id = ${input.id}`);
+    await db.execute(sql3`DELETE FROM running_shoes WHERE id = ${input.id}`);
     return { success: true };
   }),
   getShoeRunHistory: publicProcedure.input(z2.object({ shoeId: z2.number().optional(), shoeName: z2.string().optional() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.execute(sql2`
+    const rows = await db.execute(sql3`
         SELECT id, date, distance_km, hour, minutes, second, average_pace, average_heart_rate,
                average_cadence, calories, running_type, notes
         FROM running_logs
@@ -6316,7 +6541,7 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   getRaces: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.execute(sql2`
+    const rows = await db.execute(sql3`
         SELECT id, race_name, date, distance_km, location, registration, bib_no, is_pb,
           finish_time, finish_hr, finish_min, finish_sec, target_hr, target_min, target_sec,
           overall_place, age_group_place, gender_group_place, running_shoes, shoes_id,
@@ -6361,7 +6586,7 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    await db.execute(sql2`
+    await db.execute(sql3`
         INSERT INTO races (race_name, date, distance_km, location, registration, bib_no, is_pb, finish_time,
           finish_hr, finish_min, finish_sec, target_hr, target_min, target_sec,
           overall_place, age_group_place, gender_group_place, running_shoes, shoes_id,
@@ -6550,13 +6775,13 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   deleteRace: ownerProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    await db.execute(sql2`DELETE FROM races WHERE id = ${input.id}`);
+    await db.execute(sql3`DELETE FROM races WHERE id = ${input.id}`);
     return { success: true };
   }),
   getPBs: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.execute(sql2`
+    const rows = await db.execute(sql3`
         SELECT DISTINCT ON (distance_km) distance_km, race_name, date, finish_time,
           finish_hr, finish_min, finish_sec, location
         FROM races
@@ -6570,14 +6795,14 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   getRacesEnriched: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const raceRows = await db.execute(sql2`SELECT * FROM races ORDER BY date DESC`);
+    const raceRows = await db.execute(sql3`SELECT * FROM races ORDER BY date DESC`);
     const races3 = raceRows.rows ?? raceRows;
     const enriched = await Promise.all(races3.map(async (race) => {
       if (!race.date || !race.distance_km) return { ...race, runLog: null };
       const distKm = parseFloat(race.distance_km);
       const minDist = distKm * 0.9;
       const maxDist = distKm * 1.1;
-      const logRows = await db.execute(sql2`
+      const logRows = await db.execute(sql3`
           SELECT id, date, distance_km, average_pace, best_pace, average_heart_rate, maximum_heart_rate, average_cadence,
                  running_shoes, hour, minutes, second, calories, running_type,
                  max_cadence, avg_stride_length_m, avg_vertical_ratio, vertical_oscillation_cm,
@@ -6596,16 +6821,16 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   analyzeRace: ownerProcedure.input(z2.object({ raceId: z2.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const raceRows = await db.execute(sql2`SELECT * FROM races WHERE id = ${input.raceId}`);
+    const raceRows = await db.execute(sql3`SELECT * FROM races WHERE id = ${input.raceId}`);
     const race = (raceRows.rows ?? raceRows)[0];
     if (!race) throw new Error("Race not found");
-    const pbRows = await db.execute(sql2`
+    const pbRows = await db.execute(sql3`
         SELECT distance_km, finish_time FROM races
         WHERE is_pb = true AND finish_time IS NOT NULL
         ORDER BY distance_km ASC
       `);
     const pbs = pbRows.rows ?? pbRows;
-    const trainingRows = await db.execute(sql2`
+    const trainingRows = await db.execute(sql3`
         SELECT date, distance_km, average_pace, average_heart_rate, running_type
         FROM running_logs
         WHERE date >= (${race.date}::date - interval '12 weeks')::text
@@ -6660,7 +6885,7 @@ ${trainingSummary || "\u7121\u8A13\u7DF4\u8A18\u9304"}
     const ext = input.mimeType.includes("png") ? "png" : "jpg";
     const key = `running-photos/${OWNER_USER_ID}/${input.runningLogId}/${nanoid()}.${ext}`;
     const { url } = await storagePut(key, buffer, input.mimeType);
-    const existing = await db.select({ cnt: sql2`COUNT(*)` }).from(runningLogPhotos).where(and(eq2(runningLogPhotos.runningLogId, input.runningLogId), eq2(runningLogPhotos.userId, OWNER_USER_ID)));
+    const existing = await db.select({ cnt: sql3`COUNT(*)` }).from(runningLogPhotos).where(and(eq2(runningLogPhotos.runningLogId, input.runningLogId), eq2(runningLogPhotos.userId, OWNER_USER_ID)));
     const sortOrder = Number(existing[0]?.cnt ?? 0);
     await db.insert(runningLogPhotos).values({ userId: OWNER_USER_ID, runningLogId: input.runningLogId, photoUrl: url, fileKey: key, caption: input.caption, sortOrder });
     return { url, key };
@@ -6768,7 +6993,7 @@ var stepsRouter = router({
     const ext = input.mimeType.includes("png") ? "png" : "jpg";
     const key = `step-photos/${OWNER_USER_ID}/${input.stepLogId}/${nanoid()}.${ext}`;
     const { url } = await storagePut(key, buffer, input.mimeType);
-    const existing = await db.select({ cnt: sql2`COUNT(*)` }).from(stepLogPhotos).where(and(eq2(stepLogPhotos.stepLogId, input.stepLogId), eq2(stepLogPhotos.userId, OWNER_USER_ID)));
+    const existing = await db.select({ cnt: sql3`COUNT(*)` }).from(stepLogPhotos).where(and(eq2(stepLogPhotos.stepLogId, input.stepLogId), eq2(stepLogPhotos.userId, OWNER_USER_ID)));
     const sortOrder = Number(existing[0]?.cnt ?? 0);
     await db.insert(stepLogPhotos).values({ userId: OWNER_USER_ID, stepLogId: input.stepLogId, photoUrl: url, fileKey: key, caption: input.caption, sortOrder });
     return { url, key };
@@ -6787,7 +7012,7 @@ var stepsRouter = router({
     if (!db) throw new Error("DB unavailable");
     const stepsToFill = await db.select().from(dailySteps).where(and(
       eq2(dailySteps.userId, OWNER_USER_ID),
-      sql2`${dailySteps.steps} > 0`
+      sql3`${dailySteps.steps} > 0`
     )).orderBy(dailySteps.date);
     if (stepsToFill.length === 0) return { updated: 0 };
     const bodyRecords = await db.select({
@@ -6795,7 +7020,7 @@ var stepsRouter = router({
       weight: bodyComposition.weight
     }).from(bodyComposition).where(and(
       eq2(bodyComposition.userId, OWNER_USER_ID),
-      sql2`${bodyComposition.weight} IS NOT NULL`
+      sql3`${bodyComposition.weight} IS NOT NULL`
     )).orderBy(bodyComposition.date);
     let updated = 0;
     for (const step of stepsToFill) {
@@ -6843,7 +7068,7 @@ var bloodPressureRouter = router({
     const sinceDate = /* @__PURE__ */ new Date(sinceStr + "T00:00:00+08:00");
     return db.select().from(bloodPressureLogs).where(and(
       eq2(bloodPressureLogs.userId, OWNER_USER_ID),
-      sql2`${bloodPressureLogs.measuredAt} >= ${sinceDate}`
+      sql3`${bloodPressureLogs.measuredAt} >= ${sinceDate}`
     )).orderBy(desc(bloodPressureLogs.measuredAt));
   }),
   add: ownerProcedure.input(z2.object({
@@ -7083,7 +7308,7 @@ async function createContext(opts) {
 }
 
 // server/reminderHandler.ts
-import { gte as gte2, sql as sql3 } from "drizzle-orm";
+import { gte as gte2, sql as sql4 } from "drizzle-orm";
 async function dailyReminderHandler(req, res) {
   try {
     const user = await sdk.authenticateRequest(req);
@@ -7097,8 +7322,8 @@ async function dailyReminderHandler(req, res) {
     const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
     const todayStart = new Date(today);
     const [todayMeals, todayWorkouts, todayBody, todaySleepLogs] = await Promise.all([
-      db.select().from(mealLogs).where(sql3`${mealLogs.loggedAt} >= ${today}`).limit(1),
-      db.select().from(workoutSessions).where(sql3`${workoutSessions.startTime} >= ${todayStart}`).limit(1),
+      db.select().from(mealLogs).where(sql4`${mealLogs.loggedAt} >= ${today}`).limit(1),
+      db.select().from(workoutSessions).where(sql4`${workoutSessions.startTime} >= ${todayStart}`).limit(1),
       db.select().from(bodyComposition).where(gte2(bodyComposition.date, today)).limit(1),
       db.select().from(sleepLogs).where(gte2(sleepLogs.date, today)).limit(1)
     ]);

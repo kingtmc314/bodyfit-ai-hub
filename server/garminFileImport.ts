@@ -54,6 +54,7 @@ type XmlLap = {
 // attached for future reprocessing.
 const MAX_SAMPLES = 10000;
 const asNumber = (value: unknown): number | undefined => {
+  if (value === null || value === undefined || (typeof value === "string" && !value.trim())) return undefined;
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
@@ -86,7 +87,7 @@ function metricFields(session: Record<string, unknown>, samples: GarminTimeSampl
   const last = samples.at(-1);
   const durationSec = asNumber(session.totalTimerTime) ?? (last ? last.elapsedSec : undefined);
   const distanceM = asNumber(session.totalDistance);
-  const distanceKm = distanceM && distanceM > 100 ? distanceM / 1000 : asNumber(session.distanceKm) ?? last?.distanceKm;
+  const distanceKm = distanceM && distanceM > 0 ? distanceM / 1000 : asNumber(session.distanceKm) ?? last?.distanceKm;
   const avgSpeed = asNumber(session.avgSpeed) ?? asNumber(session.averageSpeed);
   const maxSpeed = asNumber(session.maxSpeed) ?? asNumber(session.maximumSpeed);
   const paceSeconds = distanceKm && durationSec ? durationSec / distanceKm : avgSpeed ? 1000 / avgSpeed : undefined;
@@ -109,7 +110,16 @@ function metricFields(session: Record<string, unknown>, samples: GarminTimeSampl
   ];
   for (const [source, target] of pairs) {
     const value = asNumber(session[source]);
-    if (value !== undefined) fields[target] = String(value);
+    if (value === undefined) continue;
+    // Official FIT SDK applies scale but retains mm and strides/min units.
+    // App/schema/Sheets use metres, centimetres and total steps/minute.
+    const normalized = sourceFormat === "FIT"
+      ? source === "avgStepLength" ? value / 1000
+        : source === "avgVerticalOscillation" ? value / 10
+        : source === "avgRunningCadence" || source === "maxRunningCadence" ? value * 2
+        : value
+      : value;
+    fields[target] = String(Number(normalized.toFixed(4)));
   }
   const warnings: string[] = [];
   if (!samples.length) warnings.push("原始檔沒有可讀取的逐秒 Record 樣本；已只填入活動摘要。");
@@ -133,7 +143,7 @@ function metricFields(session: Record<string, unknown>, samples: GarminTimeSampl
   };
 }
 
-function mapFitRecord(record: Record<string, unknown>, startedAt: Date): GarminTimeSample | null {
+function mapFitRecord(record: Record<string, unknown>, startedAt: Date, cadenceMultiplier = 1): GarminTimeSample | null {
   const timestamp = asDate(record.timestamp);
   if (!timestamp) return null;
   const speed = asNumber(record.enhancedSpeed) ?? asNumber(record.speed);
@@ -149,7 +159,7 @@ function mapFitRecord(record: Record<string, unknown>, startedAt: Date): GarminT
     ...(longitude !== undefined ? { longitude } : {}),
     ...(speed && speed > 0 ? { paceSecPerKm: Number((1000 / speed).toFixed(2)) } : {}),
     ...(asNumber(record.heartRate) !== undefined ? { heartRate: asNumber(record.heartRate) } : {}),
-    ...(asNumber(record.cadence) !== undefined ? { cadence: asNumber(record.cadence) } : {}),
+    ...(asNumber(record.cadence) !== undefined ? { cadence: asNumber(record.cadence)! * cadenceMultiplier } : {}),
     ...(asNumber(record.power) !== undefined ? { power: asNumber(record.power) } : {}),
     ...(altitudeM !== undefined ? { altitudeM } : {}),
     ...(asNumber(record.temperature) !== undefined ? { temperatureC: asNumber(record.temperature) } : {}),
@@ -165,9 +175,9 @@ export function parseGarminFit(buffer: Buffer): GarminRawPreview {
   const firstTimestamp = recordMessages.map(record => asDate(record.timestamp)).find((date): date is Date => !!date)
     ?? asDate((messages.sessionMesgs?.[0] as Record<string, unknown> | undefined)?.startTime)
     ?? new Date();
-  const sourceSamples = recordMessages.map(record => mapFitRecord(record, firstTimestamp)).filter((sample): sample is GarminTimeSample => !!sample);
-  const samples = keepChartSamples(sourceSamples);
   const session = (messages.sessionMesgs?.[0] ?? {}) as Record<string, unknown>;
+  const sourceSamples = recordMessages.map(record => mapFitRecord(record, firstTimestamp, session.sport === "running" ? 2 : 1)).filter((sample): sample is GarminTimeSample => !!sample);
+  const samples = keepChartSamples(sourceSamples);
   const preview = metricFields(session, samples, "FIT");
   preview.laps = ((messages.lapMesgs ?? []) as unknown as Array<Record<string, unknown>>).map((lap, index) => {
     const distance = asNumber(lap.totalDistance);
@@ -197,9 +207,9 @@ export function parseGarminCsv(buffer: Buffer): GarminRawPreview {
     const speed = asNumber(valueFor(row, ["enhancedspeed", "speed"]));
     return timestamp && !Number.isNaN(timestamp.getTime()) ? { timestamp, distance, speed, row } : null;
   }).filter(Boolean) as Array<{ timestamp: Date; distance?: number; speed?: number; row: Record<string, string> }>;
-  const start = timed[0]?.timestamp ?? new Date();
+  const start = timed[0]?.timestamp;
   const sourceSamples: GarminTimeSample[] = timed.map(item => ({
-    elapsedSec: Math.max(0, Math.round((item.timestamp.getTime() - start.getTime()) / 1000)), timestamp: item.timestamp.toISOString(),
+    elapsedSec: Math.max(0, Math.round((item.timestamp.getTime() - start!.getTime()) / 1000)), timestamp: item.timestamp.toISOString(),
     ...(item.distance !== undefined ? { distanceKm: item.distance > 100 ? Number((item.distance / 1000).toFixed(4)) : item.distance } : {}),
     ...(toCoordinateDegrees(valueFor(item.row, ["latitude", "lat", "positionlat"]), 90) !== undefined ? { latitude: toCoordinateDegrees(valueFor(item.row, ["latitude", "lat", "positionlat"]), 90) } : {}),
     ...(toCoordinateDegrees(valueFor(item.row, ["longitude", "lon", "lng", "positionlong"]), 180) !== undefined ? { longitude: toCoordinateDegrees(valueFor(item.row, ["longitude", "lon", "lng", "positionlong"]), 180) } : {}),

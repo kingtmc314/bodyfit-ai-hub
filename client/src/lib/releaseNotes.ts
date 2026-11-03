@@ -36,8 +36,20 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.15.5",
+    status: "released",
+    title: "Garmin 原始檔直接保存到跑步紀錄",
+    summary: "上載 FIT／CSV／GPX／TCX 後自動解析並保存原始檔與圖表資料，不再需要先套用再儲存。",
+    changes: {
+      added: ["原始檔上載後直接保存逐秒曲線、GPS 路線、海拔與坡度分析所需數據，並顯示紀錄編號。", "以檔案雜湊識別重複上載；同檔重試不會重複新增。"],
+      removed: ["移除原始檔匯入必須先按「套用到這次跑步」再按「儲存」的額外步驟。"],
+      improved: ["編輯過往紀錄時直接附加原始數據，保留既有摘要、跑鞋、天氣及備註。", "未選紀錄時按香港日期、距離及時間配對唯一歷史紀錄；配對不明確時提示先編輯指定紀錄。"],
+      revised: ["保存失敗可直接重試儲存而不必再次上載；已保存後手動補填只更新同一紀錄。", "沒有曲線樣本的有效活動只保存摘要，不產生虛構圖表。", "修正 FIT 步幅毫米轉公尺、垂直振幅毫米轉厘米及跑步步頻單位；缺失日期不再代入今天。"],
+    },
+  },
+  {
     version: "3.15.4",
-    status: "in-progress",
+    status: "released",
     title: "Garmin 原始檔匯入可靠性",
     summary: "改善舊有 Garmin FIT、CSV、GPX、TCX 活動檔的分段上載與失敗復原，並保留先核對、後儲存的流程。",
     changes: {
@@ -49,7 +61,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
   },
   {
     version: "3.15.3",
-    status: "in-progress",
+    status: "released",
     title: "健康表格輸入可靠性修復",
     summary: "身體成份、心跳及睡眠的 Excel 式批量輸入現已直接儲存至 Supabase，不再因 Google Sheets 設定影響新增。",
     changes: {
@@ -260,13 +272,14 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
     feature: "Garmin 匯入與逐秒資料",
     status: "released",
     summary: "從連續截圖或原始活動檔核對後匯入，保留可用的逐秒表現、GPS 與海拔資料。",
-    lastRevisedVersion: "3.15.4",
-    lastRevisedDateHK: "2026年11月2日（香港）",
+    lastRevisedVersion: "3.15.5",
+    lastRevisedDateHK: "2026年11月3日（香港）",
     history: [
       { version: "3.14.2", dateHK: "2026年11月1日", description: "新增 Garmin 多截圖合併匯入及核對流程。" },
       { version: "3.14.5", dateHK: "2026年11月1日", description: "改善多圖分批可靠性並支援 FIT、CSV、GPX、TCX 逐秒資料。" },
       { version: "3.14.6", dateHK: "2026年11月1日", description: "保存 GPS 座標並加入路線與坡度視覺化。" },
       { version: "3.15.4", dateHK: "2026年11月2日", description: "加入每段自動重試、同檔再次嘗試及 ZIP／格式／網絡失敗指引，並完成正式站分段 GPX 實測。" },
+      { version: "3.15.5", dateHK: "2026年11月3日", description: "原始檔成功上載後直接保存到跑步紀錄，保留手動欄位並防止重複新增。" },
     ],
   },
   {
