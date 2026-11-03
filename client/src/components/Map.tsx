@@ -1,6 +1,6 @@
 /// <reference types="@types/google.maps" />
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Loader2, MapPinned, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createGoogleMapsLoader } from "@/lib/googleMapsLoader";
@@ -17,7 +17,6 @@ const source = `${baseUrl}/v1/maps/proxy/maps/api/js?${new URLSearchParams({
   key: import.meta.env.VITE_FRONTEND_FORGE_API_KEY || "",
   v: "weekly", libraries: "marker,places,geocoding,geometry",
 })}`;
-// Browser-only application: defer window access until the component mounts.
 let loader: ReturnType<typeof createGoogleMapsLoader> | undefined;
 const loadMapScript = () => (loader ??= createGoogleMapsLoader({ window, document, src: source }))();
 
@@ -37,13 +36,27 @@ export function MapView({
   fallback,
 }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<google.maps.Map | null>(null);
+  const overlayCleanup = useRef<void | (() => void)>(undefined);
+  const latest = useRef({ initialCenter, initialZoom, onMapReady });
+  latest.current = { initialCenter, initialZoom, onMapReady };
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const currentStatus = useRef(status);
+  currentStatus.current = status;
 
+  const updateOverlays = useCallback((map: google.maps.Map) => {
+    overlayCleanup.current?.();
+    overlayCleanup.current = undefined;
+    overlayCleanup.current = latest.current.onMapReady?.(map);
+  }, []);
+
+  // Map lifetime is mount + explicit Retry only. Countdown ticks, query renders,
+  // fresh callbacks and initial-center objects must never tear down a live map.
   useEffect(() => {
     let active = true;
     let map: google.maps.Map | undefined;
-    let removeOverlays: void | (() => void);
+    const container = mapContainer.current;
     const previousAuthFailure = window.gm_authFailure;
     const authFailure = () => {
       if (active) setStatus("error");
@@ -54,31 +67,41 @@ export function MapView({
     void (async () => {
       try {
         await loadMapScript();
-        if (!active || !mapContainer.current) return;
+        if (!active || !container) return;
         if (!window.google?.maps?.Map) throw new Error("Google Maps SDK unavailable");
-        map = new window.google.maps.Map(mapContainer.current, {
-          zoom: initialZoom,
-          center: initialCenter,
+        map = new window.google.maps.Map(container, {
+          zoom: latest.current.initialZoom,
+          center: latest.current.initialCenter,
           mapTypeControl: true,
           fullscreenControl: true,
           zoomControl: true,
           streetViewControl: false,
         });
-        removeOverlays = onMapReady?.(map);
+        mapInstance.current = map;
+        updateOverlays(map);
         if (active) setStatus("ready");
       } catch {
-        // SDK/network/origin failures must be visible, not an empty map rectangle.
         if (active) setStatus("error");
       }
     })();
     return () => {
       active = false;
-      removeOverlays?.();
+      overlayCleanup.current?.();
+      overlayCleanup.current = undefined;
+      mapInstance.current = null;
       if (map) window.google?.maps?.event.clearInstanceListeners(map);
-      mapContainer.current?.replaceChildren();
+      container?.replaceChildren();
       if (window.gm_authFailure === authFailure) window.gm_authFailure = previousAuthFailure;
     };
-  }, [attempt, initialCenter.lat, initialCenter.lng, initialZoom, onMapReady]);
+  }, [attempt, updateOverlays]);
+
+  // A genuinely new route may replace overlays on the SAME Google map. Never
+  // reset loading/provider state or clear the basemap on callback-only updates.
+  useEffect(() => {
+    if (mapInstance.current && currentStatus.current === "ready") {
+      try { updateOverlays(mapInstance.current); } catch { setStatus("error"); }
+    }
+  }, [onMapReady, updateOverlays]);
 
   return (
     <div className={cn("relative isolate w-full", className ?? "h-[500px]")} data-map-status={status}>

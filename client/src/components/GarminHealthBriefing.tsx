@@ -118,7 +118,7 @@ export default function GarminHealthBriefing({ data, isLoading }: { data: BriefD
   const dynamics = data?.dynamics ?? [];
   const trainingLoad = data?.trainingLoad ?? [];
   const selectedRun = runsWithSeries.find((run: any) => String(run.id) === selectedRunId);
-  const samples = toSamples(detailQuery.data?.time_series);
+  const samples = useMemo(() => toSamples(detailQuery.data?.time_series), [detailQuery.data?.time_series]);
   const allDynamicsAvailable = {
     cadence: quality?.cadenceRunCount ?? 0,
     stride: runs.filter((run: any) => number(run.avgStrideLengthM) !== null).length,

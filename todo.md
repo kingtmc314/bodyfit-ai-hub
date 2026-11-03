@@ -571,3 +571,10 @@
 - [x] Add a native OpenStreetMap tile fallback with original GPS overlay, start/end markers, drag, zoom and fit-to-route; retain visible attribution and normal browser tile caching without prefetch
 - [x] Verify a saved run with 9,842 GPS points and six loaded street tiles, narrow map layout and hidden Google controls in the browser; all 187 tests, typecheck, web/Vercel builds and visible v3.15.6/release history pass
 - [x] Save checkpoint, immediately push BodyFit GitHub main and verify Vercel production map rendering (c808516b: Vercel success; live v3.15.6, 9,842 original GPS points, all six street tiles loaded; no health data changed)
+
+## v3.15.7 Garmin map flicker regression
+- [x] Reproduce live Garmin Brief map switching error/loading with the one-second race countdown; trace unstable toSamples array and callback-triggered full-map teardown
+- [x] Memoize the brief raw samples and separate map construction/retry from live route-overlay updates, preserving fallback and zoom during unrelated parent renders
+- [x] Add one-second countdown/sample-identity, callback rerender, in-flight SDK update, fallback DOM/zoom retention and overlay cleanup regression coverage
+- [x] Observe real Garmin Brief for 15 seconds with advancing countdown: zero loading transitions, same map/fallback DOM, same zoom, all 9,842 GPS points and six street tiles; 192 tests, typecheck and web/Vercel builds pass
+- [ ] Save checkpoint, immediately push BodyFit GitHub main and verify stable maps in Vercel production

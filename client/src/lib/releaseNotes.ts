@@ -36,6 +36,18 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.15.7",
+    status: "released",
+    title: "Garmin 地圖閃爍與重複載入修復",
+    summary: "修正 Garmin 簡報因賽事倒數每秒更新而反覆初始化地圖；相同路線會保留地圖、縮放及拖動位置。",
+    changes: {
+      added: ["新增一秒計時父頁、連續重渲染、失敗狀態鎖定及真實路線更新的回歸測試。"],
+      removed: ["移除相同原始路線因 callback 參照改變而重新建立整張地圖的行為。"],
+      improved: ["Garmin 簡報只在原始逐秒資料真正改變時重新整理樣本；賽事倒數仍正常更新。", "地圖初始化與路線覆蓋物更新分開，保留底圖及互動狀態。"],
+      revised: ["地圖失敗後會維持備援，不因頁面刷新而自動切回載入；只有手動重試才重新初始化。", "不改動既有跑步紀錄、GPS、日期或原始檔。"],
+    },
+  },
+  {
     version: "3.15.6",
     status: "released",
     title: "Garmin 路線地圖空白修復",
@@ -272,13 +284,14 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
     feature: "跑步紀錄、GPS 路線與歷史清單",
     status: "released",
     summary: "保存跑步、賽事、路線類型、GPS、坡度與時間序列，並可瀏覽完整歷史。",
-    lastRevisedVersion: "3.15.6",
+    lastRevisedVersion: "3.15.7",
     lastRevisedDateHK: "2026年11月3日（香港）",
     history: [
       { version: "3.14.2", dateHK: "2026年11月1日", description: "加入路線類型、跑步／賽事天氣及歷史回填。" },
       { version: "3.14.6", dateHK: "2026年11月1日", description: "加入 GPX 路線地圖、海拔剖面和坡度分段分析。" },
       { version: "3.14.9", dateHK: "2026年11月1日", description: "加入伺服器端分頁，讓所有歷史紀錄均可逐頁查看。" },
       { version: "3.15.6", dateHK: "2026年11月3日", description: "修復地圖空白，加入 SDK 載入復原及可拖動縮放的 GPS 街道備援地圖，不改動既有活動資料。" },
+      { version: "3.15.7", dateHK: "2026年11月3日", description: "修正每秒倒數引致的地圖閃爍，穩定樣本參照與地圖生命週期，保留縮放及拖動狀態。" },
     ],
   },
   {
