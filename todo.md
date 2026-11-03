@@ -564,3 +564,10 @@
 - [x] Attach to a selected historical run without overwriting manual summary, shoe, weather or race data; deduplicate file retries and safely match unique history
 - [x] Verify automatic saves, duplicate prevention, failure recovery, Hong Kong dates, existing running fields and Google Sheets synchronization with tests and UI checks (167 tests; real FIT/object-storage/PostgreSQL temp-table rollback E2E; browser save-failure retry: 1 upload, 1 parse, 2 save attempts; manual data preserved; FIT mm/m/cm/steps-min conversions corrected)
 - [x] Update visible version/release history, build, checkpoint, immediately push BodyFit-only GitHub main and verify production (v3.15.5; GitHub 6b5b4e4b; Vercel success; live frontend and direct-save API verified without creating health records)
+
+## v3.15.6 Garmin route map visibility
+- [x] Reproduce the Vercel blank map: saved GPS is present, but the Google Maps proxy rejects the external origin and the old UI silently returns
+- [x] Add loading/error/retry states, failed-script cleanup, timeout and safe Google Maps overlay lifecycle
+- [x] Add a native OpenStreetMap tile fallback with original GPS overlay, start/end markers, drag, zoom and fit-to-route; retain visible attribution and normal browser tile caching without prefetch
+- [x] Verify a saved run with 9,842 GPS points and six loaded street tiles, narrow map layout and hidden Google controls in the browser; all 187 tests, typecheck, web/Vercel builds and visible v3.15.6/release history pass
+- [ ] Save checkpoint, immediately push BodyFit GitHub main and verify Vercel production map rendering

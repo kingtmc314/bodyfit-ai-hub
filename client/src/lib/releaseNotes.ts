@@ -36,6 +36,18 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.15.6",
+    status: "released",
+    title: "Garmin 路線地圖空白修復",
+    summary: "修正外部網域地圖服務載入失敗時只顯示空白框的問題；已保存的 GPS 可直接顯示在街道備援地圖，不用重新上載原始檔。",
+    changes: {
+      added: ["新增原生 OpenStreetMap 備援街道底圖，疊加同一筆原始 GPS 路線與起終點，支援拖動、縮放及全程定位。"],
+      removed: ["移除地圖載入失敗後靜默留下空白區域的行為。"],
+      improved: ["Google 地圖保留優先載入；失敗時自動切換備援並提供重試，不影響海拔或逐秒圖表。", "底圖失敗也會明確提示並保留 GPS 線條；只載入可見圖磚並保留來源標示。"],
+      revised: ["新增 SDK 逾時、失敗腳本清理、重新嘗試及路線覆蓋物清理，避免舊請求阻塞。", "只修正顯示；既有跑步紀錄、GPS 座標及原始檔沒有變更。"],
+    },
+  },
+  {
     version: "3.15.5",
     status: "released",
     title: "Garmin 原始檔直接保存到跑步紀錄",
@@ -260,12 +272,13 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
     feature: "跑步紀錄、GPS 路線與歷史清單",
     status: "released",
     summary: "保存跑步、賽事、路線類型、GPS、坡度與時間序列，並可瀏覽完整歷史。",
-    lastRevisedVersion: "3.14.9",
-    lastRevisedDateHK: "2026年11月1日（香港）",
+    lastRevisedVersion: "3.15.6",
+    lastRevisedDateHK: "2026年11月3日（香港）",
     history: [
       { version: "3.14.2", dateHK: "2026年11月1日", description: "加入路線類型、跑步／賽事天氣及歷史回填。" },
       { version: "3.14.6", dateHK: "2026年11月1日", description: "加入 GPX 路線地圖、海拔剖面和坡度分段分析。" },
       { version: "3.14.9", dateHK: "2026年11月1日", description: "加入伺服器端分頁，讓所有歷史紀錄均可逐頁查看。" },
+      { version: "3.15.6", dateHK: "2026年11月3日", description: "修復地圖空白，加入 SDK 載入復原及可拖動縮放的 GPS 街道備援地圖，不改動既有活動資料。" },
     ],
   },
   {

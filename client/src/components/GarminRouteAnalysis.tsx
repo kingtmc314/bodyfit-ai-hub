@@ -3,6 +3,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { ArrowDownRight, ArrowUpRight, MapPinned, Mountain, Route, TrendingDown, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { MapView } from "@/components/Map";
+import GarminRouteTileMap from "@/components/GarminRouteTileMap";
 import { analyzeRoute, type GradientBand } from "@shared/routeAnalysis";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +26,6 @@ function formatSigned(value: number | null, suffix: string) {
 
 function RouteMap({ points }: { points: Array<{ latitude: number; longitude: number }> }) {
   const initialCenter = useMemo(() => ({ lat: points[0].latitude, lng: points[0].longitude }), [points]);
-  const routeKey = useMemo(() => `${points.length}-${points[0].latitude}-${points.at(-1)?.longitude}`, [points]);
 
   const onMapReady = useCallback((map: google.maps.Map) => {
     if (!window.google?.maps) return;
@@ -35,7 +35,7 @@ function RouteMap({ points }: { points: Array<{ latitude: number; longitude: num
       bounds.extend(position);
       return position;
     });
-    new window.google.maps.Polyline({
+    const line = new window.google.maps.Polyline({
       map,
       path,
       geodesic: true,
@@ -44,12 +44,13 @@ function RouteMap({ points }: { points: Array<{ latitude: number; longitude: num
       strokeWeight: 5,
       clickable: false,
     });
-    new window.google.maps.Marker({ map, position: path[0], title: "起點", label: { text: "起", color: "#ffffff", fontWeight: "700" } });
-    new window.google.maps.Marker({ map, position: path[path.length - 1], title: "終點", label: { text: "終", color: "#ffffff", fontWeight: "700" } });
+    const start = new window.google.maps.Marker({ map, position: path[0], title: "起點", label: { text: "起", color: "#ffffff", fontWeight: "700" } });
+    const end = new window.google.maps.Marker({ map, position: path[path.length - 1], title: "終點", label: { text: "終", color: "#ffffff", fontWeight: "700" } });
     if (path.length > 1) map.fitBounds(bounds, 28);
+    return () => { line.setMap(null); start.setMap(null); end.setMap(null); };
   }, [points]);
 
-  return <MapView key={routeKey} initialCenter={initialCenter} initialZoom={15} onMapReady={onMapReady} className="h-[320px] overflow-hidden rounded-xl" />;
+  return <MapView initialCenter={initialCenter} initialZoom={15} onMapReady={onMapReady} fallback={<GarminRouteTileMap points={points} />} className="h-[320px] overflow-hidden rounded-xl" />;
 }
 
 function ElevationTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload?: { distanceKm?: number; altitudeM?: number; gradePct?: number | null } }> }) {
@@ -83,6 +84,7 @@ export default function GarminRouteAnalysis({
       return { distanceKm: point.distanceKm, altitudeM: point.altitudeM, gradePct };
     });
   }, [analysis]);
+  const mapPoints = useMemo(() => analysis?.points.map(point => ({ latitude: point.latitude, longitude: point.longitude })) ?? [], [analysis]);
 
   if (!analysis) {
     return (
@@ -95,11 +97,10 @@ export default function GarminRouteAnalysis({
   }
 
   const hasElevation = elevationData.some(point => point.altitudeM !== undefined);
-  const mapPoints = analysis.points.map(point => ({ latitude: point.latitude, longitude: point.longitude }));
   const visibleSegments = analysis.segments.slice(0, 12);
 
   return (
-    <section className={cn("overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-sm", className)}>
+    <section className={cn("@container overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-sm", className)}>
       <header className="border-b border-border bg-gradient-to-br from-emerald-500/12 via-transparent to-sky-500/10 px-4 py-4 sm:px-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex min-w-0 gap-3">
@@ -121,7 +122,7 @@ export default function GarminRouteAnalysis({
         <div className="rounded-xl border border-border bg-card p-3"><p className="text-[11px] text-muted-foreground">最大坡度</p><p className="mt-1 text-lg font-bold tabular-nums text-foreground">{formatSigned(analysis.maxUphillPct, "%")} <span className="text-xs font-medium text-muted-foreground">／ {formatSigned(analysis.maxDownhillPct, "%")}</span></p></div>
       </div>
 
-      <div className="grid gap-5 p-4 sm:p-5 xl:grid-cols-[1.05fr_0.95fr]">
+      <div className="grid grid-cols-1 gap-5 p-4 sm:p-5 @3xl:grid-cols-[1.05fr_0.95fr]">
         <div className="overflow-hidden rounded-xl border border-border bg-muted/15 p-1">
           <RouteMap points={mapPoints} />
           <p className="px-3 pb-2 pt-2 text-[11px] text-muted-foreground"><span className="font-semibold text-emerald-700 dark:text-emerald-300">起</span> 至 <span className="font-semibold text-emerald-700 dark:text-emerald-300">終</span>：顯示已上載的 GPS 原始座標。</p>

@@ -1,177 +1,97 @@
-/**
- * GOOGLE MAPS FRONTEND INTEGRATION - ESSENTIAL GUIDE
- *
- * USAGE FROM PARENT COMPONENT:
- * ======
- *
- * const mapRef = useRef<google.maps.Map | null>(null);
- *
- * <MapView
- *   initialCenter={{ lat: 40.7128, lng: -74.0060 }}
- *   initialZoom={15}
- *   onMapReady={(map) => {
- *     mapRef.current = map; // Store to control map from parent anytime, google map itself is in charge of the re-rendering, not react state.
- * </MapView>
- *
- * ======
- * Available Libraries and Core Features:
- * -------------------------------
- * 📍 MARKER (from `marker` library)
- * - Attaches to map using { map, position }
- * new google.maps.marker.AdvancedMarkerElement({
- *   map,
- *   position: { lat: 37.7749, lng: -122.4194 },
- *   title: "San Francisco",
- * });
- *
- * -------------------------------
- * 🏢 PLACES (from `places` library)
- * - Does not attach directly to map; use data with your map manually.
- * const place = new google.maps.places.Place({ id: PLACE_ID });
- * await place.fetchFields({ fields: ["displayName", "location"] });
- * map.setCenter(place.location);
- * new google.maps.marker.AdvancedMarkerElement({ map, position: place.location });
- *
- * -------------------------------
- * 🧭 GEOCODER (from `geocoding` library)
- * - Standalone service; manually apply results to map.
- * const geocoder = new google.maps.Geocoder();
- * geocoder.geocode({ address: "New York" }, (results, status) => {
- *   if (status === "OK" && results[0]) {
- *     map.setCenter(results[0].geometry.location);
- *     new google.maps.marker.AdvancedMarkerElement({
- *       map,
- *       position: results[0].geometry.location,
- *     });
- *   }
- * });
- *
- * -------------------------------
- * 📐 GEOMETRY (from `geometry` library)
- * - Pure utility functions; not attached to map.
- * const dist = google.maps.geometry.spherical.computeDistanceBetween(p1, p2);
- *
- * -------------------------------
- * 🛣️ ROUTES (from `routes` library)
- * - Combines DirectionsService (standalone) + DirectionsRenderer (map-attached)
- * const directionsService = new google.maps.DirectionsService();
- * const directionsRenderer = new google.maps.DirectionsRenderer({ map });
- * directionsService.route(
- *   { origin, destination, travelMode: "DRIVING" },
- *   (res, status) => status === "OK" && directionsRenderer.setDirections(res)
- * );
- *
- * -------------------------------
- * 🌦️ MAP LAYERS (attach directly to map)
- * - new google.maps.TrafficLayer().setMap(map);
- * - new google.maps.TransitLayer().setMap(map);
- * - new google.maps.BicyclingLayer().setMap(map);
- *
- * -------------------------------
- * ✅ SUMMARY
- * - “map-attached” → AdvancedMarkerElement, DirectionsRenderer, Layers.
- * - “standalone” → Geocoder, DirectionsService, DistanceMatrixService, ElevationService.
- * - “data-only” → Place, Geometry utilities.
- */
-
 /// <reference types="@types/google.maps" />
 
-import { useEffect, useRef } from "react";
-import { usePersistFn } from "@/hooks/usePersistFn";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Loader2, MapPinned, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { createGoogleMapsLoader } from "@/lib/googleMapsLoader";
 
 declare global {
   interface Window {
     google?: typeof google;
+    gm_authFailure?: () => void;
   }
 }
 
-const API_KEY = import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
-const FORGE_BASE_URL =
-  import.meta.env.VITE_FRONTEND_FORGE_API_URL ||
-  "https://forge.butterfly-effect.dev";
-const MAPS_PROXY_URL = `${FORGE_BASE_URL}/v1/maps/proxy`;
-
-let mapsScriptPromise: Promise<void> | null = null;
-
-function loadMapScript(): Promise<void> {
-  if (window.google?.maps?.Map) return Promise.resolve();
-  if (mapsScriptPromise) return mapsScriptPromise;
-
-  mapsScriptPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>('script[data-bodyfit-maps="true"]');
-    if (existing) {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error("Failed to load Google Maps script")), { once: true });
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry`;
-    script.async = true;
-    script.crossOrigin = "anonymous";
-    script.dataset.bodyfitMaps = "true";
-    script.onload = () => {
-      resolve();
-    };
-    script.onerror = () => {
-      mapsScriptPromise = null;
-      reject(new Error("Failed to load Google Maps script"));
-    };
-    document.head.appendChild(script);
-  });
-  return mapsScriptPromise;
-}
+const baseUrl = (import.meta.env.VITE_FRONTEND_FORGE_API_URL || "https://forge.butterfly-effect.dev").replace(/\/+$/, "");
+const source = `${baseUrl}/v1/maps/proxy/maps/api/js?${new URLSearchParams({
+  key: import.meta.env.VITE_FRONTEND_FORGE_API_KEY || "",
+  v: "weekly", libraries: "marker,places,geocoding,geometry",
+})}`;
+// Browser-only application: defer window access until the component mounts.
+let loader: ReturnType<typeof createGoogleMapsLoader> | undefined;
+const loadMapScript = () => (loader ??= createGoogleMapsLoader({ window, document, src: source }))();
 
 interface MapViewProps {
   className?: string;
   initialCenter?: google.maps.LatLngLiteral;
   initialZoom?: number;
-  onMapReady?: (map: google.maps.Map) => void;
+  onMapReady?: (map: google.maps.Map) => void | (() => void);
+  fallback?: ReactNode;
 }
 
 export function MapView({
   className,
-  initialCenter = { lat: 37.7749, lng: -122.4194 },
+  initialCenter = { lat: 22.3193, lng: 114.1694 },
   initialZoom = 12,
   onMapReady,
+  fallback,
 }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<google.maps.Map | null>(null);
-
-  const init = usePersistFn(async () => {
-    try {
-      await loadMapScript();
-    } catch (error) {
-      console.error("Failed to initialize Google Maps", error);
-      return;
-    }
-    if (!mapContainer.current) {
-      console.error("Map container not found");
-      return;
-    }
-    if (!window.google?.maps?.Map) {
-      console.error("Google Maps API is unavailable after loading");
-      return;
-    }
-    map.current = new window.google.maps.Map(mapContainer.current, {
-      zoom: initialZoom,
-      center: initialCenter,
-      mapTypeControl: true,
-      fullscreenControl: true,
-      zoomControl: true,
-      streetViewControl: true,
-      mapId: "DEMO_MAP_ID",
-    });
-    if (onMapReady) {
-      onMapReady(map.current);
-    }
-  });
+  const [attempt, setAttempt] = useState(0);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
-    init();
-  }, [init]);
+    let active = true;
+    let map: google.maps.Map | undefined;
+    let removeOverlays: void | (() => void);
+    const previousAuthFailure = window.gm_authFailure;
+    const authFailure = () => {
+      if (active) setStatus("error");
+      previousAuthFailure?.();
+    };
+    window.gm_authFailure = authFailure;
+    setStatus("loading");
+    void (async () => {
+      try {
+        await loadMapScript();
+        if (!active || !mapContainer.current) return;
+        if (!window.google?.maps?.Map) throw new Error("Google Maps SDK unavailable");
+        map = new window.google.maps.Map(mapContainer.current, {
+          zoom: initialZoom,
+          center: initialCenter,
+          mapTypeControl: true,
+          fullscreenControl: true,
+          zoomControl: true,
+          streetViewControl: false,
+        });
+        removeOverlays = onMapReady?.(map);
+        if (active) setStatus("ready");
+      } catch {
+        // SDK/network/origin failures must be visible, not an empty map rectangle.
+        if (active) setStatus("error");
+      }
+    })();
+    return () => {
+      active = false;
+      removeOverlays?.();
+      if (map) window.google?.maps?.event.clearInstanceListeners(map);
+      mapContainer.current?.replaceChildren();
+      if (window.gm_authFailure === authFailure) window.gm_authFailure = previousAuthFailure;
+    };
+  }, [attempt, initialCenter.lat, initialCenter.lng, initialZoom, onMapReady]);
 
   return (
-    <div ref={mapContainer} className={cn("w-full", className ?? "h-[500px]")} />
+    <div className={cn("relative isolate w-full", className ?? "h-[500px]")} data-map-status={status}>
+      <div ref={mapContainer} className={cn("absolute inset-0 z-0", status !== "ready" && "invisible")} aria-hidden={status !== "ready"} />
+      {status === "loading" && <div role="status" className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-muted text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />正在載入路線地圖…</div>}
+      {status === "error" && (fallback ? (
+        <div className="absolute inset-0 z-10">
+          {fallback}
+          <button type="button" className="absolute left-2 top-2 z-20 flex min-h-9 items-center gap-1.5 rounded-lg border border-border bg-card/95 px-2.5 text-[11px] font-semibold text-card-foreground shadow-sm" onClick={() => setAttempt(value => value + 1)}><RotateCcw className="h-3.5 w-3.5" />重試 Google 地圖</button>
+        </div>
+      ) : (
+        <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-muted px-4 text-center text-muted-foreground"><MapPinned className="h-7 w-7" /><p className="text-sm font-semibold">地圖暫時未能載入，GPS 資料仍然保留。</p><button type="button" className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-card-foreground" onClick={() => setAttempt(value => value + 1)}>重新載入地圖</button></div>
+      ))}
+    </div>
   );
 }
