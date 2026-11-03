@@ -563,4 +563,4 @@
 - [x] Save parsed raw activity, source reference and chart data directly after upload, without Apply then Save; show saving/saved/failure states and retry save without re-upload
 - [x] Attach to a selected historical run without overwriting manual summary, shoe, weather or race data; deduplicate file retries and safely match unique history
 - [x] Verify automatic saves, duplicate prevention, failure recovery, Hong Kong dates, existing running fields and Google Sheets synchronization with tests and UI checks (167 tests; real FIT/object-storage/PostgreSQL temp-table rollback E2E; browser save-failure retry: 1 upload, 1 parse, 2 save attempts; manual data preserved; FIT mm/m/cm/steps-min conversions corrected)
-- [ ] Update visible version/release history, build, checkpoint, immediately push BodyFit-only GitHub main and verify production
+- [x] Update visible version/release history, build, checkpoint, immediately push BodyFit-only GitHub main and verify production (v3.15.5; GitHub 6b5b4e4b; Vercel success; live frontend and direct-save API verified without creating health records)
