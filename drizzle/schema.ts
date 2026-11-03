@@ -175,6 +175,7 @@ export const bodyComposition = pgTable("body_composition", {
   bmr: integer("bmr"),
   notes: text("notes"),
   source: varchar("source", { length: 50 }).default("manual"),
+  reportDetails: jsonb("report_details"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

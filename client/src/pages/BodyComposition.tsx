@@ -9,10 +9,12 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Scale, Trash2, Edit2, Loader2, TrendingUp, TrendingDown, Minus, Upload, ArrowUpDown, Download } from "lucide-react";
+import { Plus, Scale, Trash2, Edit2, Loader2, TrendingUp, TrendingDown, Minus, Upload, ArrowUpDown, Download, Camera } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import QuickImportModal from "@/components/QuickImportModal";
 import ScreenshotImporter from "@/components/ScreenshotImporter";
+import InBodyReportImporter from "@/components/InBodyReportImporter";
+import InBodyReportDetails from "@/components/InBodyReportDetails";
 import HealthSpreadsheetEntry from "@/components/HealthSpreadsheetEntry";
 import { HEALTH_SPREADSHEET_COLUMNS, prepareHealthSpreadsheetRow } from "@/lib/healthSpreadsheetRows";
 import {
@@ -42,6 +44,7 @@ export default function BodyComposition() {
   const [showDialog, setShowDialog] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showSpreadsheet, setShowSpreadsheet] = useState(false);
+  const [showInBody, setShowInBody] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
   const [form, setForm] = useState<any>(defaultForm);
 
@@ -153,7 +156,10 @@ export default function BodyComposition() {
             <p className="text-white/70 text-sm mt-0.5">{t('body.subtitle')}</p>
           </div>
           {isOwner && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" className="gap-2 bg-white text-primary hover:bg-white/90" onClick={() => setShowInBody(true)}>
+                <Camera className="w-4 h-4" /> 影相報告
+              </Button>
               <Button size="sm" variant="outline" className="gap-2 bg-white/20 border-white/40 text-white hover:bg-white/30" onClick={() => setShowImport(true)}>
                 <Upload className="w-4 h-4" /> 匯入
               </Button>
@@ -168,6 +174,12 @@ export default function BodyComposition() {
         </div>
       </div>
       <QuickImportModal open={showImport} onClose={() => setShowImport(false)} dataType="body" onSuccess={() => utils.body.getAll.invalidate()} />
+      <InBodyReportImporter
+        open={showInBody}
+        onOpenChange={setShowInBody}
+        onSaved={() => { void utils.body.invalidate(); }}
+        onGenericImport={() => { setShowInBody(false); setEditEntry(null); setForm({ ...defaultForm, date: todayHKString() }); setShowDialog(true); }}
+      />
       <HealthSpreadsheetEntry
         open={showSpreadsheet}
         onOpenChange={setShowSpreadsheet}
@@ -197,9 +209,9 @@ export default function BodyComposition() {
               <div className={`icon-badge ${m.badgeClass} mb-2`}>
                 <Scale className="w-4 h-4" />
               </div>
-              <p className="text-xs text-muted-foreground font-semibold">{t(m.labelKey).replace(/ \(.*\)/, '')}</p>
-              <p className="metric-value text-2xl text-foreground mt-0.5">{m.value != null ? Number(m.value).toFixed(1) : "—"} <span className="text-sm font-normal text-muted-foreground">{m.unit}</span></p>
-              <StatBadge val={diff(m.key)} />
+              <p className="text-xs text-muted-foreground font-semibold">{m.key === "source" ? "資料來源" : t(m.labelKey).replace(/ \(.*\)/, '')}</p>
+              <p className={`metric-value ${m.key === "source" ? "text-base" : "text-2xl"} text-foreground mt-0.5`}>{m.value != null ? (m.key === "source" ? (m.value === "inbody_photo" ? "InBody 相片" : String(m.value)) : Number(m.value).toFixed(1)) : "—"} <span className="text-sm font-normal text-muted-foreground">{m.unit}</span></p>
+              {m.key !== "source" && <StatBadge val={diff(m.key)} />}
             </div>
           ))}
         </div>
@@ -210,6 +222,7 @@ export default function BodyComposition() {
           {/* Weight & Muscle Trend */}
           <div className="bg-card border border-border rounded-2xl p-5">
             <h3 className="font-semibold text-foreground mb-4">Weight & Muscle Mass Trend</h3>
+            {records.some(r => r.source === "inbody_photo") && <p className="mb-3 text-xs leading-relaxed text-muted-foreground">InBody 範本的肌肉量是骨骼肌量 SMM；不同儀器的肌肉量定義可能不同，請連同報告來源比較，不宜直接當作同一指標的增減。</p>}
             {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
                 <ComposedChart data={chartData}>
@@ -335,18 +348,19 @@ export default function BodyComposition() {
                       <td className="px-4 py-3">{r.fatMass != null ? `${Number(r.fatMass).toFixed(1)} kg` : "—"}</td>
                       <td className="px-4 py-3">{r.visceralFat ?? "—"}</td>
                       <td className="px-4 py-3 max-w-32 truncate text-muted-foreground">{r.notes || "—"}</td>
-                      {isOwner && (
                       <td className="px-4 py-3">
-                        <div className="flex gap-1">
+                        <div className="flex items-center gap-1">
+                          <InBodyReportDetails reportDetails={r.reportDetails} primary={r as unknown as Record<string, unknown>} />
+                          {isOwner && <>
                           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => {
                             setEditEntry(r);
                             setForm({ date: r.date, weight: r.weight ?? "", bodyFatPct: r.bodyFatPct ?? "", muscleMass: r.muscleMass ?? "", bmi: r.bmi ?? "", fatMass: r.fatMass ?? "", visceralFat: r.visceralFat ?? "", bmr: r.bmr ?? "", notes: r.notes ?? "" });
                             setShowDialog(true);
                           }}><Edit2 className="w-3.5 h-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="w-7 h-7 text-destructive" onClick={() => deleteMutation.mutate({ id: r.id })}><Trash2 className="w-3.5 h-3.5" /></Button>
+                          </>}
                         </div>
                       </td>
-                      )}
                     </tr>
                   ))}
                   {sortedBodyRecords.length === 0 && (
@@ -366,6 +380,7 @@ export default function BodyComposition() {
           <DialogHeader><DialogTitle>{editEntry ? "Edit Body Metrics" : "Log Body Metrics"}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
+              {!editEntry && <div className="mb-3 space-y-1.5"><label className="text-xs font-semibold text-muted-foreground">輸入範本</label><Select value="general" onValueChange={(value) => { if (value === "inbody") { setShowDialog(false); setShowInBody(true); } }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="general">一般手動／身體數據截圖</SelectItem><SelectItem value="inbody">InBody 紙本報告 · 影相辨識</SelectItem></SelectContent></Select></div>}
               <ScreenshotImporter
                 dataType="body"
                 onExtracted={(fields) => setForm((p: any) => ({ ...p, ...fields }))}

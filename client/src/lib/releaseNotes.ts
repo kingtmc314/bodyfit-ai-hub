@@ -36,6 +36,18 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.15.8",
+    status: "released",
+    title: "InBody 影相範本與 FIT 連續數據分析",
+    summary: "身體成份加入 InBody 紙本報告相機／相簿辨識及核對後保存；跑步分析和預測亦使用已保存的 FIT 連續樣本，不再只看活動摘要。",
+    changes: {
+      added: ["新增 InBody 紙本範本，辨識主要身體數據、水分、除脂體重、腰臀比及五部位除脂／脂肪資料，確認後一次保存至現有 Life-OS Supabase。", "新增歷史報告明細、來源相片追溯，以及連續配速、心率、步頻、功率與前後半表現衍生特徵。"],
+      removed: ["移除跑步 AI 只傳最近 30 次活動摘要的限制；完整歷史以分頁計算特徵，提示容量不足會明示逐次特徵省略及保留全歷史月度統計。"],
+      improved: ["相機照片在裝置保留整頁壓縮，避免大型 iPhone 相片超過上載限制；保存失敗保留相片及核對結果，可直接重試。", "跑步 AI、賽事分析及能量實驗室接入合資格連續數據；低覆蓋或欠缺連續樣本時維持摘要或參考值，並顯示校準依據。"],
+      revised: ["紙本日期及時間採報告所列香港時間，缺日期必須核對，不代入今天；缺失值不補猜。", "區分 SMM／FFM、BMR／建議熱量、WHR／內臟脂肪，保留正負號及零；相同相片保存重試不重複新增或覆寫原有手動資料。", "連續分析採時間加權、排除停頓及長缺口，明示量測、衍生特徵與模型預測，不能把估算 VO₂ 或乳酸當作實測。"],
+    },
+  },
+  {
     version: "3.15.7",
     status: "released",
     title: "Garmin 地圖閃爍與重複載入修復",
@@ -256,6 +268,26 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
 /** A feature-first view; dates are Hong Kong calendar dates. */
 export const FEATURE_HISTORY: readonly FeatureHistory[] = [
   {
+    feature: "InBody 紙本報告與影相輸入",
+    status: "released",
+    summary: "從相機或相簿辨識完整 InBody 紙本報告，核對後一次保存實測值、分部數據與相片來源至現有 Life-OS Supabase。",
+    lastRevisedVersion: "3.15.8",
+    lastRevisedDateHK: "2026年11月3日（香港）",
+    history: [
+      { version: "3.15.8", dateHK: "2026年11月3日", description: "新增 InBody 範本、手機影相／選圖、完整核對、歷史明細及相片重試去重；保留一般手動、截圖及表格輸入。" },
+    ],
+  },
+  {
+    feature: "跑步 AI 分析與 FIT 連續證據",
+    status: "released",
+    summary: "分析完整歷史與可用 FIT 連續樣本，清楚區分實測摘要、時間加權衍生特徵及不確定的模型預測。",
+    lastRevisedVersion: "3.15.8",
+    lastRevisedDateHK: "2026年11月3日（香港）",
+    history: [
+      { version: "3.15.8", dateHK: "2026年11月3日", description: "跑步 AI、賽事分析及預測加入全歷史分頁特徵、前後半表現、心率漂移及持續觀測配速；揭示覆蓋率、缺口與提示容量限制。" },
+    ],
+  },
+  {
     feature: "Garmin 健康數據簡報",
     status: "released",
     summary: "以已儲存的跑步、Garmin 原始檔、心跳、睡眠及身體成份資料，提供可追溯的訓練與恢復資訊圖表。",
@@ -271,13 +303,14 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
     feature: "跑步能量系統互動實驗室",
     status: "released",
     summary: "依跑步項目、天氣及相容歷史資料，提供教學用途的能量系統與恢復估算。",
-    lastRevisedVersion: "3.14.9",
-    lastRevisedDateHK: "2026年11月1日（香港）",
+    lastRevisedVersion: "3.15.8",
+    lastRevisedDateHK: "2026年11月3日（香港）",
     history: [
       { version: "3.14.0", dateHK: "2026年10月31日", description: "建立互動式跑步能量系統、天氣因素及供能／恢復曲線。" },
       { version: "3.14.2", dateHK: "2026年11月1日", description: "加入個人身體成份及跑步歷史個人化校準。" },
       { version: "3.14.7", dateHK: "2026年11月1日", description: "改為自動掃描完整歷史跑步資料。" },
       { version: "3.14.9", dateHK: "2026年11月1日", description: "按項目選取類型、路線與距離相容資料，排除不適合的越野或長跑樣本。" },
+      { version: "3.15.8", dateHK: "2026年11月3日", description: "相容且連續覆蓋達標的 FIT／原始樣本以時間加權觀測配速校準；保留摘要後備並顯示實際選用數量與覆蓋率。" },
     ],
   },
   {
@@ -311,12 +344,13 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
   {
     feature: "健康表格式輸入與 Google Sheets",
     status: "released",
-    summary: "以 Excel 式貼上與逐行驗證加快健康記錄，並維持重要資料的 Sheets 優先同步。",
-    lastRevisedVersion: "3.14.7",
-    lastRevisedDateHK: "2026年11月1日（香港）",
+    summary: "以 Excel 式貼上與逐行驗證加快健康記錄；身體成份、睡眠與心跳直接保存 Supabase，不再依賴 Google Sheets 是否可用。",
+    lastRevisedVersion: "3.15.3",
+    lastRevisedDateHK: "2026年11月2日（香港）",
     history: [
       { version: "3.14.7", dateHK: "2026年11月1日", description: "身體成份、睡眠、心跳、步數／樓梯及血壓加入多列貼上、香港日期驗證及結果回報。" },
       { version: "3.14.7", dateHK: "2026年11月1日", description: "身體成份、睡眠與心跳採 Google Sheets 優先同步，並保留資料庫鏡像供圖表使用。" },
+      { version: "3.15.3", dateHK: "2026年11月2日", description: "身體成份、睡眠與心跳表格改為直接寫入 Supabase，解除 Sheets 故障對保存的阻擋；歷史資料保留。" },
     ],
   },
   {

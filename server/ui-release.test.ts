@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.15.7");
+    expect(APP_VERSION).toBe("3.15.8");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -95,7 +95,7 @@ describe("v3.14 focused training scope", () => {
     expect(runningSource).toContain("shoePerformanceData");
     expect(runningSource).toContain("各跑鞋效能統計");
     expect(runningSource).toContain("RunningEnergyLab");
-    expect(runningSource).toContain("AI 教練");
+    expect(runningSource).toContain("跑步 AI 分析");
   });
 });
 

@@ -26,6 +26,9 @@ import { parseGarminRawFile } from "./garminFileImport";
 import { saveGarminImport } from "./garminDirectSave";
 import { normalizeHKDate, type SpreadsheetSubmitResult } from "@shared/healthSpreadsheet";
 import { persistSupabaseBatch } from "./supabaseBatch";
+import { loadRunningHistory, toLabHistoricalRun, buildRunningHistoryContext, RUNNING_EVIDENCE_INSTRUCTIONS } from "./runningContinuousAnalysis";
+import { inBodyReportSchema } from "@shared/inbodyReport";
+import { extractInBodyPhoto, saveInBodyReport, INBODY_MAX_BASE64_LENGTH } from "./inbodyImport";
 import Papa from "papaparse";
 // Fixed owner user ID - no login required
 const OWNER_USER_ID = 2;
@@ -973,6 +976,14 @@ const workoutRouter = router({
 
 // ─── Body Metrics Router ──────────────────────────────────────────────────────
 const bodyRouter = router({
+  saveInBodyReport: ownerProcedure
+    .input(z.object({
+      report: inBodyReportSchema,
+      sourceKey: z.string().min(1).max(250),
+      fileName: z.string().min(1).max(200),
+    }))
+    .mutation(({ input }) => saveInBodyReport(input, OWNER_USER_ID)),
+
   getAll: publicProcedure
     .input(z.object({ limit: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {
@@ -2228,6 +2239,14 @@ const goalsRouter = router({
 
 // ─── Image Import Router ────────────────────────────────────────────────────
 const imageImportRouter = router({
+  extractInBody: ownerProcedure
+    .input(z.object({
+      base64: z.string().min(1).max(INBODY_MAX_BASE64_LENGTH),
+      mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+      fileName: z.string().min(1).max(200),
+    }))
+    .mutation(({ input }) => extractInBodyPhoto(input, OWNER_USER_ID)),
+
   /**
    * Upload an image and extract health data using AI vision.
    * Returns extracted fields for user review before saving.
@@ -3215,50 +3234,27 @@ const runningRouter = router({
       const db = await getDb();
       if (!db) return { body: null, baselinePaceSecPerKm: null, maxHeartRate: null, restingHeartRate: null, runTypeDistribution: [], historicalRunCount: 0, baselineRunCount: 0, historicalRuns: [] };
 
-      const [profileRows, bodyRows, heartRows, runningRows, typeRows] = await Promise.all([
+      const [profileRows, bodyRows, heartRows, history] = await Promise.all([
         db.execute(sql`SELECT height FROM user_profile WHERE user_id = ${OWNER_USER_ID} LIMIT 1`),
         db.execute(sql`SELECT weight, body_fat_pct, muscle_mass, date FROM body_composition WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
         db.execute(sql`SELECT resting_hr, high_hr FROM heart_rate_logs WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
-        db.execute(sql`
-          SELECT id, average_pace, average_heart_rate, maximum_heart_rate, distance_km, running_type, route_type, date
-          FROM running_logs
-          WHERE NULLIF(TRIM(COALESCE(average_pace, '')), '') IS NOT NULL
-          ORDER BY date ASC
-        `),
-        db.execute(sql`
-          SELECT COALESCE(running_type, '未分類') AS running_type, COUNT(*) AS count
-          FROM running_logs
-          GROUP BY COALESCE(running_type, '未分類')
-          ORDER BY count DESC, running_type ASC
-        `),
+        loadRunningHistory(db),
       ]);
       const profile = ((profileRows as any).rows ?? profileRows)[0] ?? null;
       const body = ((bodyRows as any).rows ?? bodyRows)[0] ?? null;
       const heart = ((heartRows as any).rows ?? heartRows)[0] ?? null;
-      const running = (runningRows as any).rows ?? runningRows;
-      const types = (typeRows as any).rows ?? typeRows;
-      const parsePaceSeconds = (raw: unknown) => {
-        const value = String(raw ?? "").trim();
-        if (!value) return null;
-        const clock = value.match(/^(\d{1,2}):(\d{2})(?:\.\d+)?$/);
-        if (clock) {
-          const seconds = Number(clock[1]) * 60 + Number(clock[2]);
-          return seconds >= 120 && seconds <= 1800 ? seconds : null;
-        }
-        const numeric = Number(value);
-        return Number.isFinite(numeric) && numeric >= 2 && numeric <= 30 ? numeric * 60 : null;
-      };
-      const paceRows = running.map((row: any) => ({ ...row, paceSeconds: parsePaceSeconds(row.average_pace) })).filter((row: any) => row.paceSeconds !== null);
-      // All historical records inform the model. Endurance pace is used when available
-      // for long-distance predictions so a short sprint does not distort a half-marathon baseline.
-      const endurancePaceRows = paceRows.filter((row: any) => Number(row.distance_km) >= 3);
-      const baselineRows = endurancePaceRows.length ? endurancePaceRows : paceRows;
-      const paces = baselineRows.map((row: any) => row.paceSeconds as number);
-      const maxFromRuns = running.map((row: any) => Number(row.maximum_heart_rate)).filter(Number.isFinite);
-      const restFromRuns = running.map((row: any) => Number(row.average_heart_rate)).filter(Number.isFinite);
-      const baselinePaceSecPerKm = paces.length ? paces.reduce((sum: number, pace: number) => sum + pace, 0) / paces.length : null;
-      const maxHeartRate = Number.isFinite(Number(heart?.high_hr)) ? Number(heart.high_hr) : (maxFromRuns.length ? Math.max(...maxFromRuns) : null);
-      const restingHeartRate = Number.isFinite(Number(heart?.resting_hr)) ? Number(heart.resting_hr) : (restFromRuns.length ? Math.min(...restFromRuns) : null);
+      const historicalRuns = history.runs.map(toLabHistoricalRun);
+      const paceRows = historicalRuns.filter(run => run.paceSecPerKm !== null || run.continuous?.baselineQualified);
+      const endurance = paceRows.filter(run => (run.distanceKm ?? 0) >= 3);
+      const baselineRows = endurance.length ? endurance : paceRows;
+      const paces = baselineRows.map(run => run.continuous?.baselineQualified ? run.continuous.meanMovingPaceSecPerKm : run.paceSecPerKm).filter((n): n is number => n !== null && n !== undefined);
+      const baselinePaceSecPerKm = paces.length ? paces.reduce((sum, pace) => sum + pace, 0) / paces.length : null;
+      const maxFromRuns = historicalRuns.map(run => run.maximumHeartRate).filter((n): n is number => n !== null && n !== undefined && n >= 30 && n <= 240);
+      const maxHeartRate = heart?.high_hr != null && Number.isFinite(Number(heart.high_hr)) ? Number(heart.high_hr) : (maxFromRuns.length ? Math.max(...maxFromRuns) : null);
+      // Exercise average HR is not resting HR; leave unknown instead of fabricating a measurement.
+      const restingHeartRate = heart?.resting_hr != null && Number.isFinite(Number(heart.resting_hr)) ? Number(heart.resting_hr) : null;
+      const types = new Map<string, number>();
+      history.runs.forEach(run => types.set(run.type || "未分類", (types.get(run.type || "未分類") ?? 0) + 1));
 
       return {
         body: body || profile ? {
@@ -3271,19 +3267,11 @@ const runningRouter = router({
         baselinePaceSecPerKm,
         maxHeartRate,
         restingHeartRate,
-        runTypeDistribution: types.map((row: any) => ({ type: row.running_type, count: Number(row.count) })),
-        historicalRunCount: running.length,
+        runTypeDistribution: Array.from(types.entries()).map(([type, count]) => ({ type, count })),
+        historicalRunCount: history.runs.length,
         baselineRunCount: baselineRows.length,
-        historicalRuns: paceRows.map((row: any) => ({
-          id: Number(row.id),
-          date: String(row.date ?? ""),
-          runningType: row.running_type ?? null,
-          routeType: row.route_type ?? null,
-          distanceKm: Number(row.distance_km),
-          paceSecPerKm: row.paceSeconds as number,
-          averageHeartRate: Number.isFinite(Number(row.average_heart_rate)) ? Number(row.average_heart_rate) : null,
-          maximumHeartRate: Number.isFinite(Number(row.maximum_heart_rate)) ? Number(row.maximum_heart_rate) : null,
-        })),
+        historicalRuns,
+        historyCoverage: history.coverage,
       };
     }),
 
@@ -3495,65 +3483,19 @@ const runningRouter = router({
     }),
 
   getAIAnalysis: ownerProcedure
-    .input(z.object({ weeks: z.number().optional().default(12) }))
+    .input(z.object({ weeks: z.number().int().min(1).max(520).optional().default(12) }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
-      const recentRows = await db.execute(sql`
-        SELECT date, running_type, running_shoes, distance_km, hour, minutes, second,
-               average_pace, best_pace, average_heart_rate, maximum_heart_rate,
-               average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
-               vertical_oscillation_cm, avg_ground_contact_time_ms, calories,
-               temperature, humidity, notes
-        FROM running_logs
-        ORDER BY date DESC
-        LIMIT ${input.weeks * 7}
-      `);
-      const logs = (recentRows as any).rows ?? recentRows;
-
-      if (!logs.length) return { analysis: '目前沒有足夠的跑步記錄。' };
-      const statsRows = await db.execute(sql`
-        SELECT
-          COUNT(*) as total_runs,
-          SUM(distance_km::numeric) as total_distance,
-          AVG(average_pace::numeric) as avg_pace,
-          AVG(average_heart_rate::numeric) as avg_hr,
-          AVG(average_cadence::numeric) as avg_cadence,
-          AVG(avg_stride_length_m::numeric) as avg_stride,
-          AVG(avg_vertical_ratio::numeric) as avg_vr,
-          AVG(vertical_oscillation_cm::numeric) as avg_vo
-        FROM running_logs
-        WHERE date >= TO_CHAR(NOW() - (${input.weeks} * INTERVAL '1 week'), 'YYYY-MM-DD')
-      `);
-      const stats = ((statsRows as any).rows ?? statsRows)[0];
-
-      const formatPace = (sec: number | null) => {
-        if (!sec) return 'N/A';
-        const m = Math.floor(sec / 60);
-        const s = Math.round(sec % 60);
-        return `${m}:${String(s).padStart(2, '0')}/km`;
-      };
-
-      const summary = logs.slice(0, 30).map((r: any) => [
-        `日期:${r.date?.toString().slice(0,10)}`,
-        r.running_type ? `類型:${r.running_type}` : '',
-        r.distance_km ? `距離:${parseFloat(r.distance_km).toFixed(2)}km` : '',
-        (r.hour != null || r.minutes != null) ? `時間:${r.hour||0}h${r.minutes||0}m${r.second||0}s` : '',
-        r.average_pace ? `配速:${formatPace(parseFloat(r.average_pace) * 60)}` : '',
-        r.average_heart_rate ? `心率:${r.average_heart_rate}bpm` : '',
-        r.average_cadence ? `步頻:${r.average_cadence}spm` : '',
-        r.avg_stride_length_m ? `步幅:${r.avg_stride_length_m}m` : '',
-        r.avg_vertical_ratio ? `垂直比:${r.avg_vertical_ratio}%` : '',
-        r.vertical_oscillation_cm ? `振幅:${r.vertical_oscillation_cm}cm` : '',
-        r.running_shoes ? `跑鞋:${r.running_shoes}` : '',
-        r.notes ? `備註:${r.notes}` : '',
-      ].filter(Boolean).join(', ')).join('\\n');
+      const history = await loadRunningHistory(db);
+      if (!history.runs.length) return { analysis: '目前沒有足夠的跑步記錄。' };
+      const historyContext = buildRunningHistoryContext(history, { startHK: daysAgoHK(input.weeks * 7), endHK: todayHK() }, 36000);
 
       // Fetch upcoming races for predictions
       const upcomingRaceRows = await db.execute(sql`
         SELECT race_name, date, distance_km, location
         FROM races
-        WHERE date >= TO_CHAR(NOW(), 'YYYY-MM-DD')
+        WHERE date >= ${todayHK()}
         ORDER BY date ASC
         LIMIT 10
       `);
@@ -3563,7 +3505,7 @@ const runningRouter = router({
       const pastRaceRows = await db.execute(sql`
         SELECT race_name, date, distance_km, finish_time, finish_hr, finish_min, finish_sec, is_pb, overall_place, gender_group_place, age_group_place, location, notes
         FROM races
-        WHERE date < TO_CHAR(NOW(), 'YYYY-MM-DD')
+        WHERE date < ${todayHK()}
           AND (finish_hr IS NOT NULL OR finish_min IS NOT NULL OR finish_time IS NOT NULL)
         ORDER BY date DESC
         LIMIT 20
@@ -3602,18 +3544,15 @@ const runningRouter = router({
       ).join(', ');
 
       const res = await invokeLLM({
+        model: 'gpt-6.1-sol',
+        reasoning: { effort: 'low' },
+        maxTokens: 2200,
+        timeoutMs: 45000,
         messages: [
-          { role: 'system', content: '你是一位專業馬拉松教練和運動科學分析師。請用繁體中文回答，結構清晰，分段說明，使用 Markdown 格式。' },
-          { role: 'user', content: `請全面分析我的跑步數據並提供詳細建議。
+          { role: 'system', content: RUNNING_EVIDENCE_INSTRUCTIONS },
+          { role: 'user', content: `請根據以下伺服器已計算的完整歷史統計及連續 FIT 特徵，提供精簡、可執行的分析。保留下列八個主題，每題最多兩句；總計約800至1000中文字，避免重複表述或重新推算原始樣本。開首先交代歷史與連續證據覆蓋及限制，沒有足夠依據的預測請直接說明。
 
-## 訓練數據摘要 (最近${input.weeks}週)
-共${logs.length}次跑步，總距離:${parseFloat(stats?.total_distance||0).toFixed(1)}km
-平均配速:${formatPace(parseFloat(stats?.avg_pace||0)*60)}，平均心率:${Math.round(stats?.avg_hr||0)}bpm
-平均步頻:${Math.round(stats?.avg_cadence||0)}spm，平均步幅:${parseFloat(stats?.avg_stride||0).toFixed(2)}m
-平均垂直比:${parseFloat(stats?.avg_vr||0).toFixed(1)}%，平均振幅:${parseFloat(stats?.avg_vo||0).toFixed(1)}cm
-
-## 詳細訓練記錄(最近30次)
-${summary}
+${historyContext}
 
 ## 過往賽事記錄
 ${pastRaceSummary || '暫無過往賽事記錄'}
@@ -4179,23 +4118,20 @@ ${shoesSummary || '無記錄'}
         ORDER BY distance_km ASC
       `);
       const pbs = (pbRows as any).rows ?? pbRows;
-      const trainingRows = await db.execute(sql`
-        SELECT date, distance_km, average_pace, average_heart_rate, running_type
-        FROM running_logs
-        WHERE date >= (${race.date}::date - interval '12 weeks')::text
-          AND date <= ${race.date}
-        ORDER BY date DESC
-        LIMIT 50
-      `);
-      const training = (trainingRows as any).rows ?? trainingRows;
+      const raceHK = String(race.date).slice(0, 10);
+      const evidenceEndHK = raceHK < todayHK() ? raceHK : todayHK();
+      const history = await loadRunningHistory(db, evidenceEndHK);
+      const focusStartHK = new Date(new Date(`${raceHK}T00:00:00+08:00`).getTime() - 84 * 86400e3 + 8 * 3600e3).toISOString().slice(0, 10);
+      const historyContext = buildRunningHistoryContext(history, { startHK: focusStartHK, endHK: evidenceEndHK }, 36000);
       const pbSummary = pbs.map((p: any) => `${parseFloat(p.distance_km).toFixed(1)}km: ${p.finish_time}`).join(', ');
-      const trainingSummary = training.map((r: any) =>
-        `${r.date}: ${parseFloat(r.distance_km||0).toFixed(1)}km, 配速${r.average_pace||'N/A'}, 心率${r.average_heart_rate||'N/A'}bpm`
-      ).join('\n');
       const res = await invokeLLM({
+        model: 'gpt-6.1-sol',
+        reasoning: { effort: 'low' },
+        maxTokens: 2200,
+        timeoutMs: 45000,
         messages: [
-          { role: 'system', content: '你是一位專業馬拉松教練和運動科學分析師。請用繁體中文回答，結構清晰。' },
-          { role: 'user', content: `請分析以下賽事表現並提供預測和建議。
+          { role: 'system', content: RUNNING_EVIDENCE_INSTRUCTIONS },
+          { role: 'user', content: `請根據已計算的歷史統計及 FIT 連續特徵分析以下賽事。精簡至800至1000中文字，優先交代資料覆蓋及限制，再提供四項分析、預測區間和可執行建議；不要重複推算原始樣本。
 
 賽事: ${race.race_name}
 日期: ${race.date}
@@ -4209,8 +4145,8 @@ ${shoesSummary || '無記錄'}
 
 個人PB記錄: ${pbSummary || '無記錄'}
 
-賽前12週訓練摘要(最近50次):
-${trainingSummary || '無訓練記錄'}
+${historyContext}
+賽前焦點只計至賽日／香港今日較早者；較舊歷史仍作獨立背景，未發生的訓練不可計入。
 
 請提供:
 1. 賽事表現分析(與PB比較、配速策略評估)

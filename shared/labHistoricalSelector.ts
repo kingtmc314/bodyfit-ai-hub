@@ -1,3 +1,5 @@
+import type { RunningContinuousEvidence } from "./runningContinuousAnalysis";
+
 export type LabScenario = "100m" | "200m" | "400m" | "800m" | "1500m" | "3000m" | "easy";
 export type LabEasyDistance = "10K" | "Half Marathon" | "Marathon";
 
@@ -10,6 +12,7 @@ export type LabHistoricalRun = {
   paceSecPerKm?: number | null;
   averageHeartRate?: number | null;
   maximumHeartRate?: number | null;
+  continuous?: Pick<RunningContinuousEvidence, "sourceFormat" | "usableSampleCount" | "sourceElapsedSeconds" | "paceCoverage" | "movingSeconds" | "longestContinuousSeconds" | "meanMovingPaceSecPerKm" | "baselineQualified">;
 };
 
 export type LabHistorySelection = {
@@ -23,6 +26,10 @@ export type LabHistorySelection = {
   fallbackReason: string | null;
   selectedTypeDistribution: Array<{ type: string; count: number }>;
   baselinePaceSecPerKm: number | null;
+  continuousRunCount: number;
+  fitRunCount: number;
+  continuousCoverage: number | null;
+  calibrationBasis: string;
 };
 
 type ScenarioRule = {
@@ -35,8 +42,13 @@ type ScenarioRule = {
 
 const normalise = (value: string | null | undefined) => (value ?? "").trim().toLowerCase();
 const isTrail = (run: LabHistoricalRun) => normalise(run.routeType) === "trail" || normalise(run.runningType).includes("trail");
+function qualifiedContinuousPace(run: LabHistoricalRun): number | null {
+  const c = run.continuous;
+  const pace = c?.meanMovingPaceSecPerKm;
+  return c?.baselineQualified === true && (c.paceCoverage ?? 0) >= 0.75 && c.usableSampleCount >= 30 && c.movingSeconds >= 300 && c.longestContinuousSeconds >= 300 && pace !== null && pace !== undefined && Number.isFinite(pace) && pace >= 120 && pace <= 1800 ? pace : null;
+}
 const hasPaceAndDistance = (run: LabHistoricalRun) => {
-  const pace = Number(run.paceSecPerKm);
+  const pace = qualifiedContinuousPace(run) ?? Number(run.paceSecPerKm);
   const distance = Number(run.distanceKm);
   return Number.isFinite(pace) && pace >= 120 && pace <= 1800 && Number.isFinite(distance) && distance > 0;
 };
@@ -103,8 +115,9 @@ function distribution(runs: LabHistoricalRun[]) {
     .map(([type, count]) => ({ type, count }));
 }
 
-function averagePace(runs: LabHistoricalRun[]) {
-  const paces = runs.map(run => Number(run.paceSecPerKm)).filter((pace): pace is number => Number.isFinite(pace));
+function averagePace(runs: LabHistoricalRun[], rule: ScenarioRule) {
+  const paces = runs.map(run => matchesType(run, rule) && matchesSurface(run, rule) && matchesDistance(run, rule)
+    ? qualifiedContinuousPace(run) ?? run.paceSecPerKm : run.paceSecPerKm).filter((pace): pace is number => pace !== null && pace !== undefined && Number.isFinite(pace) && pace >= 120 && pace <= 1800);
   return paces.length ? paces.reduce((sum, pace) => sum + pace, 0) / paces.length : null;
 }
 
@@ -151,6 +164,9 @@ export function selectLabHistoricalRuns(
     fallbackReason = "尚未有可用配速及距離的歷史跑步，使用參考值。";
   }
 
+  const continuousRuns = selectedRuns.filter(run => matchesType(run, rule) && matchesSurface(run, rule) && matchesDistance(run, rule) && qualifiedContinuousPace(run) !== null);
+  const covered = continuousRuns.reduce((sum, run) => sum + run.continuous!.movingSeconds, 0);
+  const elapsed = continuousRuns.reduce((sum, run) => sum + (run.continuous!.sourceElapsedSeconds ?? 0), 0);
   return {
     selectedRuns,
     consideredCount: valid.length,
@@ -161,6 +177,10 @@ export function selectLabHistoricalRuns(
     ruleLabel: rule.label,
     fallbackReason,
     selectedTypeDistribution: distribution(selectedRuns),
-    baselinePaceSecPerKm: averagePace(selectedRuns),
+    baselinePaceSecPerKm: averagePace(selectedRuns, rule),
+    continuousRunCount: continuousRuns.length,
+    fitRunCount: continuousRuns.filter(run => run.continuous?.sourceFormat === "FIT").length,
+    continuousCoverage: elapsed > 0 ? Math.min(1, covered / elapsed) : null,
+    calibrationBasis: continuousRuns.length ? "相容且達標連續樣本以時間加權移動配速取代該次摘要；其餘維持摘要配速。活動間等權，不由單次長跑主導。" : "未有類型／路面／距離相符且覆蓋達標的連續證據；維持活動摘要配速（無摘要則參考值）。",
   };
 }

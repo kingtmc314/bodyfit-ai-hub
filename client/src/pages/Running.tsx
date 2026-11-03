@@ -759,7 +759,7 @@ export default function Running() {
           </TabsTrigger>
           <TabsTrigger value="ai" className="min-w-0 gap-1 px-1.5 text-[11px] sm:px-3 sm:text-sm">
             <Bot className="w-3.5 h-3.5" />
-            AI 教練
+            <span className="sm:hidden">AI 分析</span><span className="hidden sm:inline">跑步 AI 分析</span>
           </TabsTrigger>
           <TabsTrigger value="lab" className="min-w-0 gap-1 px-1.5 text-[11px] sm:px-3 sm:text-sm">
             <Zap className="w-3.5 h-3.5" />

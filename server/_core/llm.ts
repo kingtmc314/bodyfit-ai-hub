@@ -63,6 +63,8 @@ export type InvokeParams = {
   tool_choice?: ToolChoice;
   maxTokens?: number;
   max_tokens?: number;
+  /** Optional deadline for interactive serverless requests, including response body. */
+  timeoutMs?: number;
   reasoning?: { effort: "low" | "medium" | "high" | "xhigh" | "max" };
   thinking?: { budget_tokens: number };
   outputSchema?: OutputSchema;
@@ -283,6 +285,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     response_format,
     maxTokens,
     max_tokens,
+    timeoutMs,
     reasoning,
     thinking,
   } = params;
@@ -325,21 +328,30 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
-  const response = await fetch(resolveApiUrl(), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  const controller = timeoutMs !== undefined ? new AbortController() : undefined;
+  const timer = controller ? setTimeout(() => controller.abort(), Math.max(1, timeoutMs!)) : undefined;
+  try {
+    const response = await fetch(resolveApiUrl(), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${ENV.forgeApiKey}`,
+      },
+      body: JSON.stringify(payload),
+      ...(controller ? { signal: controller.signal } : {}),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`
-    );
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`
+      );
+    }
+    return (await response.json()) as InvokeResult;
+  } catch (error) {
+    if (controller?.signal.aborted) throw new Error("AI 分析暫時未能在時限內完成，請稍後重試；健康紀錄沒有變更。");
+    throw error;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
-
-  return (await response.json()) as InvokeResult;
 }

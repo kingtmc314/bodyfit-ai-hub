@@ -578,3 +578,16 @@
 - [x] Add one-second countdown/sample-identity, callback rerender, in-flight SDK update, fallback DOM/zoom retention and overlay cleanup regression coverage
 - [x] Observe real Garmin Brief for 15 seconds with advancing countdown: zero loading transitions, same map/fallback DOM, same zoom, all 9,842 GPS points and six street tiles; 192 tests, typecheck and web/Vercel builds pass
 - [x] Save checkpoint, immediately push BodyFit GitHub main and verify stable maps in Vercel production (f9e64810 success; live v3.15.7 observed for 20 seconds: zero loading transitions, same map/fallback DOM, zoom preserved, countdown advancing, 9,842 GPS points and six loaded street tiles)
+
+## v3.15.8 InBody paper report camera template
+- [x] Add a dedicated InBody paper template alongside existing generic body input, with camera and gallery support and review before saving
+- [x] Extract primary, water/FFM/WHR/control and five-segment lean/fat metrics accurately; preserve printed HK date/time, null missing data and flag uncertainty/reference-range confusion (actual provided photo: 11 metrics and all five segments correct; visceral fat left blank)
+- [x] Persist reviewed fields and report/source metadata to the existing Life-OS Supabase without Google Sheets dependency, while preserving manual records and preventing duplicate file retries (real object-storage and PostgreSQL temporary-table transaction/dedup E2E passed; no health records created)
+- [x] Add report details/history display, regression tests, real photo extraction validation without writing health records, mobile/browser checks, visible version/release notes and production builds (291 tests; browser: one real photo extraction, two mocked save attempts, retry success without re-upload; TypeScript and web/Vercel builds passed)
+- [ ] Checkpoint, immediately push BodyFit GitHub main and verify Vercel production
+
+### v3.15.8 additional request: use FIT continuous data in running analysis and predictions
+- [x] Analyze available timestamped FIT samples with honest coverage, time weighting, gaps/pauses and missing-value handling; never fabricate physiological measurements
+- [x] Include compact full-history continuous evidence in running AI analysis/race predictions and qualified continuous pace in compatible energy-lab calibration (FIT evidence prioritized within prompt capacity; all-history/monthly features retained and omissions disclosed)
+- [x] Verify no-data/manual-history fallback, all-history coverage, prediction evidence UI and existing running dynamics/Sheets compatibility with regression tests (291 tests; real all-history API complete; live read-only AI finished in 35.43s with all eight sections, FIT evidence and limitations; bounded 45s AI deadline within 60s Vercel limit)
+- [ ] Verify FIT all-history evidence and InBody template in Vercel production after release
