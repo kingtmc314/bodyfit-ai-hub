@@ -36,6 +36,18 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.16.0",
+    status: "released",
+    title: "健身工作室、可信熱量估算與動態示範",
+    summary: "統一健身熱量計法，避免閒置時間、固定體重及有氧重複計算；新增健身地點、已核實動作影片與可旋轉的 3D 肌群示意。",
+    changes: {
+      added: ["課程可輸入及重用健身地點；完成前可核對有效分鐘、體重與強度，顯示估算範圍及來源。", "動作詳情加入可播放、暫停及慢速的真實示範，並保留授權來源；3D 肌群可拖動、前後查看及旋轉。"],
+      removed: ["移除固定中午開課、70kg 及按總重量提高 MET 的舊推算，避免將未訓練的等待時間算作持續高強度運動。", "移除錯配的靜態器械圖片及按大類猜測全部輔助肌群；未核實動態示範明確標示，不用不同動作影片代替。"],
+      improved: ["即時、完成、歷史與每日摘要使用同一版本估算；器械輸入的熱量不再額外加上重複的力量訓練估算。", "動作庫保留肌群、器材、中英名稱、最愛及自訂動作搜尋；影相辨識先壓縮並核對後才新增。"],
+      revised: ["香港日期／時間及手動量測來源保持可追溯，舊估算只校正顯示而不批量覆寫歷史原值。", "肌群模型是概念示意，熱量與訓練建議是估算；並非實測肌肉活化、姿勢評估或醫療診斷。"],
+    },
+  },
+  {
     version: "3.15.9",
     status: "released",
     title: "iPhone 相片匯入及統一 InBody 入口修復",
@@ -368,13 +380,14 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
   {
     feature: "健身記錄與漸進訓練",
     status: "released",
-    summary: "以訓練範本、下一組預填與休息計時，輔助一致的健身紀錄。",
-    lastRevisedVersion: "3.14.4",
-    lastRevisedDateHK: "2026年11月1日（香港）",
+    summary: "健身地點、動態示範、3D 肌群及來源清晰的熱量估算，配合訓練範本、下一組預填與漸進建議。",
+    lastRevisedVersion: "3.16.0",
+    lastRevisedDateHK: "2026年11月11日（香港）",
     history: [
       { version: "3.14.1", dateHK: "2026年11月1日", description: "加入推、拉、腿、全身訓練範本與自動漸進超負荷建議。" },
       { version: "3.14.3", dateHK: "2026年11月1日", description: "移除 90 天列表限制，恢復完整歷史訓練紀錄。" },
       { version: "3.14.4", dateHK: "2026年11月1日", description: "加入香港年月篩選及不同期間的訓練量比較。" },
+      { version: "3.16.0", dateHK: "2026年11月11日", description: "統一有效時間與體重熱量估算，避免有氧及闲置時間重複；新增健身地點、已核實動態示範、逐動作肌群及可旋轉的 3D 示意。" },
     ],
   },
   {

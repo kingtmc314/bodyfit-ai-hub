@@ -131,6 +131,8 @@ export const workoutSessions = pgTable("workout_sessions", {
   endTime: timestamp("end_time"),
   totalVolume: real("total_volume"),
   caloriesBurned: real("calories_burned"),
+  location: text("location"),
+  calorieDetails: jsonb("calorie_details"),
   templateKey: text("template_key"),
   plannedExercises: json("planned_exercises").$type<Array<{ name: string; nameZh?: string; targetSets: number; targetReps: string; equipment?: string }>>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
