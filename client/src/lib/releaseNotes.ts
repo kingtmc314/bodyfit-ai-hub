@@ -36,6 +36,18 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.16.1",
+    status: "released",
+    title: "常用器械官方動態影片與課程時間核對",
+    summary: "優先補齊胸推機、腹肌捲腹機、夾胸機及腿伸展機的官方動態影片；實際課程分鐘與熱量模型推算時間分開，輸入時間後即時預覽未儲存的熱量結果。",
+    changes: {
+      added: ["四類器械採官方 YouTube 嵌入，按開啟才載入；保留原作入口、播放、暫停、可用慢速及載入失敗重試，不下載或重新發布原作。"],
+      removed: ["不再把按組數估算的分鐘預填為完成訓練的實際時長，亦不以短估算時間取代歷史原有時長。"],
+      improved: ["完成／編輯核對介面按正在填寫的分鐘、強度與體重即時重算預覽；原有未核實熱量及手動值仍清楚保留。"],
+      revised: ["未核對或異常時間標示為需核對；只有新即時課程顯示經過時間，套用後仍須按確認才保存。香港時間與歷史原始證據保留。"],
+    },
+  },
+  {
     version: "3.16.0",
     status: "released",
     title: "健身工作室、可信熱量估算與動態示範",
@@ -381,13 +393,14 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
     feature: "健身記錄與漸進訓練",
     status: "released",
     summary: "健身地點、動態示範、3D 肌群及來源清晰的熱量估算，配合訓練範本、下一組預填與漸進建議。",
-    lastRevisedVersion: "3.16.0",
+    lastRevisedVersion: "3.16.1",
     lastRevisedDateHK: "2026年11月11日（香港）",
     history: [
       { version: "3.14.1", dateHK: "2026年11月1日", description: "加入推、拉、腿、全身訓練範本與自動漸進超負荷建議。" },
       { version: "3.14.3", dateHK: "2026年11月1日", description: "移除 90 天列表限制，恢復完整歷史訓練紀錄。" },
       { version: "3.14.4", dateHK: "2026年11月1日", description: "加入香港年月篩選及不同期間的訓練量比較。" },
       { version: "3.16.0", dateHK: "2026年11月11日", description: "統一有效時間與體重熱量估算，避免有氧及闲置時間重複；新增健身地點、已核實動態示範、逐動作肌群及可旋轉的 3D 示意。" },
+      { version: "3.16.1", dateHK: "2026年11月11日", description: "優先補齊四類常用器械的官方嵌入影片；實際課程時長不再被組數模型的分鐘取代，核對表單提供即時未儲存熱量預覽並保留原始資料。" },
     ],
   },
   {

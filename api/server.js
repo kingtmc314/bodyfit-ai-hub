@@ -3979,6 +3979,28 @@ function estimateWorkoutCalories(input) {
 
 // server/workoutCalorieService.ts
 import { and, desc, eq as eq2, inArray } from "drizzle-orm";
+
+// shared/workoutTiming.ts
+function isActualWorkoutMinutes(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= MAX_WORKOUT_MINUTES;
+}
+function getWorkoutTimeDetails(session, now = /* @__PURE__ */ new Date()) {
+  const details = session.calorieDetails;
+  const versioned = details?.version === WORKOUT_CALORIE_VERSION;
+  const verified = versioned ? details?.timing?.verifiedDurationMinutes : null;
+  const raw = session.rawDuration !== void 0 ? session.rawDuration : session.duration;
+  const actualMinutes = isActualWorkoutMinutes(verified) ? verified : isActualWorkoutMinutes(raw) ? raw : null;
+  const source = isActualWorkoutMinutes(verified) ? "reviewed" : actualMinutes != null ? "original" : "unknown";
+  const result = { actualMinutes, source, needsReview: source !== "reviewed" };
+  if (versioned && details?.origin === "new" && details.timing?.mode === "live" && session.startTime) {
+    const start = new Date(session.startTime).getTime();
+    const end = session.endTime ? new Date(session.endTime).getTime() : details.timing.finished ? NaN : now.getTime();
+    if (Number.isFinite(start) && Number.isFinite(end) && end >= start) result.elapsedMinutes = (end - start) / 6e4;
+  }
+  return result;
+}
+
+// server/workoutCalorieService.ts
 var HK_OFFSET = 8 * 60 * 60 * 1e3;
 function sessionHKDate(time) {
   const parsed = new Date(time);
@@ -4044,7 +4066,7 @@ function buildWorkoutCalorieReadModel(session, sets, weights = [], profileWeight
     sessionDate: date2,
     ...weight,
     intensity: stored?.intensity ?? "moderate",
-    verifiedDurationMinutes: stored?.timing.verifiedDurationMinutes,
+    verifiedDurationMinutes: isActualWorkoutMinutes(stored?.timing.verifiedDurationMinutes) ? stored.timing.verifiedDurationMinutes : null,
     availableMinutes: stored?.timing.availableMinutes,
     manualCalories: manual,
     mode: stored?.timing.mode ?? "historical",
@@ -4058,13 +4080,16 @@ function buildWorkoutCalorieReadModel(session, sets, weights = [], profileWeight
     if ((session.duration ?? 0) > 180) details.warnings.push("\u820A\u7D00\u9304\u5305\u542B\u591A\u5C0F\u6642\uFF0F\u8DE8\u65E5\u6642\u9593\uFF0C\u5DF2\u5FFD\u7565\u7246\u9418\u6642\u9577\uFF0C\u53EA\u4F7F\u7528\u5DF2\u8A18\u9304\u6D3B\u52D5\u3002");
   }
   const calorieReadModel = manual != null ? "manual_preserved" : !stored || stored.origin === "legacy" ? "corrected_legacy" : "current";
+  const timeDetails = getWorkoutTimeDetails(session);
+  if (timeDetails.needsReview) details.warnings.push(timeDetails.source === "original" ? "\u8AB2\u7A0B\u6642\u9577\u70BA\u539F\u59CB\u672A\u6838\u5C0D\u6578\u503C\uFF1B\u71B1\u91CF\u6A21\u578B\u6709\u6548\u5206\u9418\u4E0D\u662F\u5BE6\u969B\u8AB2\u7A0B\u6642\u9577\uFF0C\u8ACB\u624B\u52D5\u78BA\u8A8D\u3002" : "\u5BE6\u969B\u8AB2\u7A0B\u6642\u9577\u672A\u77E5\u6216\u7121\u6548\uFF0C\u8ACB\u586B\u5BEB\u5BE6\u969B\u5206\u9418\uFF1B\u4E0D\u6703\u4EE5\u7D44\u6578\u63A8\u7B97\u503C\u66FF\u4EE3\u3002");
   return {
     ...session,
     rawOriginalCalories: details.rawOriginalCalories,
     rawCaloriesBurned: session.caloriesBurned ?? null,
     rawDuration: session.duration ?? null,
     caloriesBurned: details.activeKcal,
-    duration: stored?.timing.verifiedDurationMinutes ?? Math.round(details.effectiveMinutes),
+    duration: timeDetails.actualMinutes,
+    timeDetails,
     totalVolume: workoutVolume(sets),
     calorieDetails: details,
     calorieEstimate: calorieEstimateSummary(details),
@@ -4119,7 +4144,7 @@ async function refreshWorkoutSessionCalories(db, id, userId) {
   if (detailsOf(session)?.origin === "new") {
     update.caloriesBurned = model.caloriesBurned;
     update.calorieDetails = model.calorieDetails;
-    update.duration = model.duration;
+    if (model.timeDetails.source === "reviewed") update.duration = Math.round(model.timeDetails.actualMinutes);
   }
   await db.update(workoutSessions).set(update).where(and(eq2(workoutSessions.id, id), eq2(workoutSessions.userId, userId)));
   return model;
@@ -4152,7 +4177,7 @@ function planWorkoutCreation(input, now = /* @__PURE__ */ new Date()) {
   details.origin = "new";
   details.timing.finished = !!endTime;
   details.rawOriginalCalories = null;
-  return { startTime, endTime, duration: verified == null ? 0 : Math.round(verified), caloriesBurned: 0, calorieDetails: details };
+  return { startTime, endTime, duration: verified == null ? null : Math.round(verified), caloriesBurned: 0, calorieDetails: details };
 }
 function planWorkoutFinish(session, input, now = /* @__PURE__ */ new Date()) {
   const stored = detailsOf(session);
@@ -4240,7 +4265,7 @@ async function finishWorkoutSession(db, id, userId, input, now = /* @__PURE__ */
   });
   const update = { startTime: plan.startTime, endTime: plan.endTime, totalVolume: model.totalVolume, updatedAt: now };
   if (prior?.origin === "new") {
-    update.duration = model.duration;
+    if (model.timeDetails.source === "reviewed") update.duration = Math.round(model.timeDetails.actualMinutes);
     update.caloriesBurned = model.caloriesBurned;
     update.calorieDetails = model.calorieDetails;
   } else if (input.duration != null || input.startTime != null || input.endTime != null || input.intensity != null || input.bodyWeightKg != null) {
@@ -4304,7 +4329,9 @@ async function updateWorkoutSession(db, id, userId, input, now = /* @__PURE__ */
   if (input.endTime) update.endTime = endTime;
   const explicitCorrection = input.duration != null || input.startTime != null || input.endTime != null || input.caloriesBurned != null || input.clearManualCalories || input.intensity != null || input.bodyWeightKg != null;
   if (prior?.origin === "new" || explicitCorrection) {
-    update.duration = model.duration;
+    if (model.timeDetails.source === "reviewed" && (input.duration != null || input.startTime != null || input.endTime != null)) {
+      update.duration = Math.round(model.timeDetails.actualMinutes);
+    }
     update.caloriesBurned = model.caloriesBurned;
     update.calorieDetails = model.calorieDetails;
   }

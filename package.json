@@ -1,6 +1,6 @@
 {
   "name": "bodyfit-ai-hub",
-  "version": "3.16.0",
+  "version": "3.16.1",
   "type": "module",
   "license": "MIT",
   "scripts": {
@@ -88,6 +88,7 @@
     "three": "0.180.0",
     "vaul": "^1.1.2",
     "wouter": "^3.3.5",
+    "youtube-player": "5.6.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -102,6 +103,7 @@
     "@types/react-dom": "^19.2.1",
     "@types/sax": "^1.2.7",
     "@types/three": "0.180.0",
+    "@types/youtube-player": "5.5.11",
     "@vitejs/plugin-react": "^5.0.4",
     "add": "^2.0.6",
     "autoprefixer": "^10.4.20",

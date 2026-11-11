@@ -71,7 +71,8 @@ describe("verified exercise demo catalog", () => {
     expect(getExerciseDemo("Dumbbell Fly", "Dumbbell")).toBeUndefined();
     expect(getExerciseDemo("Cable Crossover", "Cable")).toBeUndefined();
     expect(getExerciseDemo("Rowing Machine", "Machine")).toBeUndefined();
-    expect(getExerciseDemo("Leg Extension", "Machine")).toBeUndefined();
+    expect(getExerciseDemo("Leg Extension", "Machine")).toMatchObject({ kind: "youtube", title: "Leg Extension" });
+    expect(getExerciseDemo("Leg Extension", "Cable")).toBeUndefined();
     expect(getExerciseDemo("Bench Press Extra", "Barbell")).toBeUndefined();
     expect(getExerciseDemo("My custom lat movement", "Cable")).toBeUndefined();
   });
@@ -96,22 +97,28 @@ describe("verified exercise demo catalog", () => {
   it("all shipped assets have public HTTPS animated media plus per-media provenance", () => {
     expect(exerciseDemoCatalog.length).toBeGreaterThanOrEqual(15);
     for (const entry of exerciseDemoCatalog) {
-      expect(entry.url).toMatch(/^https:\/\/.+\.mp4$/);
-      expect(entry.kind).toBe("video");
-      expect(entry.sourceUrl).toMatch(
-        /^https:\/\/(wger\.de\/api\/v2\/exerciseinfo\/\d+\/|commons\.wikimedia\.org\/wiki\/File:)/
-      );
-      expect(entry.license).toMatch(/^CC BY(?:-SA)? (3|4)\.0$/);
-      expect(entry.licenseUrl).toMatch(
-        /^https:\/\/creativecommons\.org\/licenses\//
-      );
+      if (entry.kind === 'youtube') {
+        expect(entry.url).toBe(`https://www.youtube-nocookie.com/embed/${entry.videoId}`);
+        expect(entry.sourceUrl).toBe(`https://www.youtube.com/watch?v=${entry.videoId}`);
+        expect(entry.videoId).toMatch(/^[a-zA-Z0-9_-]{11}$/);
+        expect(entry.equipment).toBe('Machine');
+        expect(entry.license).toContain('官方嵌入');
+        expect(entry.license).not.toContain('CC BY');
+        expect(entry.licenseUrl).toBe('https://www.youtube.com/t/terms');
+      } else {
+        expect(entry.url).toMatch(/^https:\/\/.+\.mp4$/);
+        expect(entry.kind).toBe("video");
+        expect(entry.sourceUrl).toMatch(/^https:\/\/(wger\.de\/api\/v2\/exerciseinfo\/\d+\/|commons\.wikimedia\.org\/wiki\/File:)/);
+        expect(entry.license).toMatch(/^CC BY(?:-SA)? (3|4)\.0$/);
+        expect(entry.licenseUrl).toMatch(/^https:\/\/creativecommons\.org\/licenses\//);
+      }
       expect(entry.author).not.toBe("");
       expect(entry.sourceTitle).not.toBe("");
       expect(entry.originalUrl).toMatch(/^https:\/\//);
       expect(entry.changes).not.toBe("");
       expect(entry.verifiedAt).toBe("2026-11-11");
       expect(getExerciseDemo(entry.name, entry.equipment)).toBe(entry);
-      expect(entry.muscleGroup).not.toBe("abs");
+      if (entry.muscleGroup === 'abs') expect(entry.name).toBe('Abdominal Crunch');
     }
     expect(new Set(exerciseDemoCatalog.map(entry => entry.name)).size).toBe(
       exerciseDemoCatalog.length
@@ -120,7 +127,9 @@ describe("verified exercise demo catalog", () => {
   it("reports the actual builtin count and every unavailable name without claiming seventy", () => {
     const actual = builtins();
     expect(actual.length).toBe(exerciseDemoCoverage.builtinTotal);
-    expect(exerciseDemoCatalog.length).toBe(exerciseDemoCoverage.verified);
+    expect(exerciseDemoCatalog.length).toBe(exerciseDemoCoverage.shipped);
+    expect(exerciseDemoCatalog.filter(entry => entry.kind === 'youtube')).toHaveLength(4);
+    expect(exerciseDemoCatalog.filter(entry => entry.kind === 'video')).toHaveLength(20);
     expect(unavailableExerciseDemoNames.length).toBe(
       exerciseDemoCoverage.unavailable
     );
@@ -137,5 +146,16 @@ describe("verified exercise demo catalog", () => {
     expect(missing.map(exercise => exercise.name)).toEqual(
       unavailableExerciseDemoNames
     );
+  });
+  it('matches common saved machine names without mapping a floor crunch or freeweight fly', () => {
+    expect(getExerciseDemo('Chest Press Machine', 'Machine')?.videoId).toBe('VLDg23FqQM0');
+    expect(getExerciseDemo('Abdominal Crunch', 'Machine')?.videoId).toBe('o_0WrejFbAw');
+    expect(getExerciseDemo('Abdominal Crunch', 'Bodyweight')).toBeUndefined();
+    expect(getExerciseDemo('Pectoral Fly', 'Machine')?.videoId).toBe('N-DAB49l-cA');
+    expect(getExerciseDemo('Pectoral Fly', 'Dumbbell')).toBeUndefined();
+    expect(getExerciseDemo('Leg Extension', 'Machine')?.videoId).toBe('ZyWFzGyFwK0');
+    expect(getExerciseDemo('Crunch', 'Machine')).toBeUndefined();
+    expect(getExerciseDemo('Incline Press', 'Machine')).toBeUndefined();
+    expect(getExerciseDemo('MTS Decline Press', 'Machine')).toBeUndefined();
   });
 });

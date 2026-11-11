@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { bodyComposition, userProfile, workoutSessions, workoutSets } from "../drizzle/schema";
 import type { getDb } from "./db";
+import { getWorkoutTimeDetails, isActualWorkoutMinutes } from "../shared/workoutTiming";
 import {
   WORKOUT_CALORIE_VERSION, estimateWorkoutCalories, calorieEstimateSummary,
   validateWorkoutMinutes, validateBodyWeight, type CalorieWorkoutSet,
@@ -86,7 +87,7 @@ export function buildWorkoutCalorieReadModel<T extends CalorieSession>(
   const manual = stored ? stored.manualCalories ?? null : !legacyAuto ? session.caloriesBurned : null;
   const details = estimateWorkoutCalories({
     sets, sessionDate: date, ...weight, intensity: stored?.intensity ?? "moderate",
-    verifiedDurationMinutes: stored?.timing.verifiedDurationMinutes,
+    verifiedDurationMinutes: isActualWorkoutMinutes(stored?.timing.verifiedDurationMinutes) ? stored.timing.verifiedDurationMinutes : null,
     availableMinutes: stored?.timing.availableMinutes,
     manualCalories: manual, mode: stored?.timing.mode ?? "historical", tolerateInvalid: true,
   });
@@ -100,13 +101,18 @@ export function buildWorkoutCalorieReadModel<T extends CalorieSession>(
     if ((session.duration ?? 0) > 180) details.warnings.push("舊紀錄包含多小時／跨日時間，已忽略牆鐘時長，只使用已記錄活動。");
   }
   const calorieReadModel = manual != null ? "manual_preserved" as const : !stored || stored.origin === "legacy" ? "corrected_legacy" as const : "current" as const;
+  const timeDetails = getWorkoutTimeDetails(session);
+  if (timeDetails.needsReview) details.warnings.push(timeDetails.source === "original"
+    ? "課程時長為原始未核對數值；熱量模型有效分鐘不是實際課程時長，請手動確認。"
+    : "實際課程時長未知或無效，請填寫實際分鐘；不會以組數推算值替代。");
   return {
     ...session,
     rawOriginalCalories: details.rawOriginalCalories,
     rawCaloriesBurned: session.caloriesBurned ?? null,
     rawDuration: session.duration ?? null,
     caloriesBurned: details.activeKcal,
-    duration: stored?.timing.verifiedDurationMinutes ?? Math.round(details.effectiveMinutes),
+    duration: timeDetails.actualMinutes,
+    timeDetails,
     totalVolume: workoutVolume(sets),
     calorieDetails: details,
     calorieEstimate: calorieEstimateSummary(details),
@@ -157,7 +163,7 @@ export async function refreshWorkoutSessionCalories(db: Db, id: number, userId: 
   if (detailsOf(session)?.origin === "new") {
     update.caloriesBurned = model.caloriesBurned;
     update.calorieDetails = model.calorieDetails;
-    update.duration = model.duration;
+    if (model.timeDetails.source === "reviewed") update.duration = Math.round(model.timeDetails.actualMinutes!);
   }
   await db.update(workoutSessions).set(update).where(and(eq(workoutSessions.id, id), eq(workoutSessions.userId, userId)));
   return model;
@@ -182,7 +188,7 @@ export function planWorkoutCreation(input: ReviewedWorkoutTiming & { date: strin
     bodyWeightKg: input.bodyWeightKg, weightSource: input.bodyWeightKg != null ? "session_override" : undefined,
     verifiedDurationMinutes: verified });
   details.origin = "new"; details.timing.finished = !!endTime; details.rawOriginalCalories = null;
-  return { startTime, endTime, duration: verified == null ? 0 : Math.round(verified), caloriesBurned: 0, calorieDetails: details };
+  return { startTime, endTime, duration: verified == null ? null : Math.round(verified), caloriesBurned: 0, calorieDetails: details };
 }
 /** Pure safe finish plan: no wallclock-calorie conversion and repeat finish is idempotent. */
 export function planWorkoutFinish(session: CalorieSession, input: ReviewedWorkoutTiming, now = new Date()) {
@@ -245,7 +251,8 @@ export async function finishWorkoutSession(db: Db, id: number, userId: number, i
     manualCalories: model.calorieDetails.manualCalories });
   const update: Record<string, unknown> = { startTime: plan.startTime, endTime: plan.endTime, totalVolume: model.totalVolume, updatedAt: now };
   if (prior?.origin === "new") {
-    update.duration = model.duration; update.caloriesBurned = model.caloriesBurned; update.calorieDetails = model.calorieDetails;
+    if (model.timeDetails.source === "reviewed") update.duration = Math.round(model.timeDetails.actualMinutes!);
+    update.caloriesBurned = model.caloriesBurned; update.calorieDetails = model.calorieDetails;
   }
   else if (input.duration != null || input.startTime != null || input.endTime != null || input.intensity != null || input.bodyWeightKg != null) {
     // User-confirmed legacy timing/intensity is provenance, not an automatic backfill.
@@ -301,7 +308,10 @@ export async function updateWorkoutSession(db: Db, id: number, userId: number, i
   const explicitCorrection = input.duration != null || input.startTime != null || input.endTime != null || input.caloriesBurned != null || input.clearManualCalories || input.intensity != null || input.bodyWeightKg != null;
   if (prior?.origin === "new" || explicitCorrection) {
     // Explicit user correction is not an automatic migration/backfill. Preserve original evidence in metadata.
-    update.duration = model.duration; update.caloriesBurned = model.caloriesBurned; update.calorieDetails = model.calorieDetails;
+    if (model.timeDetails.source === "reviewed" && (input.duration != null || input.startTime != null || input.endTime != null)) {
+      update.duration = Math.round(model.timeDetails.actualMinutes!);
+    }
+    update.caloriesBurned = model.caloriesBurned; update.calorieDetails = model.calorieDetails;
   }
   await db.update(workoutSessions).set(update).where(and(eq(workoutSessions.id, id), eq(workoutSessions.userId, userId)));
   return { success: true, session: { ...model, ...input, caloriesBurned: model.caloriesBurned }, calorieEstimate: model.calorieEstimate };

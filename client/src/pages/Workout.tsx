@@ -31,8 +31,11 @@ import { APP_VERSION } from "@/lib/appMeta";
 import { getExerciseDemo } from "@shared/exerciseDemoCatalog";
 import {
   MAX_WORKOUT_MINUTES,
+  estimateWorkoutCalories,
+  calorieEstimateSummary,
   type WorkoutCalorieEstimate,
 } from "@shared/workoutCalories";
+import { getWorkoutTimeDetails, reviewedWorkoutDurationInput, isActualWorkoutMinutes } from "@shared/workoutTiming";
 export type { WorkoutCalorieEstimate } from "@shared/workoutCalories";
 import {
   prepareReportPhoto,
@@ -930,7 +933,7 @@ const CALORIE_SOURCE_LABELS: Record<string, string> = {
   device: "器材／裝置記錄",
   met: "活動強度模型",
   estimated: "活動強度模型",
-  manual: "手動修正",
+  manual: "保留原始／手動值（來源未核實）",
   profile: "個人檔案",
   body_log: "體重記錄",
   body_record: "體重記錄",
@@ -957,10 +960,12 @@ export function WorkoutEnergyPanel({
           </span>
           <div>
             <h3 className="text-sm font-bold text-foreground">
-              估計活動熱量 · ACTIVE
+              {estimate?.source === "manual" ? "保留原始／手動熱量 · 口徑未核實" : "估計活動熱量 · ACTIVE"}
             </h3>
             <p className="text-[11px] text-muted-foreground">
-              {estimate?.source === "machine_reported" ||
+              {estimate?.source === "manual"
+                ? "保留原始／手動值，不能確認其来源或活動／總熱量口徑；不是模型估算。"
+                : estimate?.source === "machine_reported" ||
               estimate?.source === "mixed"
                 ? "器材回報可能包含靜息熱量，無法確認為純活動消耗。"
                 : "活動估算扣除靜息代謝，不是量測值。"}{" "}
@@ -1000,7 +1005,7 @@ export function WorkoutEnergyPanel({
               </dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">有效時長／強度</dt>
+              <dt className="text-muted-foreground">熱量模型有效分鐘／強度</dt>
               <dd className="mt-0.5 font-medium text-foreground">
                 {estimate.effectiveMinutes == null
                   ? "未提供"
@@ -1016,6 +1021,7 @@ export function WorkoutEnergyPanel({
                   estimate.intensity ||
                   "未提供"}
               </dd>
+              <p className="mt-1 text-[11px] text-muted-foreground">模型時間可由組數推估，不代表實際課程時長。</p>
             </div>
           </dl>
           {estimate.warnings?.length > 0 && (
@@ -1218,6 +1224,30 @@ export default function Workout() {
     : null;
   const calorieEstimate: WorkoutCalorieEstimate | null =
     currentSession?.calorieEstimate ?? null;
+  const [workoutClock, setWorkoutClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (!currentSession?.id) return;
+    const timer = window.setInterval(() => setWorkoutClock(Date.now()), 15000);
+    return () => window.clearInterval(timer);
+  }, [currentSession?.id]);
+  const timeDetails = currentSession ? getWorkoutTimeDetails(currentSession, new Date(workoutClock)) : null;
+  const finishPreview = useMemo(() => {
+    if (!showFinishDialog || !finishForm.duration.trim()) return null;
+    const minutes = Number(finishForm.duration);
+    const weight = finishForm.bodyWeightKg.trim() ? Number(finishForm.bodyWeightKg) : calorieEstimate?.bodyWeightKg;
+    if (!isActualWorkoutMinutes(minutes) || minutes <= 0 || (weight != null && (!Number.isFinite(weight) || weight < 20 || weight > 350))) return null;
+    if (sessionDetail?.session?.id !== currentSession?.id) return null;
+    try {
+      return calorieEstimateSummary(estimateWorkoutCalories({
+        sets: sessionDetail?.sets ?? [], verifiedDurationMinutes: minutes,
+        intensity: finishForm.intensity, bodyWeightKg: weight,
+        weightSource: finishForm.bodyWeightKg.trim() ? "session_override" : calorieEstimate?.weightSource,
+        manualCalories: currentSession?.calorieDetails?.manualCalories
+          ?? (calorieEstimate?.source === "manual" ? currentSession?.caloriesBurned : null),
+        tolerateInvalid: true,
+      }));
+    } catch { return null; }
+  }, [showFinishDialog, finishForm, sessionDetail, currentSession?.id, currentSession?.calorieDetails, currentSession?.caloriesBurned, calorieEstimate]);
   const historicalSession = Boolean(
     currentSession &&
       getSessionHKDate(currentSession) &&
@@ -1341,6 +1371,21 @@ export default function Workout() {
     duration: "",
     notes: "",
   });
+  const editDurationPreview = useMemo(() => {
+    if (!showEditSessionDialog || !editSessionForm.duration.trim() || sessionDetail?.session?.id !== currentSession?.id) return null;
+    const minutes = Number(editSessionForm.duration);
+    if (!isActualWorkoutMinutes(minutes) || minutes <= 0) return null;
+    try {
+      return calorieEstimateSummary(estimateWorkoutCalories({
+        sets: sessionDetail?.sets ?? [], verifiedDurationMinutes: minutes,
+        bodyWeightKg: calorieEstimate?.bodyWeightKg, weightSource: calorieEstimate?.weightSource,
+        intensity: calorieEstimate?.intensity,
+        manualCalories: currentSession?.calorieDetails?.manualCalories
+          ?? (calorieEstimate?.source === "manual" ? currentSession?.caloriesBurned : null),
+        tolerateInvalid: true,
+      }));
+    } catch { return null; }
+  }, [showEditSessionDialog, editSessionForm.duration, sessionDetail, currentSession?.id, currentSession?.calorieDetails, currentSession?.caloriesBurned, calorieEstimate]);
   const initialEditSessionForm = useRef<typeof editSessionForm | null>(null);
   const updateSession = trpc.workout.updateSession.useMutation({
     onSuccess: () => {
@@ -1371,7 +1416,7 @@ export default function Workout() {
         ? toHKDateString(s.endTime)
         : toHKDateString(s.startTime),
       hasEndTime: Boolean(s.endTime),
-      duration: s.duration == null ? "" : String(s.duration),
+      duration: reviewedWorkoutDurationInput(s),
       date: s.startTime
         ? new Date(new Date(s.startTime).getTime() + 8 * 3600000)
             .toISOString()
@@ -2081,13 +2126,7 @@ export default function Workout() {
 
   const openFinishSession = () => {
     setFinishForm({
-      duration:
-        calorieEstimate?.effectiveMinutes != null &&
-        calorieEstimate.effectiveMinutes > 0
-          ? String(calorieEstimate.effectiveMinutes)
-          : currentSession?.duration != null
-            ? String(currentSession.duration)
-            : "",
+      duration: reviewedWorkoutDurationInput(currentSession),
       intensity: (["light", "moderate", "vigorous"].includes(
         calorieEstimate?.intensity || ""
       )
@@ -2106,6 +2145,7 @@ export default function Workout() {
       historicalSession
     )
       return;
+    if (!finishForm.duration.trim()) return toast.error("實際課程時長尚未核對，請輸入分鐘後再確認儲存。");
     const duration = Number(finishForm.duration);
     const bodyWeightKg = finishForm.bodyWeightKg.trim()
       ? Number(finishForm.bodyWeightKg)
@@ -2116,7 +2156,7 @@ export default function Workout() {
       duration > MAX_WORKOUT_MINUTES
     )
       return toast.error(
-        `請填寫 1 至 ${MAX_WORKOUT_MINUTES} 分鐘的有效訓練時長`
+        `請填寫 1 至 ${MAX_WORKOUT_MINUTES} 分鐘的實際課程時長`
       );
     if (
       bodyWeightKg !== undefined &&
@@ -2466,6 +2506,12 @@ export default function Workout() {
                     </div>
                   </div>
 
+                  <section aria-label="實際課程時間" className="rounded-xl border border-border bg-card p-3 text-xs leading-5">
+                    <p>實際課程時長：{timeDetails?.actualMinutes == null ? "未知，需核對" : `${timeDetails.actualMinutes} 分鐘`}
+                      {timeDetails?.source === "reviewed" ? " · 已手動核對" : timeDetails?.source === "original" ? " · 原始值，未核對" : ""}</p>
+                    {timeDetails?.elapsedMinutes != null && <p>本次即時課程已經過 {Math.floor(timeDetails.elapsedMinutes)} 分鐘（牆鐘時間，可能包含閒置；不會自動計入熱量）。</p>}
+                    <p className="text-muted-foreground">課程時長與下方熱量模型有效分鐘不同。舊紀錄時間可能只是日期標記，不代表真實開始／結束時間。</p>
+                  </section>
                   <WorkoutEnergyPanel estimate={calorieEstimate} />
                   {historicalSession && !currentSession.endTime && (
                     <p className="rounded-xl bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
@@ -4771,7 +4817,7 @@ export default function Workout() {
               </div>
             </div>
             <label className="block text-xs text-muted-foreground">
-              有效訓練時長（分鐘）
+              實際課程時長（分鐘，請自行核對）
               <Input
                 aria-label="修改有效訓練時長"
                 type="number"
@@ -4790,8 +4836,13 @@ export default function Workout() {
               />
             </label>
             <p className="text-[11px] leading-5 text-muted-foreground">
-              有效時長應排除長時間離開／閒置。修改時長會由後端統一重估熱量；未結束歷史課程不會以現在時間自動結束。
+              {timeDetails?.source === "original" ? `原始未核對時長：${timeDetails.actualMinutes} 分鐘。` : timeDetails?.needsReview ? "實際時長未知或無效，需核對。" : ""}
+              只自動填入已核對時長；不會填入熱量模型的組數推估時間。修改分鐘不會改寫舊開始／結束時間；未結束歷史課程不會以現在時間自動結束。舊時間欄位可能只是日期標記，除非你自行修改，否則保留原值。
             </p>
+            {editDurationPreview && <section aria-label="未儲存時長修正預覽">
+              <p className="mb-2 text-xs font-semibold">未儲存預覽 · 儲存後才套用時長修正</p>
+              <WorkoutEnergyPanel estimate={editDurationPreview} />
+            </section>}
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">
                 備註（選填）
@@ -4836,11 +4887,24 @@ export default function Workout() {
             <DialogTitle>結束訓練前核對</DialogTitle>
           </DialogHeader>
           <p className="text-xs leading-5 text-muted-foreground">
-            只計入這次實際訓練的有效時間，排除長時間閒置。熱量將由同一個後端模型重估，並非精確量測。
+            請核對實際課程分鐘（排除長時間離開／閒置）。組數推估的熱量有效分鐘不是實際課程時長，不能自動代填。只有下方確認才會儲存。
           </p>
-          <WorkoutEnergyPanel estimate={calorieEstimate} />
+          {timeDetails?.source === "original" && <p className="text-xs text-amber-700 dark:text-amber-300">原始值 {timeDetails.actualMinutes} 分鐘尚未核對，請自行輸入實際時間。</p>}
+          {timeDetails?.elapsedMinutes != null && (
+            <div className="text-xs leading-5">
+              <p>本次即時課程經過 {Math.floor(timeDetails.elapsedMinutes)} 分鐘；包含閒置，請先核對。</p>
+              <Button type="button" variant="outline" className="mt-1" disabled={timeDetails.elapsedMinutes < 1 || timeDetails.elapsedMinutes > MAX_WORKOUT_MINUTES}
+                onClick={() => setFinishForm(form => ({ ...form, duration: String(Math.round(timeDetails.elapsedMinutes!)) }))}>
+                使用經過時間（仍需確認儲存）
+              </Button>
+            </div>
+          )}
+          <section aria-label="未儲存熱量預覽">
+            <p className="mb-2 text-xs font-semibold">未儲存預覽 · 使用目前組數及你輸入的分鐘／強度／體重</p>
+            {finishPreview ? <WorkoutEnergyPanel estimate={finishPreview} /> : <p className="text-xs text-muted-foreground">請填寫有效分鐘以顯示預覽；尚未儲存任何變更。</p>}
+          </section>
           <label className="block text-xs font-medium text-muted-foreground">
-            有效訓練時長（分鐘）
+            實際課程時長（分鐘）
             <Input
               aria-label="結束訓練有效時長"
               type="number"

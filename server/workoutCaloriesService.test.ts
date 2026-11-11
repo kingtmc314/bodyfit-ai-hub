@@ -129,6 +129,35 @@ describe("non-destructive calorie service persistence", () => {
     expect(mock.session.calorieDetails.manualCalories).toBeNull();
     expect((await getWorkoutCalorieReadModels(mock.db, [mock.session], 2))[0].caloriesBurned).not.toBe(77);
   });
+  it("unreviewed new session refresh and location edit never persist reps-derived minutes", async () => {
+    const details = estimateWorkoutCalories({ sets, mode: "live" }); details.origin = "new";
+    const mock = fakeDb({ ...baseSession, duration: null, calorieDetails: details });
+    const refreshed = await refreshWorkoutSessionCalories(mock.db, 1, 2);
+    expect(refreshed.duration).toBeNull();
+    expect(refreshed.calorieDetails.effectiveMinutes).toBeGreaterThan(0);
+    expect(mock.writes[0].values).not.toHaveProperty("duration");
+    await updateWorkoutSession(mock.db, 1, 2, { location: "私人健身室" }, now);
+    expect(mock.writes[1].values).not.toHaveProperty("duration");
+    expect(mock.session.duration).toBeNull();
+  });
+  it("unreviewed live finish may cap energy by elapsed time but never persists heuristic duration", async () => {
+    const details = estimateWorkoutCalories({ sets, mode: "live" }); details.origin = "new";
+    const mock = fakeDb({ ...baseSession, duration: null, calorieDetails: details });
+    const result = await finishWorkoutSession(mock.db, 1, 2, {}, now);
+    expect(result.duration).toBeNull();
+    expect(mock.writes[0].values).not.toHaveProperty("duration");
+    expect(mock.session.calorieDetails.timing.verifiedDurationMinutes).toBeNull();
+  });
+  it("manual duration correction preserves old completed timestamps including seconds", async () => {
+    const mock = fakeDb({ ...baseSession, startTime: new Date("2020-01-02T12:00:27+08:00"), endTime: new Date("2020-01-02T23:34:58+08:00"), duration: 694 });
+    const start = mock.session.startTime, end = mock.session.endTime;
+    const result = await updateWorkoutSession(mock.db, 1, 2, { duration: 60 }, now);
+    expect(result.session.duration).toBe(60);
+    expect(mock.writes[0].values).not.toHaveProperty("startTime");
+    expect(mock.writes[0].values).not.toHaveProperty("endTime");
+    expect(mock.session.startTime).toBe(start);
+    expect(mock.session.endTime).toBe(end);
+  });
 });
 
 describe("workout/dashboard routers use one corrected read model", () => {

@@ -3,6 +3,7 @@ import React, { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { estimateWorkoutCalories } from "../shared/workoutCalories";
 import GymLocationInput, {
   getGymLocationSuggestions,
   normalizeGymLocation,
@@ -446,7 +447,8 @@ describe("workout studio DOM contracts", () => {
       startTime: "2020-01-02T12:00:27+08:00",
       endTime: "2020-01-02T23:34:58+08:00",
       rawDuration: 694,
-      duration: 8,
+      duration: null,
+      timeDetails: { actualMinutes: null, source: "unknown", needsReview: true },
       location: "原有地點",
       calorieEstimate: { ...estimate, effectiveMinutes: 8 },
     };
@@ -468,7 +470,7 @@ describe("workout studio DOM contracts", () => {
           '[aria-label="修改有效訓練時長"]'
         ) as HTMLInputElement
       ).value
-    ).toBe("8");
+    ).toBe("");
     await setInput('[role="combobox"]', "新訓練地點");
     await click("儲存");
     expect(mocks.mutations.updateSession).toHaveBeenCalledWith(
@@ -493,6 +495,48 @@ describe("workout studio DOM contracts", () => {
       }),
       expect.any(Object)
     );
+  });
+  it("never prefills effective 8 as actual 60, previews current shared physics locally, and cancel writes nothing", async () => {
+    const { todayHKString } = await import("../client/src/lib/hkTime");
+    const sets = Array.from({ length: 5 }, () => ({ exerciseName: "Bench Press", reps: 12, weight: 40 }));
+    const details = estimateWorkoutCalories({ sets, bodyWeightKg: 80, mode: "historical" });
+    details.origin = "legacy";
+    const session = { id: 17, name: "六十分鐘", startTime: `${todayHKString()}T08:00:00+08:00`, endTime: null,
+      duration: 60, calorieDetails: details, calorieEstimate: { ...estimate, bodyWeightKg: 80, weightSource: "body_composition", effectiveMinutes: 8 } };
+    mocks.sessions = [session]; mocks.detail = { session, sets };
+    await renderWorkout();
+    await click("結束訓練");
+    expect((document.querySelector('[aria-label="結束訓練有效時長"]') as HTMLInputElement).value).toBe("");
+    expect(button("確認結束並儲存").disabled).toBe(true);
+    await setInput('[aria-label="結束訓練有效時長"]', "60");
+    let expected = estimateWorkoutCalories({ sets, bodyWeightKg: 80, verifiedDurationMinutes: 60 });
+    const preview = () => document.querySelector('[aria-label="未儲存熱量預覽"]')?.textContent;
+    expect(preview()).toContain(`${expected.lowKcal}–${expected.highKcal}`);
+    expect(preview()).toContain("60 分鐘");
+    await select('[aria-label="結束訓練強度"]', "vigorous");
+    await setInput('[aria-label="本次參考體重修正"]', "90");
+    expected = estimateWorkoutCalories({ sets, bodyWeightKg: 90, verifiedDurationMinutes: 60, intensity: "vigorous" });
+    expect(preview()).toContain(`${expected.lowKcal}–${expected.highKcal}`);
+    expect(mocks.mutations.finishSession).not.toHaveBeenCalled();
+    expect(mocks.mutations.updateSession).not.toHaveBeenCalled();
+    await click("返回訓練");
+    expect(mocks.mutations.finishSession).not.toHaveBeenCalled();
+    expect(mocks.mutations.updateSession).not.toHaveBeenCalled();
+    expect(document.querySelector('[aria-label="未儲存熱量預覽"]')).toBeNull();
+  });
+  it("offers elapsed only for genuine new live sessions and requires a separate save click", async () => {
+    const sets = [{ exerciseName: "Bench Press", reps: 10, weight: 40 }];
+    const details = estimateWorkoutCalories({ sets, mode: "live" }); details.origin = "new";
+    const session = { id: 19, name: "即時計時", startTime: new Date(Date.now() - 30 * 60000), endTime: null, duration: null,
+      calorieDetails: details, calorieEstimate: details };
+    mocks.sessions = [session]; mocks.detail = { session, sets };
+    await renderWorkout(); await click("結束訓練");
+    expect((document.querySelector('[aria-label="結束訓練有效時長"]') as HTMLInputElement).value).toBe("");
+    await click("使用經過時間");
+    expect((document.querySelector('[aria-label="結束訓練有效時長"]') as HTMLInputElement).value).toBe("30");
+    expect(mocks.mutations.finishSession).not.toHaveBeenCalled();
+    await click("確認結束並儲存");
+    expect(mocks.mutations.finishSession).toHaveBeenCalledWith(expect.objectContaining({ id: 19, duration: 30 }));
   });
   it("honestly distinguishes machine-reported energy and handles missing or zero estimates", async () => {
     const { WorkoutEnergyPanel, formatActiveEnergyRange } = await import(

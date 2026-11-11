@@ -3,9 +3,11 @@
  * Display title/author/license plus source link AND licenseUrl/changes in attribution.
  * See /home/ubuntu/webdev-static-assets/bodyfit-exercise-demos/README.md.
  */
+import { officialMachineDemos } from './officialMachineDemos';
 export interface ExerciseDemo {
   url: string;
-  kind: "video" | "gif";
+  kind: "video" | "gif" | "youtube";
+  videoId?: string;
   sourceUrl: string;
   license: string;
   author: string;
@@ -419,13 +421,12 @@ export const exerciseDemoCatalog: readonly ExerciseDemoCatalogEntry[] = [
     verifiedAt: "2026-11-11",
     muscleGroup: "quads",
   },
+  ...officialMachineDemos,
 ];
 export const unavailableExerciseDemoNames: readonly string[] = [
   "Dumbbell Fly",
   "Cable Crossover",
-  "Chest Press Machine",
   "Push-up",
-  "Pec Deck",
   "Deadlift",
   "Pull-up",
   "T-Bar Row",
@@ -441,7 +442,6 @@ export const unavailableExerciseDemoNames: readonly string[] = [
   "Tricep Pushdown",
   "Close-grip Bench Press",
   "Tricep Kickback",
-  "Leg Extension",
   "Romanian Deadlift",
   "Bulgarian Split Squat",
   "Hip Thrust",
@@ -470,8 +470,12 @@ export const unavailableExerciseDemoNames: readonly string[] = [
   "Jacob's Ladder",
 ];
 export const exerciseDemoCoverage = {
-  verified: 20,
-  unavailable: 47,
+  verified: 23,
+  customOnly: 1,
+  shipped: 24,
+  nativeVideos: 20,
+  officialEmbeds: 4,
+  unavailable: 44,
   builtinTotal: 67,
   checkedAt: "2026-11-11",
 } as const;

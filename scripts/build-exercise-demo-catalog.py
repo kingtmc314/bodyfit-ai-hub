@@ -99,15 +99,20 @@ def main():
         selected_names.add(name)
         result.append(entry)
         manifest.append({**entry, **provenance, 'localFile': str(file), 'sha256': hashlib.sha256(file.read_bytes()).hexdigest(), 'probe': probe})
-    missing = [e['name'] for e in builtins if e['name'] not in selected_names]
+    official_source = (ROOT / 'shared/officialMachineDemos.ts').read_text()
+    official_names = set(re.findall(r"name: '([^']+)', equipment: 'Machine'", official_source))
+    available_builtin = selected_names | (official_names & set(by_name))
+    missing = [e['name'] for e in builtins if e['name'] not in available_builtin]
     header = '''/** Exact motion/equipment demos, curated 2026-11-11. No fuzzy fallback.
  * Source media licenses are independent of this repository's MIT code license.
  * Display title/author/license plus source link AND licenseUrl/changes in attribution.
  * See /home/ubuntu/webdev-static-assets/bodyfit-exercise-demos/README.md.
  */
+import { officialMachineDemos } from './officialMachineDemos';
 export interface ExerciseDemo {
   url: string;
-  kind: "video" | "gif";
+  kind: "video" | "gif" | "youtube";
+  videoId?: string;
   sourceUrl: string;
   license: string;
   author: string;
@@ -153,12 +158,13 @@ export function getExerciseDemo(name: string, equipment?: string): ExerciseDemo 
   return matching.length === 1 ? matching[0] : undefined;
 }
 '''
-    content = header + 'export const exerciseDemoCatalog: readonly ExerciseDemoCatalogEntry[] = ' + json.dumps(result, ensure_ascii=False, indent=2) + ';\n'
+    content = header + 'const curatedNativeDemos: readonly ExerciseDemoCatalogEntry[] = ' + json.dumps(result, ensure_ascii=False, indent=2) + ';\n'
+    content += 'export const exerciseDemoCatalog: readonly ExerciseDemoCatalogEntry[] = [...curatedNativeDemos, ...officialMachineDemos];\n'
     content += 'export const unavailableExerciseDemoNames: readonly string[] = ' + json.dumps(missing, ensure_ascii=False, indent=2) + ';\n'
-    content += f'export const exerciseDemoCoverage = {{ verified: {len(result)}, unavailable: {len(missing)}, builtinTotal: {len(builtins)}, checkedAt: "2026-11-11" }} as const;\n' + footer
+    content += f'export const exerciseDemoCoverage = {{ verified: {len(available_builtin)}, customOnly: {len(official_names - set(by_name))}, shipped: {len(result) + len(official_names)}, nativeVideos: {len(result)}, officialEmbeds: {len(official_names)}, unavailable: {len(missing)}, builtinTotal: {len(builtins)}, checkedAt: "2026-11-11" }} as const;\n' + footer
     (ROOT / 'shared/exerciseDemoCatalog.ts').write_text(content)
-    (ASSETS / 'verified-manifest.json').write_text(json.dumps({'coverage': {'verified': len(result), 'unavailable': len(missing), 'builtinTotal': len(builtins)}, 'demos': manifest, 'unavailableNames': missing}, ensure_ascii=False, indent=2) + '\n')
-    print(f'Catalog: {len(result)}/{len(builtins)} exact demos; {len(missing)} explicitly unavailable')
+    (ASSETS / 'verified-manifest.json').write_text(json.dumps({'coverage': {'verified': len(available_builtin), 'nativeVideos': len(result), 'officialEmbeds': len(official_names), 'unavailable': len(missing), 'builtinTotal': len(builtins)}, 'demos': manifest, 'officialSource': 'shared/officialMachineDemos.ts', 'unavailableNames': missing}, ensure_ascii=False, indent=2) + '\n')
+    print(f'Catalog: {len(available_builtin)}/{len(builtins)} builtin demos; {len(result)} native + {len(official_names)} official; {len(missing)} explicitly unavailable')
 
 
 if __name__ == '__main__':
