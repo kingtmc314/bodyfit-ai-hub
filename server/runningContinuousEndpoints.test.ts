@@ -27,7 +27,7 @@ function fakeDb() {
       const cursor = Number(rendered.params[0]);
       return { rows: fixtureRows.filter(r => r.id > cursor && r.id <= Number(rendered.params[1]) && r.date <= String(rendered.params[2])).slice(0, 20) };
     }
-    if (/SELECT \* FROM races WHERE id/.test(rendered.sql)) return { rows: [{ id: 7, race_name: "Fixture race", date: "2026-10-05", distance_km: "10" }] };
+    if (/FROM races WHERE id/.test(rendered.sql)) return { rows: [{ id: 7, race_name: "Fixture race", date: "2026-10-05", distance_km: "10" }] };
     return { rows: [] };
   }) };
 }
@@ -102,7 +102,12 @@ describe("running endpoints consume full-history continuous evidence", () => {
     expect(vi.mocked(invokeLLM).mock.calls[0][0].maxTokens).toBe(2200);
     expect(vi.mocked(invokeLLM).mock.calls[0][0].timeoutMs).toBe(45000);
     expectReadonlyPaginatedRunningQueries();
-    expect(queries.filter(q => /WHERE id >/.test(q.sql)).every(q => q.params[2] === "2026-10-05")).toBe(true);
+    expect(queries.filter(q => /FROM running_logs WHERE id >/.test(q.sql)).every(q => q.params[2] === "2026-10-04")).toBe(true);
+    expect(prompt()).toContain("事後表現分析");
+    expect(prompt()).toContain("訓練配速驗算");
+    const health = queries.filter(q => /FROM sleep_logs|FROM heart_rate_logs/.test(q.sql));
+    expect(health.every(q => q.params.includes(2))).toBe(true);
+    expect(health.every(q => q.params.includes("2026-10-04"))).toBe(true);
   });
 
   it("reports incomplete snapshot honestly if rows disappear during paginated reads", async () => {

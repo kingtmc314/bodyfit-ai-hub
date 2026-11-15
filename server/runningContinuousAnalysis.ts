@@ -10,6 +10,8 @@ export type RunningHistoryFeature = {
   summaryHeartRate: number | null; maximumHeartRate: number | null;
   summaryDynamics: { cadence: number | null; strideM: number | null; verticalRatio: number | null; verticalOscillationCm: number | null; groundContactMs: number | null };
   weather: { temperatureC: number | null; humidityPct: number | null; windKph: number | null };
+  startTimestamp?: string | null;
+  weatherProvenance?: { source: string | null; location: string | null; observedAt: string | null };
   continuous: RunningContinuousEvidence;
 };
 export type RunningHistory = { runs: RunningHistoryFeature[]; coverage: { totalRuns: number; processedRuns: number; complete: boolean; snapshotMaxId: number; continuousRuns: number; fitRuns: number; qualifiedRuns: number; earliestHK: string | null; latestHK: string | null } };
@@ -30,6 +32,8 @@ export function runningRowFeature(row: any): RunningHistoryFeature {
     distanceKm: finiteRunningNumber(row.distance_km), durationSeconds, summaryPaceSecPerKm: parseRunningPaceSeconds(row.average_pace), summaryHeartRate: finiteRunningNumber(row.average_heart_rate), maximumHeartRate: finiteRunningNumber(row.maximum_heart_rate),
     summaryDynamics: { cadence: finiteRunningNumber(row.average_cadence), strideM: finiteRunningNumber(row.avg_stride_length_m), verticalRatio: finiteRunningNumber(row.avg_vertical_ratio), verticalOscillationCm: finiteRunningNumber(row.vertical_oscillation_cm), groundContactMs: finiteRunningNumber(row.avg_ground_contact_time_ms) },
     weather: { temperatureC: finiteRunningNumber(row.temperature), humidityPct: finiteRunningNumber(row.humidity), windKph: finiteRunningNumber(row.wind_speed) },
+    startTimestamp: [1, "1", true, "true"].includes(row.activity_window_verified) ? label(row.activity_start_timestamp ?? row.raw_first_timestamp) : null,
+    weatherProvenance: { source: label(row.weather_source), location: label(row.weather_location), observedAt: label(row.weather_observed_at) },
     continuous: deriveRunningContinuousEvidence(row.time_series, { durationSeconds, sourceFormat: row.source_format, sourceSampleCount: row.source_sample_count }),
   };
 }
@@ -41,10 +45,14 @@ export async function loadRunningHistory(db: Reader, throughHK = todayHK()): Pro
   let cursor = 0;
   while (cursor < maxId) {
     const rows = rowsOf(await db.execute(sql`
-      SELECT id, date, running_type, route_type, running_shoes, distance_km, hour, minutes, second,
+      SELECT id, date::text AS date, running_type, route_type, running_shoes, distance_km, hour, minutes, second,
              average_pace, average_heart_rate, maximum_heart_rate, average_cadence, avg_stride_length_m,
              avg_vertical_ratio, vertical_oscillation_cm, avg_ground_contact_time_ms,
              temperature, humidity, wind_speed, time_series,
+             weather_source, weather_location, weather_observed_at,
+             garmin_details->>'activityStartTimestamp' AS activity_start_timestamp,
+             garmin_details->>'rawActivityFirstTimestamp' AS raw_first_timestamp,
+             garmin_details->>'activityWindowVerified' AS activity_window_verified,
              COALESCE(garmin_details->>'rawFileFormat', garmin_details->>'sourceFormat') AS source_format,
              garmin_details->>'rawSampleCount' AS source_sample_count
       FROM running_logs WHERE id > ${cursor} AND id <= ${maxId} AND date <= ${throughHK}

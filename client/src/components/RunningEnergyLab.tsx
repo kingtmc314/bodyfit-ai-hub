@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc";
 import { useIsOwner } from "@/contexts/OwnerContext";
+import RunningCrossValidationPanel from "@/components/RunningCrossValidationPanel";
 import {
   buildRunningEnergySimulation,
   formatPace,
@@ -214,6 +215,8 @@ export default function RunningEnergyLab({ maxHeartRate, restingHeartRate, profi
             <div className="mt-3 rounded-xl border border-cyan-300/15 bg-cyan-300/[0.055] px-3 py-2.5 text-xs text-cyan-50"><p className="font-semibold text-cyan-200">自動選取證據 · {historySelection.selectedRuns.length} / {historySelection.consideredCount} 次歷史跑步</p><p className="mt-1 leading-5 text-slate-300">規則：{historySelection.ruleLabel}</p><p className="mt-1 leading-5 text-slate-400">精確相符 {historySelection.eligibleCount} 次 · 排除越野 {historySelection.excludedTrailCount} 次 · 類型相符但距離不符 {historySelection.excludedDistanceCount} 次{historySelection.fallbackReason ? ` · ${historySelection.fallbackReason}` : ""}</p></div>
             <div className="mt-3 rounded-xl border border-emerald-300/15 bg-emerald-300/[0.055] px-3 py-2.5 text-xs leading-5 text-slate-300"><p className="font-semibold text-emerald-200">連續數據校準：{historySelection.continuousRunCount} 次合資格來源（FIT {historySelection.fitRunCount} 次） · 配速時間覆蓋 {historySelection.continuousCoverage === null ? "未有足夠資料" : `${Math.round(historySelection.continuousCoverage * 100)}%`}</p><p className="mt-1">{historySelection.calibrationBasis}</p><p className="mt-1 text-slate-400">至少 75% 配速覆蓋、300 秒連續觀測及穩定性檢查；缺口／停頓不延伸。資料不足只回退摘要，不加虛構生理懲罰；天氣與短距離轉換仍是模型假設。FIT 不會把 VO₂、乳酸、閾值變成實測值。</p></div>
           </div>
+
+          <div className="mt-5"><RunningCrossValidationPanel targetDistanceKm={simulation.distanceKm} temperatureC={temperatureC} humidityPct={humidityPct} windKph={windKph} /></div>
 
           {isOwner && <div className="mt-5 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.06] p-3.5"><div className="flex flex-col gap-2 sm:flex-row"><Input value={scenarioName} onChange={event => setScenarioName(event.target.value)} maxLength={80} placeholder={`命名此情境，例如：${temperatureC}°C 潮濕 10K`} className="h-9 border-white/15 bg-slate-950/40 text-sm text-white placeholder:text-slate-500" /><Button type="button" onClick={saveCurrentScenario} disabled={saveScenario.isPending} className="h-9 shrink-0 bg-cyan-300 text-slate-950 hover:bg-cyan-200">{saveScenario.isPending ? <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}儲存比較</Button></div><p className="mt-2 text-[11px] text-cyan-100/75">會保存項目、天氣與預估結果；日後的歷史跑步更新不會覆蓋此比較快照。</p></div>}
 

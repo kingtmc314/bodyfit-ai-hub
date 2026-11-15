@@ -1,0 +1,80 @@
+export type ContextPaceBasis = "continuous-moving" | "summary";
+export type ContextGroup = {
+  key: string;
+  runType: string;
+  routeType: string;
+  paceBasis: ContextPaceBasis;
+  count: number;
+  minDistanceKm: number;
+  maxDistanceKm: number;
+};
+export type ContextErrorMetrics = {
+  count: number;
+  days: number;
+  maeSecPerKm: number;
+  medianAbsolutePercentError: number;
+  biasSecPerKm: number;
+};
+export type ContextEvidenceRow = {
+  id: number;
+  dateHK: string;
+  distanceKm: number;
+  paceSecPerKm: number;
+  paceBasis: ContextPaceBasis;
+  temperatureC: number | null;
+  humidityPct: number | null;
+  windKph: number | null;
+  weatherQuality: string;
+  sleepHours: number | null;
+  sleepDateHK: string | null;
+  sleepMethod: string | null;
+  restingHR: number | null;
+  restingHRDeltaBpm: number | null;
+  restingHRDateHK: string | null;
+  baselinePredictedPace: number | null;
+  weatherPredictedPace: number | null;
+  contextPredictedPace: number | null;
+};
+export type RunningContextReport = {
+  version: "running-context-v1";
+  source: "Life-OS Supabase";
+  generatedAtHK: string;
+  historyComplete: boolean;
+  groups: ContextGroup[];
+  selectedGroup: ContextGroup | null;
+  targetDistanceKm: number;
+  status: "insufficient-data" | "not-improved" | "validated-association" | "unsupported-context";
+  statusReason: string;
+  coverage: {
+    runs: number;
+    sleeps: number;
+    hearts: number;
+    selectedRuns: number;
+    temperature: number;
+    humidity: number;
+    sleep: number;
+    restingHR: number;
+    restingHRDelta: number;
+    priorDateSleepProxy: number;
+  };
+  metrics: {
+    baseline: ContextErrorMetrics | null;
+    weatherOnly: ContextErrorMetrics | null;
+    fullContext: ContextErrorMetrics | null;
+    improvementPct: number | null;
+  };
+  featuresUsed: string[];
+  prediction: {
+    supported: boolean;
+    paceSecPerKm: number | null;
+    interval80SecPerKm: [number, number] | null;
+    correctionEnabled: boolean;
+    reason: string;
+    currentSleepHours: number | null;
+    currentSleepDateHK: string | null;
+    currentRestingHRDeltaBpm: number | null;
+    currentRestingHRDateHK: string | null;
+  };
+  rows: ContextEvidenceRow[];
+  limitations: string[];
+};

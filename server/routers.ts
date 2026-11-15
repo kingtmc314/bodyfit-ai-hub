@@ -27,6 +27,8 @@ import { saveGarminImport } from "./garminDirectSave";
 import { normalizeHKDate, type SpreadsheetSubmitResult } from "@shared/healthSpreadsheet";
 import { persistSupabaseBatch } from "./supabaseBatch";
 import { loadRunningHistory, toLabHistoricalRun, buildRunningHistoryContext, RUNNING_EVIDENCE_INSTRUCTIONS } from "./runningContinuousAnalysis";
+import { loadRunningRecoveryDataset } from "./runningRecoveryDataset";
+import { buildRunningContextReport, runningContextAIText } from "./runningContextReport";
 import { inBodyReportSchema } from "@shared/inbodyReport";
 import { decodeInBodyPhoto, extractInBodyPhoto, saveInBodyReport, INBODY_MAX_BASE64_LENGTH } from "./inbodyImport";
 import Papa from "papaparse";
@@ -3196,6 +3198,23 @@ const runningRouter = router({
       return { success: true };
     }),
 
+  getCrossValidation: ownerProcedure
+    .input(z.object({
+      targetDistanceKm: z.number().finite().min(0.05).max(200),
+      groupKey: z.string().min(1).max(160).optional(),
+      temperatureC: z.number().finite().min(-30).max(55).optional(),
+      humidityPct: z.number().finite().min(0).max(100).optional(),
+      windKph: z.number().finite().min(0).max(150).optional(),
+      sleepDateConvention: z.enum(["unknown", "wake-date"]).optional().default("unknown"),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("未能讀取 Supabase，請稍後重試；沒有改寫任何紀錄。");
+      const history = await loadRunningHistory(db);
+      const recovery = await loadRunningRecoveryDataset(db, OWNER_USER_ID, history, todayHK(), { dateConvention: input.sleepDateConvention });
+      return buildRunningContextReport(recovery, input);
+    }),
+
   getLabPersonalization: publicProcedure
     .query(async () => {
       const db = await getDb();
@@ -3203,8 +3222,8 @@ const runningRouter = router({
 
       const [profileRows, bodyRows, heartRows, history] = await Promise.all([
         db.execute(sql`SELECT height FROM user_profile WHERE user_id = ${OWNER_USER_ID} LIMIT 1`),
-        db.execute(sql`SELECT weight, body_fat_pct, muscle_mass, date FROM body_composition WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
-        db.execute(sql`SELECT resting_hr, high_hr FROM heart_rate_logs WHERE user_id = ${OWNER_USER_ID} ORDER BY date DESC LIMIT 1`),
+        db.execute(sql`SELECT weight, body_fat_pct, muscle_mass, date FROM body_composition WHERE user_id = ${OWNER_USER_ID} AND date <= ${todayHK()} ORDER BY date DESC LIMIT 1`),
+        db.execute(sql`SELECT resting_hr, high_hr FROM heart_rate_logs WHERE user_id = ${OWNER_USER_ID} AND date < ${todayHK()} ORDER BY date DESC LIMIT 1`),
         loadRunningHistory(db),
       ]);
       const profile = ((profileRows as any).rows ?? profileRows)[0] ?? null;
@@ -3457,6 +3476,8 @@ const runningRouter = router({
       const history = await loadRunningHistory(db);
       if (!history.runs.length) return { analysis: '目前沒有足夠的跑步記錄。' };
       const historyContext = buildRunningHistoryContext(history, { startHK: daysAgoHK(input.weeks * 7), endHK: todayHK() }, 36000);
+      const recovery = await loadRunningRecoveryDataset(db, OWNER_USER_ID, history, todayHK());
+      const recoveryContext = runningContextAIText(recovery, daysAgoHK(input.weeks * 7));
 
       // Fetch upcoming races for predictions
       const upcomingRaceRows = await db.execute(sql`
@@ -3520,6 +3541,8 @@ const runningRouter = router({
           { role: 'user', content: `請根據以下伺服器已計算的完整歷史統計及連續 FIT 特徵，提供精簡、可執行的分析。保留下列八個主題，每題最多兩句；總計約800至1000中文字，避免重複表述或重新推算原始樣本。開首先交代歷史與連續證據覆蓋及限制，沒有足夠依據的預測請直接說明。
 
 ${historyContext}
+${recoveryContext}
+跑前恢復與天氣情境必須按配對日期／來源與驗算限制解讀。睡眠日期不明的代理只作背景；未有樣本外改善不可聲稱提升準確率。訓練配速留出驗算不等於賽事完賽／生理模型驗證。
 
 ## 過往賽事記錄
 ${pastRaceSummary || '暫無過往賽事記錄'}
@@ -4076,20 +4099,26 @@ ${shoesSummary || '無記錄'}
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
-      const raceRows = await db.execute(sql`SELECT * FROM races WHERE id = ${input.raceId}`);
+      const raceRows = await db.execute(sql`SELECT id, race_name, date::text AS date, distance_km, location, is_pb, finish_time,
+        overall_place, gender_group_place, age_group_place, temperature, humidity, wind_speed, weather_source, weather_observed_at
+        FROM races WHERE id = ${input.raceId} LIMIT 1`);
       const race = ((raceRows as any).rows ?? raceRows)[0];
       if (!race) throw new Error('Race not found');
       const pbRows = await db.execute(sql`
         SELECT distance_km, finish_time FROM races
         WHERE is_pb = true AND finish_time IS NOT NULL
-        ORDER BY distance_km ASC
+          AND date < ${race.date} AND date < ${todayHK()} AND id <> ${input.raceId}
+        ORDER BY distance_km ASC LIMIT 200
       `);
       const pbs = (pbRows as any).rows ?? pbRows;
       const raceHK = String(race.date).slice(0, 10);
       const evidenceEndHK = raceHK < todayHK() ? raceHK : todayHK();
-      const history = await loadRunningHistory(db, evidenceEndHK);
-      const focusStartHK = new Date(new Date(`${raceHK}T00:00:00+08:00`).getTime() - 84 * 86400e3 + 8 * 3600e3).toISOString().slice(0, 10);
-      const historyContext = buildRunningHistoryContext(history, { startHK: focusStartHK, endHK: evidenceEndHK }, 36000);
+      const evidenceThroughHK = toHKDateString(new Date(new Date(`${evidenceEndHK}T00:00:00+08:00`).getTime() - 86400e3));
+      const history = await loadRunningHistory(db, evidenceThroughHK);
+      const focusStartHK = toHKDateString(new Date(new Date(`${evidenceEndHK}T00:00:00+08:00`).getTime() - 84 * 86400e3));
+      const historyContext = buildRunningHistoryContext(history, { startHK: focusStartHK, endHK: evidenceThroughHK }, 36000);
+      const recovery = await loadRunningRecoveryDataset(db, OWNER_USER_ID, history, evidenceThroughHK);
+      const recoveryContext = runningContextAIText(recovery, focusStartHK);
       const pbSummary = pbs.map((p: any) => `${parseFloat(p.distance_km).toFixed(1)}km: ${p.finish_time}`).join(', ');
       const res = await invokeLLM({
         model: 'gpt-6.1-sol',
@@ -4111,9 +4140,11 @@ ${shoesSummary || '無記錄'}
 年齡組排名: ${race.age_group_place || 'N/A'}
 
 個人PB記錄: ${pbSummary || '無記錄'}
+賽事天氣：氣溫${race.temperature ?? '未提供'}°C、濕度${race.humidity ?? '未提供'}%、風速${race.wind_speed ?? '未提供'}km/h；來源／觀測時刻未核對時只作近似背景，不當作已驗證耗能係數。
 
 ${historyContext}
-賽前焦點只計至賽日／香港今日較早者；較舊歷史仍作獨立背景，未發生的訓練不可計入。
+${recoveryContext}
+賽前資料嚴格早於賽日／香港今日較早者；同日所有跑步及之後健康資料不可計入。PB只取更早已完成賽事。已知完成時間及排名只供事後表現分析，不可冒充賽前預測或模型驗算。訓練配速驗算亦非賽事能力驗證。
 
 請提供:
 1. 賽事表現分析(與PB比較、配速策略評估)

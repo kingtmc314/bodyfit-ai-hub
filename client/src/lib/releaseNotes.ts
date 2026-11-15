@@ -36,6 +36,17 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.18.0", status: "released",
+    title: "跑步天氣、睡眠與靜止心率交叉驗算",
+    summary: "能量實驗室新增已保存 Supabase 跑步前情境連結與按日留出驗算；比較相同活動的歷史配速、天氣及恢復模型實際誤差，而非固定疲勞加減分或宣稱準確率已提高。",
+    changes: {
+      added: ["獨立組別／距離的基準、天氣及恢復 MAE 與實測對照", "跑步前睡眠與個人靜止心率基準日期、來源、缺值及覆蓋提示", "睡眠日期為起床日的明確核對選項、逐次證據與樣本外殘差範圍"],
+      removed: [],
+      improved: ["歷史 AI 加入真正按日配對的天氣與恢復證據", "賽事分析使用嚴格更早訓練／健康資料與 PB，分開事後結果及預測驗證", "歷史睡眠分鐘值僅在時鐘跨度一致時轉為小時，不改原紀錄"],
+      revised: ["未知路面／坡度只作獨立描述性驗算，不假設平坦公路或啟用修正", "無穩定留出改善、資料不完整或情境超出範圍時不額外調整", "原能量生理／完賽模擬仍為估算；訓練配速驗算不等於其準確率已驗證"],
+    },
+  },
+  {
     version: "3.17.3",
     status: "released",
     title: "Garmin 同日短跑配對與原檔衝突處理",
@@ -619,10 +630,14 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
     feature: "跑步能量系統互動實驗室",
     status: "released",
     summary:
-      "依跑步項目、天氣及相容歷史資料，提供教學用途的能量系統與恢復估算。",
-    lastRevisedVersion: "3.15.8",
-    lastRevisedDateHK: "2026年11月3日（香港）",
+      "依項目與相容歷史提供教學模擬；另以已保存天氣、跑前睡眠與靜止心率作實測訓練配速留出驗算，清楚區分未驗證模擬與資料限制。",
+    lastRevisedVersion: "3.18.0",
+    lastRevisedDateHK: "2026年11月15日（香港）",
     history: [
+      {
+        version: "3.18.0", dateHK: "2026年11月15日",
+        description: "新增按香港測試日留出的天氣／恢復模型驗算、前因日期來源及單位核對；未知路線或沒有穩定改善不作额外校正，並不表示原完賽／生理模擬已驗證。",
+      },
       {
         version: "3.14.0",
         dateHK: "2026年10月31日",
