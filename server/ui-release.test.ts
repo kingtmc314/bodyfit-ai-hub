@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.17.2");
+    expect(APP_VERSION).toBe("3.17.3");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -475,7 +475,8 @@ describe("v3.15.5 Garmin direct save workflow", () => {
   });
   it("turns successful imports into edits and protects in-flight or unconfirmed saves", () => {
     expect(running).toContain("setEditEntry({ id: saved.id })");
-    expect(running).toContain("runningLogId={editEntry ? Number(editEntry.id) : undefined}");
+    expect(running).toContain("runningLogId={garminImportTargetId}");
+    expect(running).not.toContain("runningLogId={editEntry ? Number(editEntry.id) : undefined}");
     expect(running).toContain("if (garminImportBusy || garminUnconfirmed) return");
     expect(running).toContain("void utils.running.invalidate()");
     expect(running).toContain("儲存其他修改");

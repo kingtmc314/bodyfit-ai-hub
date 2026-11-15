@@ -24,6 +24,8 @@ type GarminRawPreview = {
 type GarminStagedSource = {
   fileKey: string;
   sourceFormat: GarminSourceFormat;
+  // This belongs to the selected file, not a later parent render/manual edit.
+  runningLogId?: number;
 };
 
 type UploadState = "idle" | "uploading" | "parsing" | "saving";
@@ -49,25 +51,40 @@ function createUploadId() {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 14)}`;
 }
 
+function describeSaveError(error: unknown) {
+  const details = typeof error === "object" && error !== null
+    ? error as { message?: unknown; data?: { code?: unknown } }
+    : undefined;
+  const message = typeof details?.message === "string" ? details.message : "儲存連線暫時中斷，請重試。";
+  // Also recognize the two precise messages from servers predating TRPC CONFLICT.
+  const permanent = details?.data?.code === "CONFLICT"
+    || /這筆跑步紀錄已連結不同的 Garmin 原始檔|這個 Garmin 原始檔已連結另一筆跑步紀錄/i.test(message);
+  return { message, permanent };
+}
+
 export default function GarminRawFileImporter({
   runningLogId,
   onSaved,
   onBusyChange,
   onUnconfirmedChange,
+  onUseAutomaticMatch,
 }: {
   runningLogId?: number;
   onSaved: (saved: GarminDirectSaved) => void;
   onBusyChange?: (busy: boolean) => void;
   onUnconfirmedChange?: (unconfirmed: boolean) => void;
+  onUseAutomaticMatch?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const operationBusyRef = useRef(false);
   const [file, setFile] = useState<File | null>(null);
+  const [fileTargetId, setFileTargetId] = useState<number | undefined>(undefined);
   const [preview, setPreview] = useState<GarminRawPreview | null>(null);
   const [stagedSource, setStagedSource] = useState<GarminStagedSource | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [chunkProgress, setChunkProgress] = useState<{ current: number; total: number } | null>(null);
   const [failure, setFailure] = useState<GarminRawImportFailure | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<ReturnType<typeof describeSaveError> | null>(null);
   const [saved, setSaved] = useState<GarminDirectSaved | null>(null);
   const uploadChunk = trpc.running.uploadGarminRawChunk.useMutation();
   const parse = trpc.running.parseGarminRawFile.useMutation();
@@ -86,21 +103,24 @@ export default function GarminRawFileImporter({
         fileKey: source.fileKey,
         fileName: selected.name,
         mimeType: selected.type || "application/octet-stream",
-        runningLogId,
+        runningLogId: source.runningLogId,
       });
       setSaved(result);
       onSaved(result);
       toast.success(result.action === "duplicate" ? "此原始檔已保存，沒有重複新增" : result.sampleCount ? "原始檔與圖表已直接保存到跑步紀錄" : "原始檔與活動摘要已保存（檔案沒有曲線樣本）");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "儲存連線暫時中斷，請重試。";
-      setSaveError(message);
-      toast.error("原始檔已上載，但跑步紀錄尚未確認儲存", { description: message });
+      const problem = describeSaveError(error);
+      setSaveError(problem);
+      toast.error(problem.permanent ? "原檔衝突，資料未更改" : "原始檔已上載，但跑步紀錄尚未確認儲存", { description: problem.message });
     } finally {
       setUploadState("idle");
     }
   };
 
-  const importFile = async (selected: File) => {
+  const importFile = async (selected: File, targetId: number | undefined) => {
+    if (operationBusyRef.current || isBusy) return;
+    setFile(selected);
+    setFileTargetId(targetId);
     setPreview(null);
     setStagedSource(null);
     setFailure(null);
@@ -125,6 +145,7 @@ export default function GarminRawFileImporter({
     const uploadId = createUploadId();
     const totalChunks = Math.ceil(selected.size / CHUNK_BYTES);
     const chunkKeys: string[] = [];
+    operationBusyRef.current = true;
     try {
       setUploadState("uploading");
       for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
@@ -155,7 +176,7 @@ export default function GarminRawFileImporter({
       });
       const reviewedPreview = parsed as GarminRawPreview;
       setPreview(reviewedPreview);
-      const source = { fileKey: reviewedPreview.rawFileKey, sourceFormat: reviewedPreview.sourceFormat };
+      const source = { fileKey: reviewedPreview.rawFileKey, sourceFormat: reviewedPreview.sourceFormat, runningLogId: targetId };
       setStagedSource(source);
       await persistImport(selected, source);
     } catch (error) {
@@ -163,6 +184,7 @@ export default function GarminRawFileImporter({
       setFailure(recoveredFailure);
       toast.error(recoveredFailure.title, { description: recoveredFailure.description });
     } finally {
+      operationBusyRef.current = false;
       setUploadState("idle");
       setChunkProgress(null);
       if (inputRef.current) inputRef.current.value = "";
@@ -171,12 +193,33 @@ export default function GarminRawFileImporter({
 
   const chooseFile = async (selected?: File) => {
     if (!selected) return;
-    setFile(selected);
-    await importFile(selected);
+    // Capture before any file reading/uploading yields to a parent render.
+    await importFile(selected, runningLogId);
+  };
+
+  const saveStagedImport = async (useAutomaticMatch = false) => {
+    if (operationBusyRef.current || isBusy || !file || !stagedSource || saved) return;
+    if (saveError?.permanent && (!useAutomaticMatch || stagedSource.runningLogId === undefined)) return;
+    operationBusyRef.current = true;
+    try {
+      const source = useAutomaticMatch ? { ...stagedSource, runningLogId: undefined } : stagedSource;
+      if (useAutomaticMatch) {
+        setFileTargetId(undefined);
+        setStagedSource(source);
+        // Clear only the parent's import target; keep its manual record/form
+        // until a successful, fully rechecked backend result arrives.
+        onUseAutomaticMatch?.();
+      }
+      await persistImport(file, source);
+    } finally {
+      operationBusyRef.current = false;
+    }
   };
 
   const clear = () => {
+    if (operationBusyRef.current || isBusy) return;
     setFile(null);
+    setFileTargetId(undefined);
     setPreview(null);
     setStagedSource(null);
     setUploadState("idle");
@@ -195,6 +238,8 @@ export default function GarminRawFileImporter({
       ? "讀取原始檔…"
       : "選擇 FIT／CSV／GPX／TCX";
 
+  const displayedTargetId = file ? fileTargetId : runningLogId;
+
   return (
     <section className="mt-3 rounded-2xl border border-sky-300/60 bg-gradient-to-br from-sky-50/85 via-card to-indigo-50/65 p-4 dark:border-sky-400/20 dark:from-sky-950/25 dark:via-card dark:to-indigo-950/20">
       <div className="flex gap-3">
@@ -202,7 +247,8 @@ export default function GarminRawFileImporter({
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">Garmin Original Data</p>
           <h3 className="mt-0.5 text-sm font-bold text-foreground">匯入 FIT／CSV／GPX／TCX 原始檔</h3>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">選檔後自動上載、解析並直接保存跑步與圖表，不需再按「套用」或「儲存」。{runningLogId ? "原始資料會附加到正在編輯的紀錄，保留既有摘要、跑鞋及天氣。" : "自動按香港日期、距離與時間配對唯一歷史紀錄；沒有相符紀錄才新增。"} 清除預覽不會刪除已保存紀錄。</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">選檔後自動上載、解析並直接保存跑步與圖表，不需再按「套用」或「儲存」。{displayedTargetId !== undefined ? "原始資料會附加到指定紀錄，保留既有摘要、跑鞋及天氣；不會覆蓋不同原檔。" : "自動按香港日期、距離與時間配對唯一歷史紀錄；沒有相符紀錄才安全新增。"} 清除預覽不會刪除已保存紀錄。</p>
+          <p className="mt-2 rounded-lg bg-sky-500/10 px-2.5 py-2 text-xs font-semibold text-sky-800 dark:text-sky-200">{displayedTargetId !== undefined ? `匯入模式：指定紀錄 #${displayedTargetId}` : "匯入模式：自動配對（保留現有紀錄）"}</p>
         </div>
       </div>
       <input ref={inputRef} type="file" accept=".fit,.csv,.gpx,.tcx,application/octet-stream,text/csv,application/gpx+xml,application/vnd.garmin.tcx+xml" className="hidden" onChange={(event) => chooseFile(event.target.files?.[0])} />
@@ -224,7 +270,7 @@ export default function GarminRawFileImporter({
               <p className="font-bold text-amber-900 dark:text-amber-100">{failure.title}</p>
               <p className="mt-1 leading-5 text-amber-800 dark:text-amber-200">{failure.description}</p>
               {failure.retryable && (
-                <Button type="button" size="sm" variant="outline" disabled={isBusy} onClick={() => importFile(file)} className="mt-2 h-8 border-amber-400/70 bg-card text-xs text-amber-800 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-950/50">
+                <Button type="button" size="sm" variant="outline" disabled={isBusy} onClick={() => importFile(file, fileTargetId)} className="mt-2 h-8 border-amber-400/70 bg-card text-xs text-amber-800 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-950/50">
                   <Activity className="mr-1.5 h-3.5 w-3.5" />再次嘗試
                 </Button>
               )}
@@ -234,8 +280,18 @@ export default function GarminRawFileImporter({
       )}
       {preview && (
         <div className="mt-3 rounded-xl border border-sky-200/80 bg-card/85 p-3 dark:border-sky-400/15">
-          {saved && <div role="status" className="mb-3 rounded-lg bg-emerald-500/10 p-3 text-xs text-emerald-800 dark:text-emerald-200"><p className="font-bold">{saved.action === "duplicate" ? "已保存過此檔案，沒有重複新增" : saved.sampleCount ? "跑步圖表已儲存" : "原始檔及活動摘要已儲存（沒有曲線樣本）"}</p><p className="mt-1">{saved.date} · 紀錄 #{saved.id} · {saved.action === "created" ? "已新增跑步紀錄" : "已附加到既有跑步紀錄"}。{saved.sampleCount > 0 ? "關閉視窗後仍可從「查看全部」開啟逐秒曲線。" : "原始檔未提供曲線樣本，不會產生虛構圖表。"}</p>{saved.syncWarning && <p className="mt-1">{saved.syncWarning}</p>}</div>}
-          {saveError && <div role="alert" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><p className="font-bold">跑步紀錄尚未確認儲存</p><p className="mt-1 leading-5">{saveError}</p><Button type="button" size="sm" variant="outline" className="mt-2" disabled={isBusy} onClick={() => file && stagedSource && persistImport(file, stagedSource)}>重試儲存（不用重新上載）</Button></div>}
+          {saved && <div role="status" className="mb-3 rounded-lg bg-emerald-500/10 p-3 text-xs text-emerald-800 dark:text-emerald-200"><p className="font-bold">{saved.action === "duplicate" ? "已保存過此檔案，沒有重複新增" : saved.sampleCount ? "跑步圖表已儲存" : "原始檔及活動摘要已儲存（沒有曲線樣本）"}</p><p className="mt-1">{saved.date} · 紀錄 #{saved.id} · {saved.action === "created" ? "已新增跑步紀錄" : "已附加到既有跑步紀錄"}。{saved.sampleCount > 0 ? "關閉視窗後仍可從「查看全部」開啟逐秒曲線。" : "原始檔未提供曲線樣本，不會產生虛構圖表。"}</p>{runningLogId === undefined && <p className="mt-1">下一個檔案仍會自動配對；手動修改會更新目前紀錄 #{saved.id}。</p>}<p className="mt-1">如有未儲存的手動修改，請先「儲存其他修改」；下一檔成功匯入後，表單會切換到該紀錄。</p>{saved.syncWarning && <p className="mt-1">{saved.syncWarning}</p>}</div>}
+          {saveError && <div role="alert" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+            <p className="font-bold">{saveError.permanent ? "原檔衝突，資料未更改" : "跑步紀錄尚未確認儲存"}</p>
+            <p className="mt-1 leading-5">{saveError.message}</p>
+            {saveError.permanent ? <>
+              <p className="mt-1 leading-5">請到「查看全部」檢查歷史紀錄，或清除預覽後重新選檔。現有紀錄及原檔均保留；重試相同目標不會解除原檔衝突。</p>
+              {stagedSource?.runningLogId !== undefined && <>
+                <Button type="button" size="sm" variant="outline" className="mt-2" disabled={isBusy} onClick={() => saveStagedImport(true)}>改為自動配對（保留現有紀錄）</Button>
+                <p className="mt-1 leading-5">沿用已上載原檔，由伺服器重新檢查安全配對；無法確認活動身份時仍可能衝突，不會強制新增或覆蓋。</p>
+              </>}
+            </> : <Button type="button" size="sm" variant="outline" className="mt-2" disabled={isBusy} onClick={() => saveStagedImport()}>重試儲存（不用重新上載）</Button>}
+          </div>}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" /><p className="text-xs font-bold text-foreground">已讀取 {preview.sourceFormat} 資料</p></div>
             <Badge className="bg-sky-600 text-white">{preview.timeSeries.length.toLocaleString()} 個逐秒樣本</Badge>

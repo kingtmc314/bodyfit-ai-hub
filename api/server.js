@@ -2539,6 +2539,27 @@ function mapFitRecord(record, startedAt, cadenceMultiplier = 1) {
     ...asNumber(record.temperature) !== void 0 ? { temperatureC: asNumber(record.temperature) } : {}
   };
 }
+function fitActivityWindow(sessions, records, activityDate, hasErrors) {
+  const unknownWindow = { activityWindowVerified: 0, activityTimeBasis: "unknown" };
+  if (hasErrors || sessions.length !== 1 || sessions[0].sport !== "running" || records.length < 2) return unknownWindow;
+  const session = sessions[0];
+  const start = session.startTime instanceof Date ? session.startTime.getTime() : NaN;
+  const sessionTimestamp = session.timestamp instanceof Date ? session.timestamp.getTime() : NaN;
+  const elapsed = asNumber(session.totalElapsedTime);
+  const end = elapsed !== void 0 && elapsed > 0 ? start + elapsed * 1e3 : sessionTimestamp;
+  const basis = elapsed !== void 0 ? "fit-session-elapsed" : "fit-session-timestamp";
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || elapsed !== void 0 && elapsed <= 0) return unknownWindow;
+  if (elapsed !== void 0 && Number.isFinite(sessionTimestamp) && Math.abs(sessionTimestamp - start) > 5e3 && Math.abs(sessionTimestamp - end) > 5e3) return unknownWindow;
+  const times = records.map((record) => record.timestamp instanceof Date ? record.timestamp.getTime() : NaN);
+  if (times.some((time, index2) => !Number.isFinite(time) || time < start || time > end || index2 > 0 && time < times[index2 - 1])) return unknownWindow;
+  if (times[0] - start > 5e3 || end - times[times.length - 1] > 5e3 || toHKDate(new Date(start)) !== activityDate) return unknownWindow;
+  return {
+    activityStartTimestamp: new Date(start).toISOString(),
+    activityEndTimestamp: new Date(end).toISOString(),
+    activityWindowVerified: 1,
+    activityTimeBasis: basis
+  };
+}
 function parseGarminFit(buffer) {
   const stream = Stream.fromBuffer(buffer);
   if (!Decoder.isFIT(stream)) throw new Error("\u9019\u4E0D\u662F\u6709\u6548\u7684 Garmin FIT \u6A94\u6848");
@@ -2550,6 +2571,12 @@ function parseGarminFit(buffer) {
   const sourceSamples = recordMessages.map((record) => mapFitRecord(record, firstTimestamp, session.sport === "running" ? 2 : 1)).filter((sample) => !!sample);
   const samples = keepChartSamples(sourceSamples);
   const preview = metricFields(session, samples, "FIT");
+  Object.assign(preview.garminDetails, fitActivityWindow(
+    messages.sessionMesgs ?? [],
+    recordMessages,
+    preview.fields.date,
+    errors.length > 0
+  ));
   preview.laps = (messages.lapMesgs ?? []).map((lap, index2) => {
     const distance = asNumber(lap.totalDistance);
     const duration = asNumber(lap.totalTimerTime) ?? asNumber(lap.totalElapsedTime);
@@ -2804,6 +2831,7 @@ function parseGarminRawFile(buffer, filename) {
 
 // server/garminDirectSave.ts
 import { createHash } from "node:crypto";
+import { TRPCError as TRPCError3 } from "@trpc/server";
 import { sql as sql2 } from "drizzle-orm";
 var SUMMARY_COLUMNS = {
   date: "date",
@@ -2862,9 +2890,30 @@ function validateGarminSummary(fields) {
   }
   return { date: fields.date, distanceKm, durationSec };
 }
+function timestampMillis(value) {
+  if (typeof value !== "string") return null;
+  const parts = value.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/i);
+  if (!parts || !isValidGarminDate(parts[1]) || Number(parts[2]) > 23 || Number(parts[3]) > 59 || Number(parts[4]) > 59) return null;
+  if (parts[5].toUpperCase() !== "Z" && (Number(parts[5].slice(1, 3)) > 23 || Number(parts[5].slice(4)) > 59)) return null;
+  const millis = Date.parse(value);
+  return Number.isFinite(millis) ? millis : null;
+}
+function validActivityWindow(activity) {
+  const first = timestampMillis(activity.firstTimestamp);
+  const last = timestampMillis(activity.lastTimestamp);
+  if (String(activity.activityWindowVerified) !== "1" || !["fit-session-elapsed", "fit-session-timestamp"].includes(String(activity.activityTimeBasis)) || first === null || last === null || first >= last || !isValidGarminDate(activity.date)) return null;
+  const hongKongDate = new Date(first + 8 * 60 * 60 * 1e3).toISOString().slice(0, 10);
+  return hongKongDate === activity.date ? { first, last } : null;
+}
+function definitelyDistinct(candidate, summary) {
+  const existing = validActivityWindow(candidate);
+  const incoming = validActivityWindow(summary);
+  return existing !== null && incoming !== null && (incoming.first - existing.last >= 6e4 || existing.first - incoming.last >= 6e4);
+}
 function selectGarminHistoryMatch(candidates, summary) {
-  if (candidates.some((candidate) => candidate.date === summary.date && ((finiteNumber(candidate.distanceKm) ?? 0) <= 0 || (finiteNumber(candidate.durationSec) ?? 0) <= 0))) throw new Error("\u540C\u65E5\u6709\u7F3A\u5C11\u8DDD\u96E2\u6216\u6642\u9593\u7684\u8DD1\u6B65\u7D00\u9304\uFF0C\u7121\u6CD5\u5B89\u5168\u5224\u65B7\u662F\u5426\u91CD\u8907\uFF1B\u8ACB\u958B\u555F\u8981\u9644\u52A0\u7684\u6B77\u53F2\u7D00\u9304\uFF0C\u6309\u300C\u7DE8\u8F2F\u300D\u5F8C\u91CD\u65B0\u4E0A\u8F09\u539F\u59CB\u6A94\u3002");
-  const matches = candidates.filter((candidate) => {
+  const possible = candidates.filter((candidate) => candidate.date === summary.date && !definitelyDistinct(candidate, summary));
+  if (possible.some((candidate) => (finiteNumber(candidate.distanceKm) ?? 0) <= 0 || (finiteNumber(candidate.durationSec) ?? 0) <= 0)) throw new Error("\u540C\u65E5\u6709\u7F3A\u5C11\u8DDD\u96E2\u6216\u6642\u9593\u7684\u8DD1\u6B65\u7D00\u9304\uFF0C\u7121\u6CD5\u5B89\u5168\u5224\u65B7\u662F\u5426\u91CD\u8907\uFF1B\u8ACB\u958B\u555F\u8981\u9644\u52A0\u7684\u6B77\u53F2\u7D00\u9304\uFF0C\u6309\u300C\u7DE8\u8F2F\u300D\u5F8C\u91CD\u65B0\u4E0A\u8F09\u539F\u59CB\u6A94\u3002");
+  const matches = possible.filter((candidate) => {
     const distance = finiteNumber(candidate.distanceKm);
     const duration = finiteNumber(candidate.durationSec);
     return candidate.date === summary.date && distance !== null && distance > 0 && duration !== null && duration > 0 && Math.abs(distance - summary.distanceKm) <= Math.max(0.1, summary.distanceKm * 0.02) && Math.abs(duration - summary.durationSec) <= Math.max(60, summary.durationSec * 0.02);
@@ -2892,6 +2941,31 @@ function jsonArray(value) {
   }
   return Array.isArray(value) ? value : [];
 }
+function timeSeriesWindow(timeSeries) {
+  return { firstTimestamp: timeSeries[0]?.timestamp, lastTimestamp: timeSeries[timeSeries.length - 1]?.timestamp };
+}
+function canonicalWindow(details) {
+  return {
+    firstTimestamp: details.activityStartTimestamp,
+    lastTimestamp: details.activityEndTimestamp,
+    activityWindowVerified: details.activityWindowVerified,
+    activityTimeBasis: details.activityTimeBasis
+  };
+}
+function agreesWithSampleBounds(window, firstRaw, lastRaw) {
+  const verified = validActivityWindow(window);
+  const first = timestampMillis(firstRaw);
+  const last = timestampMillis(lastRaw);
+  return verified !== null && first !== null && last !== null && first <= last && first >= verified.first && last <= verified.last && first - verified.first <= 5e3 && verified.last - last <= 5e3;
+}
+function describeExistingSource(row) {
+  const details = jsonObject(row.garmin_details);
+  const window = timeSeriesWindow(jsonArray(row.time_series));
+  const first = timestampMillis(window.firstTimestamp);
+  const last = timestampMillis(window.lastTimestamp);
+  const time = first !== null && last !== null && first <= last ? `${window.firstTimestamp} \u81F3 ${window.lastTimestamp}` : "\u672A\u8A18\u9304\u6709\u6548\u6D3B\u52D5\u6642\u9593";
+  return `\u7D00\u9304 #${row.id}\uFF08${row.date}\uFF1B\u6A94\u6848\uFF1A${details.rawFileName || details.rawFileKey || "\u672A\u8A18\u9304\u6A94\u540D"}${details.rawFileFormat ? ` [${details.rawFileFormat}]` : ""}\uFF1B\u6D3B\u52D5\u6642\u9593\uFF1A${time}\uFF09`;
+}
 function resultFromRow(row, action) {
   const fields = {};
   for (const [field, column] of Object.entries(SUMMARY_COLUMNS)) fields[field] = row[column] === null || row[column] === void 0 ? "" : String(row[column]);
@@ -2915,7 +2989,9 @@ async function saveGarminImport(input) {
   const buffer = await storageReadBuffer(input.fileKey);
   const preview = parseGarminRawFile(buffer, input.fileName);
   if (!input.fileKey.toLowerCase().endsWith(`.${preview.sourceFormat.toLowerCase()}`)) throw new Error("\u539F\u59CB\u6A94\u683C\u5F0F\u8207\u526F\u6A94\u540D\u4E0D\u4E00\u81F4");
-  const summary = validateGarminSummary(preview.fields);
+  const parsedWindow = timeSeriesWindow(preview.timeSeries);
+  const summary = { ...validateGarminSummary(preview.fields), ...canonicalWindow(preview.garminDetails) };
+  if (!agreesWithSampleBounds(summary, parsedWindow.firstTimestamp, parsedWindow.lastTimestamp)) summary.activityWindowVerified = 0;
   const rawFileHash = createHash("sha256").update(buffer).digest("hex");
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -2928,10 +3004,10 @@ async function saveGarminImport(input) {
       WHERE garmin_details->>'rawFileHash' = ${rawFileHash}
       ORDER BY id LIMIT 2 FOR UPDATE
     `));
-    if (duplicates.length > 1) throw new Error("\u76F8\u540C\u539F\u59CB\u6A94\u5DF2\u9023\u7D50\u591A\u7B46\u7D00\u9304\uFF0C\u8ACB\u5148\u6AA2\u67E5\u6B77\u53F2\u7D00\u9304\uFF1B\u672C\u6B21\u672A\u66F4\u6539\u8CC7\u6599\u3002");
+    if (duplicates.length > 1) throw new TRPCError3({ code: "CONFLICT", message: `\u76F8\u540C\u539F\u59CB\u6A94\u5DF2\u9023\u7D50\u591A\u7B46\u7D00\u9304\uFF1A${duplicates.map(describeExistingSource).join("\u3001")}\uFF1B\u8ACB\u5148\u6AA2\u67E5\u6B77\u53F2\u7D00\u9304\uFF0C\u672C\u6B21\u672A\u66F4\u6539\u8CC7\u6599\u3002` });
     if (duplicates[0]) {
       if (input.runningLogId !== void 0 && Number(duplicates[0].id) !== input.runningLogId) {
-        throw new Error("\u9019\u500B Garmin \u539F\u59CB\u6A94\u5DF2\u9023\u7D50\u53E6\u4E00\u7B46\u8DD1\u6B65\u7D00\u9304\uFF0C\u4E0D\u80FD\u8986\u84CB\u76EE\u524D\u9078\u53D6\u7684\u7D00\u9304\uFF1B\u8ACB\u7DE8\u8F2F\u5DF2\u9023\u7D50\u7684\u7D00\u9304\u3002");
+        throw new TRPCError3({ code: "CONFLICT", message: `\u9019\u500B Garmin \u539F\u59CB\u6A94\u5DF2\u9023\u7D50\u53E6\u4E00\u7B46\u8DD1\u6B65\u7D00\u9304\uFF1A${describeExistingSource(duplicates[0])}\uFF0C\u4E0D\u80FD\u8986\u84CB\u76EE\u524D\u9078\u53D6\u7684\u7D00\u9304\uFF1B\u8ACB\u958B\u555F\u5DF2\u9023\u7D50\u7684\u7D00\u9304\u67E5\u770B\u6216\u7DE8\u8F2F\uFF0C\u672C\u6B21\u672A\u66F4\u6539\u8CC7\u6599\u3002` });
       }
       if (duplicates[0].date !== summary.date) throw new Error("\u539F\u59CB\u6A94\u7684\u9999\u6E2F\u6D3B\u52D5\u65E5\u671F\u8207\u5DF2\u9023\u7D50\u7D00\u9304\u4E0D\u7B26\uFF0C\u672A\u66F4\u6539\u8CC7\u6599\u3002");
       return resultFromRow(duplicates[0], "duplicate");
@@ -2943,22 +3019,59 @@ async function saveGarminImport(input) {
       if (target.date !== summary.date) throw new Error(`\u539F\u59CB\u6A94\u7684\u9999\u6E2F\u6D3B\u52D5\u65E5\u671F\uFF08${summary.date}\uFF09\u8207\u6240\u9078\u7D00\u9304\uFF08${target.date}\uFF09\u4E0D\u7B26\uFF0C\u672A\u9644\u52A0\u6A94\u6848\uFF1B\u8ACB\u7DE8\u8F2F\u6B63\u78BA\u7684\u6B77\u53F2\u7D00\u9304\u3002`);
     } else {
       const history = rowsFrom(await tx.execute(sql2`
-        SELECT id, date::text AS date, distance_km, hour, minutes, second FROM running_logs
+        SELECT id, date::text AS date, distance_km, hour, minutes, second,
+          time_series->0->>'timestamp' AS first_timestamp,
+          time_series->-1->>'timestamp' AS last_timestamp,
+          garmin_details->>'activityStartTimestamp' AS activity_start_timestamp,
+          garmin_details->>'activityEndTimestamp' AS activity_end_timestamp,
+          garmin_details->>'activityWindowVerified' AS activity_window_verified,
+          garmin_details->>'activityTimeBasis' AS activity_time_basis,
+          garmin_details->>'rawFileKey' AS raw_file_key,
+          garmin_details->>'rawFileHash' AS raw_file_hash FROM running_logs
         WHERE date = ${summary.date} ORDER BY id LIMIT 101 FOR UPDATE
       `));
       if (history.length > 100) throw new Error(AMBIGUOUS_MATCH);
-      const match = selectGarminHistoryMatch(history.map((row) => ({
+      const candidates = history.map((row) => ({
         id: Number(row.id),
         date: row.date,
         distanceKm: row.distance_km,
-        durationSec: (finiteNumber(row.hour) ?? 0) * 3600 + (finiteNumber(row.minutes) ?? 0) * 60 + (finiteNumber(row.second) ?? 0)
-      })), summary);
+        durationSec: (finiteNumber(row.hour) ?? 0) * 3600 + (finiteNumber(row.minutes) ?? 0) * 60 + (finiteNumber(row.second) ?? 0),
+        firstTimestamp: row.activity_start_timestamp,
+        lastTimestamp: row.activity_end_timestamp,
+        activityWindowVerified: row.activity_window_verified,
+        activityTimeBasis: row.activity_time_basis
+      }));
+      let sourceReads = 0;
+      for (let index2 = 0; index2 < candidates.length; index2 += 1) {
+        const candidate = candidates[index2];
+        const row = history[index2];
+        if (agreesWithSampleBounds(candidate, row.first_timestamp, row.last_timestamp)) continue;
+        candidate.activityWindowVerified = 0;
+        const distance = finiteNumber(candidate.distanceKm);
+        const duration = finiteNumber(candidate.durationSec);
+        if (!validActivityWindow(summary) || distance === null || duration === null || Math.abs(distance - summary.distanceKm) > Math.max(0.1, summary.distanceKm * 0.02) || Math.abs(duration - summary.durationSec) > Math.max(60, summary.durationSec * 0.02) || typeof row.raw_file_key !== "string" || !row.raw_file_key || typeof row.raw_file_hash !== "string" || !/^[a-f0-9]{64}$/i.test(row.raw_file_hash)) continue;
+        if (sourceReads >= 20) continue;
+        sourceReads += 1;
+        try {
+          const existingBytes = await storageReadBuffer(row.raw_file_key);
+          if (createHash("sha256").update(existingBytes).digest("hex") !== row.raw_file_hash.toLowerCase()) continue;
+          const existingPreview = parseGarminRawFile(existingBytes, row.raw_file_key);
+          const verified = { ...canonicalWindow(existingPreview.garminDetails), date: row.date };
+          const bounds = timeSeriesWindow(existingPreview.timeSeries);
+          if (existingPreview.fields.date === row.date && agreesWithSampleBounds(verified, bounds.firstTimestamp, bounds.lastTimestamp)) Object.assign(candidate, verified);
+        } catch {
+        }
+      }
+      const match = selectGarminHistoryMatch(candidates, summary);
       if (match) target = rowsFrom(await tx.execute(sql2`SELECT ${ROW_COLUMNS} FROM running_logs WHERE id = ${match.id} LIMIT 1 FOR UPDATE`))[0];
       if (match && !target) throw new Error("\u8DD1\u6B65\u7D00\u9304\u5DF2\u8B8A\u66F4\uFF0C\u8ACB\u91CD\u65B0\u958B\u555F\u6B77\u53F2\u7D00\u9304\u5F8C\u518D\u8A66\u3002");
     }
     if (target) {
-      const existingHash = jsonObject(target.garmin_details).rawFileHash;
-      if (existingHash && existingHash !== rawFileHash) throw new Error("\u9019\u7B46\u8DD1\u6B65\u7D00\u9304\u5DF2\u9023\u7D50\u4E0D\u540C\u7684 Garmin \u539F\u59CB\u6A94\uFF0C\u70BA\u514D\u8986\u84CB\u73FE\u6709\u66F2\u7DDA\uFF0C\u672C\u6B21\u672A\u66F4\u6539\u8CC7\u6599\uFF1B\u8ACB\u6AA2\u67E5\u6240\u9078\u6B77\u53F2\u7D00\u9304\u3002");
+      const existingDetails = jsonObject(target.garmin_details);
+      const existingHash = existingDetails.rawFileHash;
+      if (existingHash && existingHash !== rawFileHash || !existingHash && (existingDetails.rawFileKey || jsonArray(target.time_series).length > 0)) {
+        throw new TRPCError3({ code: "CONFLICT", message: `${describeExistingSource(target)}\u5DF2\u9023\u7D50\u4E0D\u540C\u7684 Garmin \u539F\u59CB\u6A94\u6216\u5C1A\u672A\u9A57\u8B49\u4F86\u6E90\u7684\u66F2\u7DDA\uFF0C\u70BA\u514D\u8986\u84CB\u73FE\u6709\u66F2\u7DDA\uFF0C\u672C\u6B21\u672A\u66F4\u6539\u8CC7\u6599\uFF1B\u8ACB\u958B\u555F\u8A72\u6B77\u53F2\u7D00\u9304\u6AA2\u67E5\u73FE\u6709\u6A94\u6848\uFF0C\u4E26\u9078\u64C7\u6B63\u78BA\u7684\u7D00\u9304\u6216\u539F\u59CB\u6A94\u91CD\u65B0\u4E0A\u8F09\u3002` });
+      }
     }
     const metadata = {
       ...preview.garminDetails,
@@ -2967,7 +3080,10 @@ async function saveGarminImport(input) {
       rawFileName: input.fileName,
       rawFileFormat: preview.sourceFormat,
       rawSampleCount: preview.garminDetails.rawSampleCount ?? preview.timeSeries.length,
-      rawFileHash
+      rawFileHash,
+      rawActivityFirstTimestamp: parsedWindow.firstTimestamp,
+      rawActivityLastTimestamp: parsedWindow.lastTimestamp,
+      activityWindowVerified: validActivityWindow(summary) ? 1 : 0
     };
     if (target) {
       const updated = rowsFrom(await tx.execute(sql2`
@@ -5645,7 +5761,7 @@ import { z as z5 } from "zod";
 // server/gymDirectory.ts
 import { createHash as createHash3 } from "node:crypto";
 import { isIP } from "node:net";
-import { TRPCError as TRPCError3 } from "@trpc/server";
+import { TRPCError as TRPCError4 } from "@trpc/server";
 import { z as z4 } from "zod";
 import { and as and3, eq as eq4, or as or2, sql as sql5, asc as asc2 } from "drizzle-orm";
 
@@ -164156,7 +164272,7 @@ function mergeGymLocations(groups) {
 async function requireDb() {
   const db = await getDb();
   if (!db)
-    throw new TRPCError3({
+    throw new TRPCError4({
       code: "PRECONDITION_FAILED",
       message: "\u5065\u8EAB\u623F\u8CC7\u6599\u5EAB\u672A\u5C31\u7DD2\uFF0C\u8ACB\u7A0D\u5F8C\u91CD\u8A66"
     });
@@ -164419,7 +164535,7 @@ async function ownedGym(id) {
     and3(eq4(gymLocations.id, id), eq4(gymLocations.userId, GYM_OWNER_USER_ID))
   ).limit(1);
   if (!row || row.userId !== GYM_OWNER_USER_ID)
-    throw new TRPCError3({
+    throw new TRPCError4({
       code: "NOT_FOUND",
       message: "\u627E\u4E0D\u5230\u5DF2\u4FDD\u5B58\u7684\u5065\u8EAB\u623F\uFF0C\u8ACB\u5148\u5132\u5B58\u5730\u5740"
     });
@@ -164530,7 +164646,7 @@ async function getGymEquipment(gymId) {
   } else {
     const official = officialGymLocations().find((g) => g.id === gymId);
     if (!official)
-      throw new TRPCError3({
+      throw new TRPCError4({
         code: "NOT_FOUND",
         message: "\u8ACB\u5148\u660E\u78BA\u9078\u64C7\u4E26\u5132\u5B58\u6B64\u5730\u5740\uFF0C\u624D\u53EF\u78BA\u8A8D\u5206\u5E97\u5668\u6750"
       });
@@ -164603,7 +164719,7 @@ async function saveGymLocation(raw) {
   if (inserted) return publicLocation(inserted);
   const [duplicate] = await db.select(locationFields).from(gymLocations).where(where).orderBy(asc2(gymLocations.id)).limit(1);
   if (!duplicate)
-    throw new TRPCError3({
+    throw new TRPCError4({
       code: "CONFLICT",
       message: "\u5730\u5740\u5132\u5B58\u885D\u7A81\uFF0C\u8ACB\u91CD\u65B0\u641C\u5C0B\u5DF2\u4FDD\u5B58\u5730\u5740"
     });
@@ -164617,7 +164733,7 @@ async function upsertGymEquipment(raw) {
     (o) => o.machineKey === input.machineKey
   );
   if (known && known.equipment !== input.equipment)
-    throw new TRPCError3({
+    throw new TRPCError4({
       code: "BAD_REQUEST",
       message: "\u5668\u6750\u7A2E\u985E\u5FC5\u9808\u7B26\u5408\u6B64\u7CBE\u78BA\u5668\u68B0\u4EE3\u78BC\uFF1B\u4E0D\u53EF\u6697\u4E2D\u66FF\u63DB\u52D5\u4F5C"
     });
@@ -164646,7 +164762,7 @@ async function upsertGymEquipment(raw) {
     }
   }).returning(equipmentFields);
   if (!row)
-    throw new TRPCError3({
+    throw new TRPCError4({
       code: "INTERNAL_SERVER_ERROR",
       message: "\u5668\u6750\u78BA\u8A8D\u672A\u80FD\u5132\u5B58"
     });
@@ -164659,7 +164775,7 @@ async function deleteGymEquipment(id) {
     and3(eq4(gymEquipment.id, id), eq4(gymEquipment.userId, GYM_OWNER_USER_ID))
   ).returning({ id: gymEquipment.id });
   if (!row)
-    throw new TRPCError3({
+    throw new TRPCError4({
       code: "NOT_FOUND",
       message: "\u627E\u4E0D\u5230\u6B64\u64C1\u6709\u4EBA\u7684\u5668\u6750\u78BA\u8A8D\u8A18\u9304"
     });

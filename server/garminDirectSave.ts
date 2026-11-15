@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { getDb } from "./db";
 import { parseGarminRawFile } from "./garminFileImport";
@@ -92,22 +93,59 @@ export function validateGarminSummary(fields: Record<string, string>) {
   return { date: fields.date, distanceKm, durationSec };
 }
 
-export type GarminHistoryCandidate = {
+type GarminTimestampWindow = {
+  firstTimestamp?: unknown;
+  lastTimestamp?: unknown;
+  activityWindowVerified?: unknown;
+  activityTimeBasis?: unknown;
+};
+
+export type GarminHistoryCandidate = GarminTimestampWindow & {
   id: number;
   date: string;
   distanceKm: unknown;
   durationSec: unknown;
 };
 
+// Require unambiguous absolute timestamps, not local times or filename hints.
+// Date.parse alone also silently normalises invalid calendar dates.
+function timestampMillis(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+  const parts = value.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/i);
+  if (!parts || !isValidGarminDate(parts[1]) || Number(parts[2]) > 23 || Number(parts[3]) > 59 || Number(parts[4]) > 59) return null;
+  if (parts[5].toUpperCase() !== "Z" && (Number(parts[5].slice(1, 3)) > 23 || Number(parts[5].slice(4)) > 59)) return null;
+  const millis = Date.parse(value);
+  return Number.isFinite(millis) ? millis : null;
+}
+
+function validActivityWindow(activity: GarminTimestampWindow & { date: string }) {
+  const first = timestampMillis(activity.firstTimestamp);
+  const last = timestampMillis(activity.lastTimestamp);
+  if (String(activity.activityWindowVerified) !== "1" || !["fit-session-elapsed", "fit-session-timestamp"].includes(String(activity.activityTimeBasis))
+    || first === null || last === null || first >= last || !isValidGarminDate(activity.date)) return null;
+  const hongKongDate = new Date(first + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return hongKongDate === activity.date ? { first, last } : null;
+}
+
+function definitelyDistinct(candidate: GarminHistoryCandidate, summary: GarminTimestampWindow & { date: string }) {
+  const existing = validActivityWindow(candidate);
+  const incoming = validActivityWindow(summary);
+  return existing !== null && incoming !== null
+    && (incoming.first - existing.last >= 60_000 || existing.first - incoming.last >= 60_000);
+}
+
 /** Conservative, order-independent matching. Never choose the 'nearest' of two. */
 export function selectGarminHistoryMatch(
   candidates: GarminHistoryCandidate[],
-  summary: { date: string; distanceKm: number; durationSec: number },
+  summary: GarminTimestampWindow & { date: string; distanceKm: number; durationSec: number },
 ): GarminHistoryCandidate | null {
-  if (candidates.some(candidate => candidate.date === summary.date && (
+  // Only trustworthy, clearly separated windows can rule out same-day history.
+  // Missing, invalid, overlapping or near windows retain the old safeguards.
+  const possible = candidates.filter(candidate => candidate.date === summary.date && !definitelyDistinct(candidate, summary));
+  if (possible.some(candidate => (
     (finiteNumber(candidate.distanceKm) ?? 0) <= 0 || (finiteNumber(candidate.durationSec) ?? 0) <= 0
   ))) throw new Error("同日有缺少距離或時間的跑步紀錄，無法安全判斷是否重複；請開啟要附加的歷史紀錄，按「編輯」後重新上載原始檔。");
-  const matches = candidates.filter(candidate => {
+  const matches = possible.filter(candidate => {
     const distance = finiteNumber(candidate.distanceKm);
     const duration = finiteNumber(candidate.durationSec);
     // Permit summary rounding and small timer/GPS differences, but require BOTH.
@@ -133,6 +171,35 @@ function jsonArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? value : [];
 }
 
+function timeSeriesWindow(timeSeries: GarminPreview["timeSeries"]): GarminTimestampWindow {
+  return { firstTimestamp: timeSeries[0]?.timestamp, lastTimestamp: timeSeries[timeSeries.length - 1]?.timestamp };
+}
+
+function canonicalWindow(details: GarminPreview["garminDetails"]): GarminTimestampWindow {
+  return {
+    firstTimestamp: details.activityStartTimestamp, lastTimestamp: details.activityEndTimestamp,
+    activityWindowVerified: details.activityWindowVerified, activityTimeBasis: details.activityTimeBasis,
+  };
+}
+
+function agreesWithSampleBounds(window: GarminTimestampWindow & { date: string }, firstRaw: unknown, lastRaw: unknown): boolean {
+  const verified = validActivityWindow(window);
+  const first = timestampMillis(firstRaw);
+  const last = timestampMillis(lastRaw);
+  return verified !== null && first !== null && last !== null && first <= last
+    && first >= verified.first && last <= verified.last && first - verified.first <= 5000 && verified.last - last <= 5000;
+}
+
+function describeExistingSource(row: RunningRow): string {
+  const details = jsonObject(row.garmin_details);
+  const window = timeSeriesWindow(jsonArray<GarminPreview["timeSeries"][number]>(row.time_series));
+  const first = timestampMillis(window.firstTimestamp);
+  const last = timestampMillis(window.lastTimestamp);
+  const time = first !== null && last !== null && first <= last
+    ? `${window.firstTimestamp} 至 ${window.lastTimestamp}` : "未記錄有效活動時間";
+  return `紀錄 #${row.id}（${row.date}；檔案：${details.rawFileName || details.rawFileKey || "未記錄檔名"}${details.rawFileFormat ? ` [${details.rawFileFormat}]` : ""}；活動時間：${time}）`;
+}
+
 function resultFromRow(row: RunningRow, action: GarminDirectSaveResult["action"]): GarminDirectSaveResult {
   const fields: Record<string, string> = {};
   for (const [field, column] of Object.entries(SUMMARY_COLUMNS)) fields[field] = row[column] === null || row[column] === undefined ? "" : String(row[column]);
@@ -155,7 +222,9 @@ export async function saveGarminImport(input: GarminDirectSaveInput): Promise<Ga
   const buffer = await storageReadBuffer(input.fileKey);
   const preview = parseGarminRawFile(buffer, input.fileName);
   if (!input.fileKey.toLowerCase().endsWith(`.${preview.sourceFormat.toLowerCase()}`)) throw new Error("原始檔格式與副檔名不一致");
-  const summary = validateGarminSummary(preview.fields);
+  const parsedWindow = timeSeriesWindow(preview.timeSeries);
+  const summary = { ...validateGarminSummary(preview.fields), ...canonicalWindow(preview.garminDetails) };
+  if (!agreesWithSampleBounds(summary, parsedWindow.firstTimestamp, parsedWindow.lastTimestamp)) summary.activityWindowVerified = 0;
   const rawFileHash = createHash("sha256").update(buffer).digest("hex");
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -174,10 +243,10 @@ export async function saveGarminImport(input: GarminDirectSaveInput): Promise<Ga
       WHERE garmin_details->>'rawFileHash' = ${rawFileHash}
       ORDER BY id LIMIT 2 FOR UPDATE
     `));
-    if (duplicates.length > 1) throw new Error("相同原始檔已連結多筆紀錄，請先檢查歷史紀錄；本次未更改資料。");
+    if (duplicates.length > 1) throw new TRPCError({ code: "CONFLICT", message: `相同原始檔已連結多筆紀錄：${duplicates.map(describeExistingSource).join("、")}；請先檢查歷史紀錄，本次未更改資料。` });
     if (duplicates[0]) {
       if (input.runningLogId !== undefined && Number(duplicates[0].id) !== input.runningLogId) {
-        throw new Error("這個 Garmin 原始檔已連結另一筆跑步紀錄，不能覆蓋目前選取的紀錄；請編輯已連結的紀錄。");
+        throw new TRPCError({ code: "CONFLICT", message: `這個 Garmin 原始檔已連結另一筆跑步紀錄：${describeExistingSource(duplicates[0])}，不能覆蓋目前選取的紀錄；請開啟已連結的紀錄查看或編輯，本次未更改資料。` });
       }
       if (duplicates[0].date !== summary.date) throw new Error("原始檔的香港活動日期與已連結紀錄不符，未更改資料。");
       return resultFromRow(duplicates[0], "duplicate");
@@ -190,21 +259,64 @@ export async function saveGarminImport(input: GarminDirectSaveInput): Promise<Ga
       if (target.date !== summary.date) throw new Error(`原始檔的香港活動日期（${summary.date}）與所選紀錄（${target.date}）不符，未附加檔案；請編輯正確的歷史紀錄。`);
     } else {
       const history = rowsFrom(await tx.execute(sql`
-        SELECT id, date::text AS date, distance_km, hour, minutes, second FROM running_logs
+        SELECT id, date::text AS date, distance_km, hour, minutes, second,
+          time_series->0->>'timestamp' AS first_timestamp,
+          time_series->-1->>'timestamp' AS last_timestamp,
+          garmin_details->>'activityStartTimestamp' AS activity_start_timestamp,
+          garmin_details->>'activityEndTimestamp' AS activity_end_timestamp,
+          garmin_details->>'activityWindowVerified' AS activity_window_verified,
+          garmin_details->>'activityTimeBasis' AS activity_time_basis,
+          garmin_details->>'rawFileKey' AS raw_file_key,
+          garmin_details->>'rawFileHash' AS raw_file_hash FROM running_logs
         WHERE date = ${summary.date} ORDER BY id LIMIT 101 FOR UPDATE
       `));
       if (history.length > 100) throw new Error(AMBIGUOUS_MATCH);
-      const match = selectGarminHistoryMatch(history.map(row => ({
+      const candidates = history.map(row => ({
         id: Number(row.id), date: row.date, distanceKm: row.distance_km,
         durationSec: (finiteNumber(row.hour) ?? 0) * 3600 + (finiteNumber(row.minutes) ?? 0) * 60 + (finiteNumber(row.second) ?? 0),
-      })), summary);
+        firstTimestamp: row.activity_start_timestamp, lastTimestamp: row.activity_end_timestamp,
+        activityWindowVerified: row.activity_window_verified, activityTimeBasis: row.activity_time_basis,
+      }));
+      let sourceReads = 0;
+      for (let index = 0; index < candidates.length; index += 1) {
+        const candidate = candidates[index];
+        const row = history[index];
+        if (agreesWithSampleBounds(candidate, row.first_timestamp, row.last_timestamp)) continue;
+        candidate.activityWindowVerified = 0;
+        const distance = finiteNumber(candidate.distanceKm);
+        const duration = finiteNumber(candidate.durationSec);
+        // Legacy sample endpoints are not proof of a full session. Only re-read
+        // close summaries with a hash-verifiable original, at most 20 per save.
+        if (!validActivityWindow(summary) || distance === null || duration === null
+          || Math.abs(distance - summary.distanceKm) > Math.max(0.1, summary.distanceKm * 0.02)
+          || Math.abs(duration - summary.durationSec) > Math.max(60, summary.durationSec * 0.02)
+          || typeof row.raw_file_key !== "string" || !row.raw_file_key
+          || typeof row.raw_file_hash !== "string" || !/^[a-f0-9]{64}$/i.test(row.raw_file_hash)) continue;
+        if (sourceReads >= 20) continue;
+        sourceReads += 1;
+        try {
+          const existingBytes = await storageReadBuffer(row.raw_file_key);
+          if (createHash("sha256").update(existingBytes).digest("hex") !== row.raw_file_hash.toLowerCase()) continue;
+          const existingPreview = parseGarminRawFile(existingBytes, row.raw_file_key);
+          const verified = { ...canonicalWindow(existingPreview.garminDetails), date: row.date };
+          const bounds = timeSeriesWindow(existingPreview.timeSeries);
+          if (existingPreview.fields.date === row.date && agreesWithSampleBounds(verified, bounds.firstTimestamp, bounds.lastTimestamp)) Object.assign(candidate, verified);
+        } catch {
+          // Missing source, storage/parse failure or partial FIT stays uncertain.
+          // Never modify legacy metadata just to make matching possible.
+        }
+      }
+      const match = selectGarminHistoryMatch(candidates, summary);
       if (match) target = rowsFrom(await tx.execute(sql`SELECT ${ROW_COLUMNS} FROM running_logs WHERE id = ${match.id} LIMIT 1 FOR UPDATE`))[0];
       if (match && !target) throw new Error("跑步紀錄已變更，請重新開啟歷史紀錄後再試。");
     }
 
     if (target) {
-      const existingHash = jsonObject(target.garmin_details).rawFileHash;
-      if (existingHash && existingHash !== rawFileHash) throw new Error("這筆跑步紀錄已連結不同的 Garmin 原始檔，為免覆蓋現有曲線，本次未更改資料；請檢查所選歷史紀錄。");
+      const existingDetails = jsonObject(target.garmin_details);
+      const existingHash = existingDetails.rawFileHash;
+      if ((existingHash && existingHash !== rawFileHash) || (!existingHash && (existingDetails.rawFileKey || jsonArray(target.time_series).length > 0))) {
+        throw new TRPCError({ code: "CONFLICT", message: `${describeExistingSource(target)}已連結不同的 Garmin 原始檔或尚未驗證來源的曲線，為免覆蓋現有曲線，本次未更改資料；請開啟該歷史紀錄檢查現有檔案，並選擇正確的紀錄或原始檔重新上載。` });
+      }
     }
     const metadata = {
       ...preview.garminDetails,
@@ -212,6 +324,9 @@ export async function saveGarminImport(input: GarminDirectSaveInput): Promise<Ga
       rawFileName: input.fileName, rawFileFormat: preview.sourceFormat,
       rawSampleCount: preview.garminDetails.rawSampleCount ?? preview.timeSeries.length,
       rawFileHash,
+      rawActivityFirstTimestamp: parsedWindow.firstTimestamp,
+      rawActivityLastTimestamp: parsedWindow.lastTimestamp,
+      activityWindowVerified: validActivityWindow(summary) ? 1 : 0,
     };
     if (target) {
       // Deliberately no summary, shoes/FK, weather, notes, status or race writes.

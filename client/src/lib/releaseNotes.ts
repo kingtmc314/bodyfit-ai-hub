@@ -36,6 +36,27 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.17.3",
+    status: "released",
+    title: "Garmin 同日短跑配對與原檔衝突處理",
+    summary:
+      "修正同日相近距離與時長的不同活動被混為一筆，以及連續選檔沿用上一筆紀錄的問題；保留原有跑步、手動摘要與曲線。",
+    changes: {
+      added: [
+        "完整單次 FIT 的開始時間及含暫停的經過時間經交叉核對後，才用作活動時間範圍證據；可確認為不同時段的活動分開保存。",
+      ],
+      removed: [
+        "永久原檔衝突不再只顯示不能解決問題的重試按鈕；不強制覆寫或忽略重複檢查。",
+      ],
+      improved: [
+        "自動匯入與指定歷史附加分開；連續選取另一個 FIT 時不會誤附加到剛保存的活動。指定錯誤紀錄時可改用自動配對，不需重新上載。",
+      ],
+      revised: [
+        "缺少完整時間證據、重疊活動或不同原始來源仍安全停止；網絡中斷保留同檔重試。SHA-256 去重、香港日期及既有跑鞋／天氣／備註不變。",
+      ],
+    },
+  },
+  {
     version: "3.17.2",
     status: "released",
     title: "免費簡化器械動作動畫與完整 App 內示範流程",
@@ -673,9 +694,14 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
     status: "released",
     summary:
       "從連續截圖或原始活動檔核對後匯入，保留可用的逐秒表現、GPS 與海拔資料。",
-    lastRevisedVersion: "3.15.5",
-    lastRevisedDateHK: "2026年11月3日（香港）",
+    lastRevisedVersion: "3.17.3",
+    lastRevisedDateHK: "2026年11月15日（香港）",
     history: [
+      {
+        version: "3.17.3",
+        dateHK: "2026年11月15日",
+        description: "完整 FIT 的含暫停時間範圍經原檔核對後，區分同日相近短跑；連續匯入不沿用上一筆 id，永久來源衝突改為安全處理而非無效重試，保留現有手動資料與曲線。",
+      },
       {
         version: "3.14.2",
         dateHK: "2026年11月1日",

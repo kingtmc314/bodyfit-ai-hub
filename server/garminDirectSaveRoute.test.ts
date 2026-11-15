@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { TRPCError } from "@trpc/server";
 import { appRouter } from "./routers";
 import { saveGarminImport } from "./garminDirectSave";
 import type { TrpcContext } from "./_core/context";
@@ -16,12 +17,41 @@ beforeEach(() => vi.resetAllMocks());
 describe("running.saveGarminImport endpoint", () => {
   it("validates an original object key and passes only the save contract to the service", async () => {
     const input = {
-      fileKey: "garmin-originals/2/activity_1234abcd.fit", fileName: "activity.fit", mimeType: "application/octet-stream", runningLogId: 17,
+      fileKey: "garmin-originals/2/activity_1234abcd.fit",
+      fileName: "activity.fit",
+      mimeType: "application/octet-stream",
+      runningLogId: 17,
     };
-    const result = { id: 17, action: "attached" as const, date: "2026-11-02", fields: { runningShoes: "preserved" }, sampleCount: 0, garminDetails: {}, laps: [], timeSeries: [] };
+    const result = {
+      id: 17,
+      action: "attached" as const,
+      date: "2026-11-02",
+      fields: { runningShoes: "preserved" },
+      sampleCount: 0,
+      garminDetails: {},
+      laps: [],
+      timeSeries: [],
+    };
     vi.mocked(saveGarminImport).mockResolvedValue(result);
-    await expect(caller.running.saveGarminImport(input)).resolves.toEqual(result);
+    await expect(caller.running.saveGarminImport(input)).resolves.toEqual(
+      result
+    );
     expect(saveGarminImport).toHaveBeenCalledWith(input);
+  });
+
+  it("preserves a permanent source conflict code so the client does not offer a pointless same-target retry", async () => {
+    vi.mocked(saveGarminImport).mockRejectedValue(
+      new TRPCError({
+        code: "CONFLICT",
+        message: "紀錄 #891 已連結不同的 Garmin 原始檔，資料未更改",
+      })
+    );
+    await expect(
+      caller.running.saveGarminImport({
+        fileKey: "garmin-originals/2/activity_1234abcd.fit",
+        fileName: "activity.fit",
+      })
+    ).rejects.toMatchObject({ code: "CONFLICT" });
   });
 
   it.each([
@@ -30,13 +60,24 @@ describe("running.saveGarminImport endpoint", () => {
     "garmin-originals/2/activity.fit",
     "garmin-originals/2/../activity_1234abcd.fit",
     "https://example.com/activity_1234abcd.fit",
-  ])("rejects untrusted source %s before reading/parsing or persistence", async fileKey => {
-    await expect(caller.running.saveGarminImport({ fileKey, fileName: "activity.fit" })).rejects.toThrow(/原始檔來源/);
-    expect(saveGarminImport).not.toHaveBeenCalled();
-  });
+  ])(
+    "rejects untrusted source %s before reading/parsing or persistence",
+    async fileKey => {
+      await expect(
+        caller.running.saveGarminImport({ fileKey, fileName: "activity.fit" })
+      ).rejects.toThrow(/原始檔來源/);
+      expect(saveGarminImport).not.toHaveBeenCalled();
+    }
+  );
 
   it("rejects a nonpositive edit target before calling the service", async () => {
-    await expect(caller.running.saveGarminImport({ fileKey: "garmin-originals/2/activity_1234abcd.fit", fileName: "activity.fit", runningLogId: 0 })).rejects.toThrow();
+    await expect(
+      caller.running.saveGarminImport({
+        fileKey: "garmin-originals/2/activity_1234abcd.fit",
+        fileName: "activity.fit",
+        runningLogId: 0,
+      })
+    ).rejects.toThrow();
     expect(saveGarminImport).not.toHaveBeenCalled();
   });
 });

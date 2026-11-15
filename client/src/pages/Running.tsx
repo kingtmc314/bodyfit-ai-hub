@@ -150,6 +150,9 @@ export default function Running() {
   const isOwner = useIsOwner();
   const [showDialog, setShowDialog] = useState(false);
   const [editEntry, setEditEntry] = useState<any>(null);
+  // Explicit history selection only; onSaved changes the manual edit id,
+  // never the target for the next automatically matched file.
+  const [garminImportTargetId, setGarminImportTargetId] = useState<number | undefined>(undefined);
   const [form, setForm] = useState<any>(defaultForm);
   const [garminImportBusy, setGarminImportBusy] = useState(false);
   const [garminDirectSaved, setGarminDirectSaved] = useState(false);
@@ -303,6 +306,20 @@ export default function Running() {
   // ─── Photo uploader ref ──────────────────────────────────────────────────────
   const photoUploaderRef = useRef<LogPhotoUploaderRef>(null);
 
+  const resetRunningDialog = () => {
+    setEditEntry(null);
+    setGarminImportTargetId(undefined);
+    setForm(defaultForm);
+    setGarminDirectSaved(false);
+    setGarminUnconfirmed(false);
+  };
+
+  const closeRunningDialog = () => {
+    if (garminImportBusy) return;
+    setShowDialog(false);
+    resetRunningDialog();
+  };
+
   // ─── Mutations ───────────────────────────────────────────────────────────────
   const addMutation = trpc.running.addLog.useMutation({
     onSuccess: async (newRecord) => {
@@ -313,8 +330,7 @@ export default function Running() {
       utils.running.getStats.invalidate();
       toast.success(t("running.add_record"));
       setShowDialog(false);
-      setForm(defaultForm);
-      setGarminDirectSaved(false);
+      resetRunningDialog();
     },
     onError: (e) => toast.error(t("common.error") + ": " + e.message),
   });
@@ -324,10 +340,8 @@ export default function Running() {
       utils.running.getLogs.invalidate();
       utils.running.getStats.invalidate();
       toast.success(t("common.success"));
-      setEditEntry(null);
       setShowDialog(false);
-      setForm(defaultForm);
-      setGarminDirectSaved(false);
+      resetRunningDialog();
     },
     onError: (e) => toast.error(t("common.error") + ": " + e.message),
   });
@@ -392,14 +406,14 @@ export default function Running() {
 
   // ─── Handlers ────────────────────────────────────────────────────────────────
   const openAdd = () => {
-    setEditEntry(null);
-    setForm(defaultForm);
-    setGarminDirectSaved(false);
+    resetRunningDialog();
     setShowDialog(true);
   };
 
   const openEdit = (row: any) => {
     setEditEntry(row);
+    setGarminImportTargetId(Number(row.id));
+    setGarminUnconfirmed(false);
     setForm({
       date: row.date ?? todayHKString(),
       runningType: row.running_type ?? "Easy",
@@ -1795,7 +1809,7 @@ export default function Running() {
       </Tabs>
 
       {/* Add / Edit Dialog */}
-      <Dialog open={showDialog} onOpenChange={(o) => { if (garminImportBusy) return; setShowDialog(o); if (!o) { setEditEntry(null); setForm(defaultForm); setGarminDirectSaved(false); } }}>
+      <Dialog open={showDialog} onOpenChange={(o) => { if (garminImportBusy) return; if (o) setShowDialog(true); else closeRunningDialog(); }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editEntry ? t("running.edit_record") : t("running.add_record")}</DialogTitle>
@@ -1813,12 +1827,14 @@ export default function Running() {
                 }}
               />
               <GarminRawFileImporter
-                runningLogId={editEntry ? Number(editEntry.id) : undefined}
+                runningLogId={garminImportTargetId}
                 onBusyChange={setGarminImportBusy}
                 onUnconfirmedChange={setGarminUnconfirmed}
+                onUseAutomaticMatch={() => setGarminImportTargetId(undefined)}
                 onSaved={(saved) => {
-                  // A directly saved import must become an edit target immediately.
+                  // A directly saved import must become a manual edit target immediately.
                   // Manual changes afterwards UPDATE this id; never INSERT it again.
+                  // Do not change garminImportTargetId: automatic mode stays automatic.
                   setEditEntry({ id: saved.id });
                   setGarminDirectSaved(true);
                   setForm({ ...defaultForm, ...saved.fields, garminDetails: saved.garminDetails, laps: saved.laps, timeSeries: saved.timeSeries });
@@ -1958,10 +1974,10 @@ export default function Running() {
             </div>
           </fieldset>
           <DialogFooter>
-            <Button variant="outline" disabled={garminImportBusy} onClick={() => { setShowDialog(false); setEditEntry(null); setForm(defaultForm); }}>{garminDirectSaved ? "完成／關閉" : t("running.cancel")}</Button>
+            <Button variant="outline" disabled={garminImportBusy} onClick={closeRunningDialog}>{garminDirectSaved ? "完成／關閉" : t("running.cancel")}</Button>
             <Button onClick={handleSave} disabled={garminImportBusy || garminUnconfirmed || addMutation.isPending || updateMutation.isPending} className="hero-gradient text-white">
               {(addMutation.isPending || updateMutation.isPending) ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-              {garminUnconfirmed ? "請先重試原始檔儲存" : garminDirectSaved ? "儲存其他修改" : t("running.save")}
+              {garminUnconfirmed ? "請先處理原始檔匯入" : garminDirectSaved ? "儲存其他修改" : t("running.save")}
             </Button>
           </DialogFooter>
         </DialogContent>

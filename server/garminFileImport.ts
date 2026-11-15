@@ -166,6 +166,33 @@ function mapFitRecord(record: Record<string, unknown>, startedAt: Date, cadenceM
   };
 }
 
+function fitActivityWindow(sessions: Array<Record<string, unknown>>, records: Array<Record<string, unknown>>, activityDate: string, hasErrors: boolean) {
+  const unknownWindow = { activityWindowVerified: 0, activityTimeBasis: "unknown" };
+  if (hasErrors || sessions.length !== 1 || sessions[0].sport !== "running" || records.length < 2) return unknownWindow;
+  const session = sessions[0];
+  // Decoder-converted FIT timestamps must be genuine dates; missing fields must
+  // not become the string "undefined" or be inferred from the timer/filename.
+  const start = session.startTime instanceof Date ? session.startTime.getTime() : NaN;
+  const sessionTimestamp = session.timestamp instanceof Date ? session.timestamp.getTime() : NaN;
+  const elapsed = asNumber(session.totalElapsedTime);
+  const end = elapsed !== undefined && elapsed > 0 ? start + elapsed * 1000 : sessionTimestamp;
+  const basis = elapsed !== undefined ? "fit-session-elapsed" : "fit-session-timestamp";
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || (elapsed !== undefined && elapsed <= 0)) return unknownWindow;
+  // Real Garmin exports can put the START in session.timestamp. Otherwise it
+  // must agree with the elapsed end, rather than contradict the canonical bounds.
+  if (elapsed !== undefined && Number.isFinite(sessionTimestamp)
+    && Math.abs(sessionTimestamp - start) > 5000 && Math.abs(sessionTimestamp - end) > 5000) return unknownWindow;
+  const times = records.map(record => record.timestamp instanceof Date ? record.timestamp.getTime() : NaN);
+  if (times.some((time, index) => !Number.isFinite(time) || time < start || time > end || (index > 0 && time < times[index - 1]))) return unknownWindow;
+  if (times[0] - start > 5000 || end - times[times.length - 1] > 5000 || toHKDate(new Date(start)) !== activityDate) return unknownWindow;
+  return {
+    activityStartTimestamp: new Date(start).toISOString(),
+    activityEndTimestamp: new Date(end).toISOString(),
+    activityWindowVerified: 1,
+    activityTimeBasis: basis,
+  };
+}
+
 export function parseGarminFit(buffer: Buffer): GarminRawPreview {
   const stream = Stream.fromBuffer(buffer);
   if (!Decoder.isFIT(stream)) throw new Error("這不是有效的 Garmin FIT 檔案");
@@ -179,6 +206,9 @@ export function parseGarminFit(buffer: Buffer): GarminRawPreview {
   const sourceSamples = recordMessages.map(record => mapFitRecord(record, firstTimestamp, session.sport === "running" ? 2 : 1)).filter((sample): sample is GarminTimeSample => !!sample);
   const samples = keepChartSamples(sourceSamples);
   const preview = metricFields(session, samples, "FIT");
+  Object.assign(preview.garminDetails, fitActivityWindow(
+    (messages.sessionMesgs ?? []) as Array<Record<string, unknown>>, recordMessages, preview.fields.date, errors.length > 0,
+  ));
   preview.laps = ((messages.lapMesgs ?? []) as unknown as Array<Record<string, unknown>>).map((lap, index) => {
     const distance = asNumber(lap.totalDistance);
     const duration = asNumber(lap.totalTimerTime) ?? asNumber(lap.totalElapsedTime);
