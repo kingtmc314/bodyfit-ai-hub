@@ -13,7 +13,8 @@ import {
   Timer,
 } from "lucide-react";
 import { getExerciseMuscles } from "@shared/exerciseMuscles";
-import { getGymworkReference } from "@shared/gymworkReferences";
+import { getExerciseGuide } from "@shared/exerciseGuides";
+import ExerciseMotionPreview from "./ExerciseMotionPreview";
 
 export const STUDIO_MUSCLE_LABELS: Record<string, [string, string]> = {
   chest: ["胸肌", "Chest"],
@@ -199,35 +200,43 @@ export function WorkoutStudioExerciseHeading({
 }) {
   const isZh = useStudioLanguage();
   const anatomy = getExerciseMuscles(exercise);
-  const reference = getGymworkReference(exercise.name, exercise.equipment);
+  const guide = getExerciseGuide(exercise.name, exercise.equipment);
+  const demoLabel = guide
+    ? isZh
+      ? "動作示範"
+      : "Movement demonstration"
+    : isZh
+      ? "肌群與步驟"
+      : "Muscles & steps";
   return (
     <div className="flex min-w-0 items-start gap-3">
-      {reference ? (
-        <a
-          href={reference.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`Gymwork 原作 ${exercise.name}`}
-          className="flex h-20 w-24 shrink-0 flex-col items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600"
-        >
-          <Play className="h-5 w-5" />
-          <span className="mt-1 text-[10px] font-semibold">
-            Gymwork {isZh ? "原作 ↗" : "original ↗"}
-          </span>
-        </a>
-      ) : (
-        <button
-          type="button"
-          onClick={onOpen}
-          aria-label={`${isZh ? "肌群與步驟" : "Muscles and steps"} ${exercise.name}`}
-          className="flex h-20 w-24 shrink-0 flex-col items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600"
-        >
-          <ActivityIcon />
-          <span className="mt-1 text-[10px] font-semibold">
-            {isZh ? "肌群與步驟" : "View steps"}
-          </span>
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`${demoLabel} ${exercise.name}`}
+        title={`${demoLabel} ${exercise.name}`}
+        className="flex w-28 shrink-0 flex-col items-center justify-center overflow-hidden rounded-xl border border-blue-100 bg-blue-50 p-1 text-blue-600"
+      >
+        {guide ? (
+          <ExerciseMotionPreview
+            exercise={exercise}
+            compact
+            autoplay={false}
+            className="w-full"
+          />
+        ) : (
+          <ActivityIcon aria-hidden="true" className="my-3 h-5 w-5" />
+        )}
+        <span className="mt-1 text-[10px] font-semibold">
+          {guide
+            ? isZh
+              ? "簡化動畫"
+              : "Simplified animation"
+            : isZh
+              ? "肌群與步驟"
+              : "Muscles & steps"}
+        </span>
+      </button>
       <div className="min-w-0 flex-1">
         <button
           type="button"
@@ -238,13 +247,6 @@ export function WorkoutStudioExerciseHeading({
         </button>
         {isZh && exercise.nameZh && (
           <p className="text-[11px] text-muted-foreground">{exercise.name}</p>
-        )}
-        {reference && (
-          <p className="text-[10px] text-muted-foreground">
-            {isZh
-              ? "原作於 Gymwork 官網開啟，未嵌入或複製素材。"
-              : "Original opens on Gymwork; not embedded or copied."}
-          </p>
         )}
         <p className="mt-1 text-[11px] font-medium text-blue-600">
           {anatomy.primary.length

@@ -347,7 +347,7 @@ describe("workout studio DOM contracts", () => {
     const actions = [
       ...document.querySelectorAll('button[aria-label^="肌群與步驟 "]'),
     ];
-    expect(actions).toHaveLength(1);
+    expect(actions).toHaveLength(2);
     expect(actions[0].getAttribute("aria-label")).toBe(
       "肌群與步驟 Dumbbell Fly"
     );
@@ -356,7 +356,8 @@ describe("workout studio DOM contracts", () => {
       document.querySelector('[data-testid="exercise-detail"]')?.textContent
     ).toBe("Dumbbell Fly");
     expect(mocks.mutations.addSet).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("卡片圖示不是動作動畫");
+    expect(document.body.textContent).toContain("免費通用簡化動畫");
+    expect(document.body.textContent).toContain("未支援動作仍保留肌群與說明");
     await select('[aria-label="篩選器材"]', "Barbell");
     expect(
       document.querySelector('button[aria-label="肌群與步驟 Bench Press"]')

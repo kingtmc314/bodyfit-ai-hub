@@ -40,6 +40,7 @@ import GymLocationInput, {
 } from "@/components/GymLocationInput";
 import { APP_VERSION } from "@/lib/appMeta";
 import { getGymworkReference } from "@shared/gymworkReferences";
+import ExerciseMotionPreview from "@/components/ExerciseMotionPreview";
 import {
   MAX_WORKOUT_MINUTES,
   estimateWorkoutCalories,
@@ -3239,8 +3240,9 @@ export default function Workout() {
                   器材 × 肌群動作庫
                 </h2>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  先找器材，再選肌群。已核對的 Gymwork
-                  原作只於官網開啟；此頁不複製、嵌入或以其他動畫代替。卡片圖示不是動作動畫；每個動作保留肌群與步驟。
+                  {isZh
+                    ? "先找器材，再選肌群。支援動作提供免費通用簡化動畫，非 Gymwork 原作，不使用付費素材；不保證符合每款品牌器械的結構或軌跡。點選靜態縮圖可在此頁查看動畫、肌群與步驟。未支援動作仍保留肌群與說明。"
+                    : "Filter by equipment and muscle. Supported movements include free generic simplified animations, not Gymwork originals or paid assets. They may not match every branded machine's structure or path. Select a static thumbnail to view the animation, muscles and steps here; unsupported movements retain their muscles and instructions."}
                 </p>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <Button
@@ -3338,10 +3340,10 @@ export default function Workout() {
                 {filteredExercises.length} 個動作 ·{" "}
                 {
                   filteredExercises.filter(exercise =>
-                    getGymworkReference(exercise.name, exercise.equipment)
+                    getExerciseGuide(exercise.name, exercise.equipment)
                   ).length
                 }{" "}
-                個有 Gymwork 原作連結 ·{" "}
+                {isZh ? "個支援簡化動畫" : "with simplified animation"} ·{" "}
                 {selectedEquipment === "all" ? "所有器材" : selectedEquipment}
                 {selectedMuscle && exerciseLibMode !== "cardio"
                   ? ` · ${MUSCLE_GROUPS.find(muscle => muscle.id === selectedMuscle)?.label || selectedMuscle}`
@@ -3383,172 +3385,213 @@ export default function Workout() {
                   </div>
                 )}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {filteredExercises.map((exercise: any) => (
-                  <article
-                    key={exercise.id ? `custom-${exercise.id}` : exercise.name}
-                    className="group flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-primary/35"
-                  >
-                    <div className="flex items-center justify-between gap-2 bg-gradient-to-br from-primary/10 via-muted/40 to-violet-500/5 p-4">
-                      <button
-                        type="button"
-                        aria-label={`開啟動作詳情 ${exercise.name}`}
-                        onClick={() => {
-                          setDetailExercise(exercise);
-                          setShowExerciseDetail(true);
-                        }}
-                        className="flex min-h-16 min-w-24 flex-col items-center justify-center rounded-xl border border-blue-100 bg-white text-blue-600"
-                      >
-                        <Activity className="h-5 w-5" />
-                        <span className="mt-1 text-[10px] font-semibold">
-                          {isZh ? "肌群與步驟" : "Muscles & steps"}
-                        </span>
-                      </button>
-                      <span className="max-w-[70%] rounded-full border border-border bg-card/70 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
-                        {exercise.equipment}
-                      </span>
-                    </div>
-                    <div className="flex flex-1 flex-col p-4">
-                      <div className="flex items-start justify-between gap-1">
-                        <div className="min-w-0">
-                          <h3 className="text-sm font-bold leading-5 text-foreground">
-                            {exercise.nameZh || exercise.name}
-                          </h3>
-                          <p className="mt-0.5 break-words text-[11px] text-muted-foreground">
-                            {exercise.name}
-                          </p>
-                        </div>
-                        {isOwner && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={
-                              exercise.isCustom
-                                ? `刪除自訂動作 ${exercise.name}`
-                                : `切換收藏 ${exercise.name}`
-                            }
-                            className="h-10 w-10 shrink-0"
-                            onClick={() =>
-                              exercise.isCustom
-                                ? window.confirm(
-                                    `刪除自訂動作「${exercise.name}」？`
-                                  ) &&
-                                  deleteCustomExercise.mutate({
-                                    id: exercise.id,
-                                  })
-                                : toggleFavourite.mutate({
-                                    exerciseName: exercise.name,
-                                  })
-                            }
-                          >
-                            {exercise.isCustom ? (
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            ) : (
-                              <Star
-                                className={`h-4 w-4 ${favouriteSet.has(exercise.name) ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`}
-                              />
-                            )}
-                          </Button>
-                        )}
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        <Badge variant="secondary" className="text-[10px]">
-                          {MUSCLE_GROUPS.find(
-                            muscle => muscle.id === exercise.muscleGroup
-                          )?.label ||
-                            (exercise.muscleGroup === "cardio"
-                              ? "有氧"
-                              : exercise.muscleGroup)}
-                        </Badge>
-                        {exercise.isCustom && (
-                          <Badge variant="outline" className="text-[10px]">
-                            自訂
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="mt-2 text-[11px] leading-5 text-blue-600">
-                        {isZh ? "主力" : "Primary"}:{" "}
-                        {getExerciseMuscles(exercise)
-                          .primary.map(id => studioMuscleLabel(id, isZh))
-                          .join(" / ") ||
-                          (isZh
-                            ? "未有阻力肌群分類"
-                            : "No resistance-muscle mapping")}
-                      </p>
-                      {getExerciseMuscles(exercise).secondary.length > 0 && (
-                        <p className="text-[10px] leading-5 text-muted-foreground">
-                          {isZh ? "輔助" : "Secondary"}:{" "}
-                          {getExerciseMuscles(exercise)
-                            .secondary.map(id => studioMuscleLabel(id, isZh))
-                            .join(" / ")}
-                        </p>
-                      )}
-                      <p className="mt-2 line-clamp-2 text-[11px] leading-5 text-muted-foreground">
-                        {exercise.instructions ||
-                          "查看動作詳情，了解姿勢、訓練肌群及安全要點。"}
-                      </p>
-                      <div className="mt-auto flex gap-2 pt-3">
-                        <Button
-                          variant="outline"
-                          className="h-11 flex-1 gap-1.5 rounded-xl text-xs"
-                          aria-label={`肌群與步驟 ${exercise.name}`}
+                {filteredExercises.map((exercise: any) => {
+                  const guide = getExerciseGuide(
+                    exercise.name,
+                    exercise.equipment
+                  );
+                  const reference = getGymworkReference(
+                    exercise.name,
+                    exercise.equipment
+                  );
+                  const demoLabel = guide
+                    ? isZh
+                      ? "動作示範"
+                      : "Movement demonstration"
+                    : isZh
+                      ? "肌群與步驟"
+                      : "Muscles & steps";
+                  return (
+                    <article
+                      key={
+                        exercise.id ? `custom-${exercise.id}` : exercise.name
+                      }
+                      className="group flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-primary/35"
+                    >
+                      <div className="flex items-center justify-between gap-2 bg-gradient-to-br from-primary/10 via-muted/40 to-violet-500/5 p-4">
+                        <button
+                          type="button"
+                          aria-label={`${demoLabel} ${exercise.name}`}
+                          title={`${demoLabel} ${exercise.name}`}
                           onClick={() => {
                             setDetailExercise(exercise);
                             setShowExerciseDetail(true);
                           }}
+                          className="flex min-h-20 w-32 shrink-0 flex-col items-center justify-center overflow-hidden rounded-xl border border-blue-100 bg-white p-1 text-blue-600"
                         >
-                          <Activity
-                            aria-hidden="true"
-                            className="h-3.5 w-3.5"
-                          />
-                          {isZh ? "肌群與步驟" : "Muscles & steps"}
-                        </Button>
-                        {getGymworkReference(
-                          exercise.name,
-                          exercise.equipment
-                        ) && (
+                          {guide ? (
+                            <ExerciseMotionPreview
+                              exercise={exercise}
+                              compact
+                              autoplay={false}
+                              className="w-full"
+                            />
+                          ) : (
+                            <Activity
+                              aria-hidden="true"
+                              className="my-3 h-5 w-5"
+                            />
+                          )}
+                          <span className="mt-1 text-[10px] font-semibold">
+                            {guide
+                              ? isZh
+                                ? "簡化動畫"
+                                : "Simplified animation"
+                              : isZh
+                                ? "肌群與步驟"
+                                : "Muscles & steps"}
+                          </span>
+                        </button>
+                        <span className="max-w-[70%] rounded-full border border-border bg-card/70 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+                          {exercise.equipment}
+                        </span>
+                      </div>
+                      <div className="flex flex-1 flex-col p-4">
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="min-w-0">
+                            <h3 className="text-sm font-bold leading-5 text-foreground">
+                              {exercise.nameZh || exercise.name}
+                            </h3>
+                            <p className="mt-0.5 break-words text-[11px] text-muted-foreground">
+                              {exercise.name}
+                            </p>
+                          </div>
+                          {isOwner && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={
+                                exercise.isCustom
+                                  ? `刪除自訂動作 ${exercise.name}`
+                                  : `切換收藏 ${exercise.name}`
+                              }
+                              className="h-10 w-10 shrink-0"
+                              onClick={() =>
+                                exercise.isCustom
+                                  ? window.confirm(
+                                      `刪除自訂動作「${exercise.name}」？`
+                                    ) &&
+                                    deleteCustomExercise.mutate({
+                                      id: exercise.id,
+                                    })
+                                  : toggleFavourite.mutate({
+                                      exerciseName: exercise.name,
+                                    })
+                              }
+                            >
+                              {exercise.isCustom ? (
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              ) : (
+                                <Star
+                                  className={`h-4 w-4 ${favouriteSet.has(exercise.name) ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`}
+                                />
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          <Badge variant="secondary" className="text-[10px]">
+                            {MUSCLE_GROUPS.find(
+                              muscle => muscle.id === exercise.muscleGroup
+                            )?.label ||
+                              (exercise.muscleGroup === "cardio"
+                                ? "有氧"
+                                : exercise.muscleGroup)}
+                          </Badge>
+                          {exercise.isCustom && (
+                            <Badge variant="outline" className="text-[10px]">
+                              自訂
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="mt-2 text-[11px] leading-5 text-blue-600">
+                          {isZh ? "主力" : "Primary"}:{" "}
+                          {getExerciseMuscles(exercise)
+                            .primary.map(id => studioMuscleLabel(id, isZh))
+                            .join(" / ") ||
+                            (isZh
+                              ? "未有阻力肌群分類"
+                              : "No resistance-muscle mapping")}
+                        </p>
+                        {getExerciseMuscles(exercise).secondary.length > 0 && (
+                          <p className="text-[10px] leading-5 text-muted-foreground">
+                            {isZh ? "輔助" : "Secondary"}:{" "}
+                            {getExerciseMuscles(exercise)
+                              .secondary.map(id => studioMuscleLabel(id, isZh))
+                              .join(" / ")}
+                          </p>
+                        )}
+                        <p className="mt-2 line-clamp-2 text-[11px] leading-5 text-muted-foreground">
+                          {exercise.instructions ||
+                            "查看動作詳情，了解姿勢、訓練肌群及安全要點。"}
+                        </p>
+                        <div className="mt-auto flex gap-2 pt-3">
+                          <Button
+                            variant="outline"
+                            className="h-11 flex-1 gap-1.5 rounded-xl text-xs"
+                            aria-label={`${demoLabel} ${exercise.name}`}
+                            title={`${demoLabel} ${exercise.name}`}
+                            onClick={() => {
+                              setDetailExercise(exercise);
+                              setShowExerciseDetail(true);
+                            }}
+                          >
+                            {guide ? (
+                              <Play
+                                aria-hidden="true"
+                                className="h-3.5 w-3.5"
+                              />
+                            ) : (
+                              <Activity
+                                aria-hidden="true"
+                                className="h-3.5 w-3.5"
+                              />
+                            )}
+                            {demoLabel}
+                          </Button>
+                          {isOwner && activeSession && (
+                            <Button
+                              size="icon"
+                              aria-label={`新增 ${exercise.name} 至課程`}
+                              className="h-11 w-11 rounded-xl"
+                              onClick={() => {
+                                setSelectedExercise(exercise);
+                                setSetForm({
+                                  reps:
+                                    exercise.muscleGroup === "cardio" ? 0 : 10,
+                                  weight: 0,
+                                  duration: 0,
+                                  distance: 0,
+                                  avgHr: 0,
+                                  calories: 0,
+                                  notes: "",
+                                });
+                                setEditSet(null);
+                                setShowAddSetDialog(true);
+                              }}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                        {reference && (
                           <a
-                            href={
-                              getGymworkReference(
-                                exercise.name,
-                                exercise.equipment
-                              )!.url
-                            }
+                            href={reference.url}
                             target="_blank"
                             rel="noopener noreferrer"
                             aria-label={`Gymwork 原作 ${exercise.name}`}
-                            className="flex min-h-11 flex-1 items-center justify-center rounded-xl border border-blue-200 px-2 text-xs font-semibold text-blue-600"
+                            className="mt-2 inline-flex min-h-8 items-center text-[10px] text-muted-foreground underline"
                           >
-                            Gymwork {isZh ? "原作 ↗" : "original ↗"}
+                            Gymwork{" "}
+                            {isZh
+                              ? "原作（外部參考）↗"
+                              : "original (external reference) ↗"}
                           </a>
                         )}
-                        {isOwner && activeSession && (
-                          <Button
-                            size="icon"
-                            aria-label={`新增 ${exercise.name} 至課程`}
-                            className="h-11 w-11 rounded-xl"
-                            onClick={() => {
-                              setSelectedExercise(exercise);
-                              setSetForm({
-                                reps:
-                                  exercise.muscleGroup === "cardio" ? 0 : 10,
-                                weight: 0,
-                                duration: 0,
-                                distance: 0,
-                                avgHr: 0,
-                                calories: 0,
-                                notes: "",
-                              });
-                              setEditSet(null);
-                              setShowAddSetDialog(true);
-                            }}
-                          >
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        )}
                       </div>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
                 {filteredExercises.length === 0 && (
                   <div className="rounded-2xl border border-dashed border-border p-6 text-center sm:col-span-2 xl:col-span-3">
                     <p className="text-sm text-muted-foreground">

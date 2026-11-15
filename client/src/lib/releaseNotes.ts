@@ -36,6 +36,28 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.17.2",
+    status: "released",
+    title: "免費簡化器械動作動畫與完整 App 內示範流程",
+    summary:
+      "按你選擇的不購素材方案，加入人像與通用器械往返動作示意，直接在健身動作庫及課程內播放；保留全部歷史紀錄和肌群分析。",
+    changes: {
+      added: [
+        "18 類常用器械的簡化動作示意，包含下拉、划船、胸推、肩推、腿推、腿伸展與髖內收／外展；名稱及器材精確配對，未知動作不借用其他器械動畫。",
+        "播放、暫停、重新示範、速度及動作階段控制；減少動態效果設定預設暫停，離開畫面或關閉示範會停止動畫。",
+      ],
+      removed: [
+        "常用器械的主要示範入口不再只能跳到外部原作頁；不購買素材、不載入 YouTube 或第三方動畫串流。",
+      ],
+      improved: [
+        "以輕量 SVG 人像和通用器械直接顯示，手機、平板、電腦不需 WebGL 或額外媒體授權；縮圖只顯示預覽，開啟詳情才播放。",
+      ],
+      revised: [
+        "清楚標示簡化動作示意並非 Gymwork 原動畫、特定品牌機型或你的姿勢評估；原作外部連結只保留作可選參考。香港日期與健身歷史資料不變。",
+      ],
+    },
+  },
+  {
     version: "3.17.1",
     status: "released",
     title: "官方健身室地區與多詞搜尋修正",
@@ -715,10 +737,16 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
     feature: "健身記錄與漸進訓練",
     status: "released",
     summary:
-      "Volume 力量耗能、週月年／全部肌群與 AI 分析、分店器械和 3D 肌肉檢視；Gymwork 原作在官方頁觀看，App 內嵌仍待授權。",
-    lastRevisedVersion: "3.17.1",
+      "Volume 力量耗能、期間肌群與 AI 分析、分店器械及 App 內免費簡化人像／器械動作示意；保留 3D 肌群檢視與原作可選參考。",
+    lastRevisedVersion: "3.17.2",
     lastRevisedDateHK: "2026年11月15日（香港）",
     history: [
+      {
+        version: "3.17.2",
+        dateHK: "2026年11月15日",
+        description:
+          "用戶選擇先不購買素材，改用輕量 SVG 人像及通用器械簡化示意；動作庫／課程內直接開啟播放、暫停、調速和查看階段，未知動作不錯配，現有歷史資料保留。",
+      },
       {
         version: "3.17.0",
         dateHK: "2026年11月15日",

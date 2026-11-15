@@ -19,7 +19,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { EXERCISE_DESCRIPTIONS } from "@/data/exerciseDescriptions";
 import MuscleAreaMap from "./MuscleAreaMap";
-import GymworkOriginalGuide from "./GymworkOriginalGuide";
+import ExerciseMotionPreview from "./ExerciseMotionPreview";
 import { getGymworkReference } from "@shared/gymworkReferences";
 import { getExerciseGuide, EXERCISE_GUIDES } from "@shared/exerciseGuides";
 import { getExerciseMuscles } from "@shared/exerciseMuscles";
@@ -66,6 +66,7 @@ export default function ExerciseDetailModal({
   const desc = description(exercise.name),
     anatomy = getExerciseMuscles(exercise),
     guide = getExerciseGuide(exercise.name, exercise.equipment);
+  const reference = getGymworkReference(exercise.name, exercise.equipment);
   const related = EXERCISE_GUIDES.filter(
     m =>
       m.id !== guide?.id && m.primary.some(id => anatomy.primary.includes(id))
@@ -93,7 +94,13 @@ export default function ExerciseDetailModal({
             <span>·</span>
             <span>{exercise.equipment}</span>
             <Badge variant="outline" className="text-[10px]">
-              {zh ? "肌群與動作教學" : "Muscles & technique"}
+              {guide
+                ? zh
+                  ? "簡化動畫"
+                  : "Simplified animation"
+                : zh
+                  ? "肌群與步驟"
+                  : "Muscles & steps"}
             </Badge>
           </DialogDescription>
         </DialogHeader>
@@ -102,10 +109,37 @@ export default function ExerciseDetailModal({
             className="space-y-6 px-4 pb-5 sm:px-7"
             key={`${exercise.name}:${exercise.equipment}`}
           >
-            <GymworkOriginalGuide
-              name={exercise.name}
-              equipment={exercise.equipment}
-            />
+            {guide ? (
+              <section
+                aria-label={
+                  zh ? "簡化動作示範" : "Simplified movement demonstration"
+                }
+              >
+                <h3 className="mb-3 text-lg font-semibold">
+                  {zh ? "簡化動畫" : "Simplified animation"}
+                </h3>
+                <ExerciseMotionPreview exercise={exercise} autoplay={open} />
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  {zh
+                    ? "免費通用動作示意，非 Gymwork 原作；不保證與現場品牌器械的結構或軌跡完全一致，請配合下方步驟及器械調校。"
+                    : "Free generic movement illustration, not a Gymwork original. It may differ from your branded machine's structure or path; follow the technique and machine setup below."}
+                </p>
+              </section>
+            ) : (
+              <section
+                className="rounded-2xl border border-border/40 bg-muted/30 p-4"
+                aria-label={zh ? "肌群與步驟" : "Muscles & steps"}
+              >
+                <h3 className="font-semibold">
+                  {zh ? "肌群與步驟" : "Muscles & steps"}
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {zh
+                    ? "此動作暫未支援簡化動畫；保留已知肌群與動作說明，不以其他動作代替。"
+                    : "Simplified animation is not available for this exercise. Known muscles and instructions remain below; no other movement is substituted."}
+                </p>
+              </section>
+            )}
             <section>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-lg font-semibold">
@@ -248,6 +282,18 @@ export default function ExerciseDetailModal({
                   </a>
                 ))}
               </div>
+            )}
+            {reference && (
+              <a
+                href={reference.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-8 items-center gap-1 text-xs text-muted-foreground underline"
+              >
+                Gymwork{" "}
+                {zh ? "原作（外部參考）" : "original (external reference)"}
+                <ExternalLink className="h-3 w-3" />
+              </a>
             )}
             {!!related.length && (
               <section>

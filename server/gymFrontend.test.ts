@@ -14,6 +14,8 @@ import {
   WorkoutStudioHeader,
   WorkoutStudioStyles,
 } from "../client/src/components/WorkoutStudio";
+import ExerciseDetailModal from "../client/src/components/ExerciseDetailModal";
+import { getExerciseGuide } from "../shared/exerciseGuides";
 
 const state = vi.hoisted(() => ({
   data: undefined as any,
@@ -29,6 +31,34 @@ vi.mock("react-i18next", () => ({
     i18n: { language: state.language },
   }),
 }));
+vi.mock("../client/src/components/ExerciseMotionPreview", async () => {
+  const { getExerciseGuide } = await import("../shared/exerciseGuides");
+  return {
+    default: ({ exercise, compact = false, autoplay = false }: any) => {
+      const guide = getExerciseGuide(exercise.name, exercise.equipment);
+      return guide
+        ? React.createElement("svg", {
+            "data-exercise-motion": compact ? "compact" : "svg",
+            "data-motion-id": guide.id,
+            "data-motion-playing": String(autoplay && !compact),
+            "data-motion-compact": String(compact),
+          })
+        : null;
+    },
+  };
+});
+vi.mock("../client/src/components/ui/dialog", () => {
+  const wrapper = ({ children }: any) =>
+    React.createElement("div", null, children);
+  return {
+    Dialog: ({ open, children }: any) =>
+      open ? React.createElement("div", { role: "dialog" }, children) : null,
+    DialogContent: wrapper,
+    DialogHeader: wrapper,
+    DialogTitle: wrapper,
+    DialogDescription: wrapper,
+  };
+});
 vi.mock("../client/src/lib/trpc", () => ({
   trpc: {
     workout: {
@@ -44,7 +74,9 @@ vi.mock("../client/src/lib/trpc", () => ({
           };
         },
       },
-      analyzeMusclePeriod: { useMutation: () => ({ isPending: false, mutateAsync: vi.fn() }) },
+      analyzeMusclePeriod: {
+        useMutation: () => ({ isPending: false, mutateAsync: vi.fn() }),
+      },
     },
   },
 }));
@@ -285,7 +317,7 @@ describe("Workout studio readable movement and rest controls", () => {
     await click("下一組");
     expect(state.query).toHaveBeenCalledOnce();
   });
-  it("does not substitute animation and links only the exact Gymwork reference while keeping instructions", async () => {
+  it("opens inline demonstrations from static exact-match thumbnails while keeping muscle labels", async () => {
     const exercise = {
       name: "Chest Press Machine",
       nameZh: "胸推機",
@@ -300,8 +332,13 @@ describe("Workout studio readable movement and rest controls", () => {
       })
     );
     expect(
-      host.querySelector("canvas,video,iframe,[data-exercise-motion]")
-    ).toBeNull();
+      host.querySelector('[data-exercise-motion="compact"]')
+    ).not.toBeNull();
+    expect(host.querySelector("canvas,video,iframe")).toBeNull();
+    expect(host.querySelector('[data-motion-id="chest-press"]')).not.toBeNull();
+    expect(host.querySelector('[data-motion-playing="true"]')).toBeNull();
+    expect(host.querySelector('[data-motion-compact="true"]')).not.toBeNull();
+    expect(host.textContent).toContain("簡化動畫");
     expect(host.textContent).toContain("胸肌");
     expect(host.textContent).toContain("肱三頭肌");
     await click("胸推機");
@@ -317,29 +354,135 @@ describe("Workout studio readable movement and rest controls", () => {
         onOpen: state.refetch,
       })
     );
-    const link = host.querySelector(
-      'a[aria-label="Gymwork 原作 Lat Pulldown"]'
-    ) as HTMLAnchorElement;
-    expect(link).not.toBeNull();
-    expect(link.href).toContain("gymwork.pro/exercises/lat-pulldown");
-    expect(link.target).toBe("_blank");
+    const thumbnail = host.querySelector(
+      'button[aria-label="動作示範 Lat Pulldown"]'
+    ) as HTMLButtonElement;
+    expect(thumbnail.title).toBe("動作示範 Lat Pulldown");
     expect(
-      host.querySelector("canvas,video,iframe,[data-exercise-motion]")
-    ).toBeNull();
-    expect(host.textContent).toContain("未嵌入或複製素材");
+      thumbnail.querySelector('[data-motion-id="lat-pulldown"]')
+    ).not.toBeNull();
+    expect(thumbnail.querySelector("button,a")).toBeNull();
+    expect(host.querySelector("a")).toBeNull();
+    await click("動作示範 Lat Pulldown");
+    expect(state.refetch).toHaveBeenCalledTimes(2);
+  });
+  it("keeps unknown and mismatched equipment exercises on muscle-and-step fallback without guessed animation", async () => {
+    for (const exercise of [
+      { name: "Unknown machine", muscleGroup: "chest", equipment: "Machine" },
+      { name: "Lat Pulldown custom", muscleGroup: "lats", equipment: "Cable" },
+      { name: "Lat Pulldown", muscleGroup: "lats", equipment: "Dumbbell" },
+    ]) {
+      expect(getExerciseGuide(exercise.name, exercise.equipment)).toBeNull();
+      await render(
+        React.createElement(WorkoutStudioExerciseHeading, {
+          exercise,
+          onOpen: state.refetch,
+        })
+      );
+      expect(
+        host.querySelector("[data-exercise-motion],canvas,video,iframe,a")
+      ).toBeNull();
+      expect(host.textContent).toContain("肌群與步驟");
+      await click(`肌群與步驟 ${exercise.name}`);
+    }
+    expect(state.refetch).toHaveBeenCalledTimes(3);
+  });
+  it("renders inline motion before muscle technique and preserves add-to-session and secondary source references", async () => {
     await render(
-      React.createElement(WorkoutStudioExerciseHeading, {
+      React.createElement(ExerciseDetailModal, {
         exercise: {
-          name: "Unknown machine",
-          muscleGroup: "chest",
-          equipment: "Machine",
+          name: "Lat Pulldown",
+          muscleGroup: "lats",
+          equipment: "Cable",
         },
-        active: true,
-        onOpen: state.refetch,
+        open: true,
+        onClose: state.refetch,
+        onAddToSession: state.query,
+        hasActiveSession: true,
       })
     );
-    expect(host.querySelector("a")).toBeNull();
+    const motion = host.querySelector('[data-exercise-motion="svg"]');
+    const muscles = host.querySelector("[data-muscle-area-map]");
+    expect(motion).not.toBeNull();
+    expect(muscles).not.toBeNull();
+    expect(motion?.getAttribute("data-motion-playing")).toBe("true");
+    expect(motion?.getAttribute("data-motion-compact")).toBe("false");
+    expect(motion!.compareDocumentPosition(muscles!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+    expect(host.textContent).toContain("非 Gymwork 原作");
+    expect(host.textContent).toContain("不保證");
+    expect(host.textContent).toContain("起始位置");
+    expect(host.textContent).toContain("呼吸提示");
+    expect(
+      host.querySelector('a[href*="gymwork.pro/exercises/lat-pulldown"]')
+    ).not.toBeNull();
+    expect(host.querySelector("video,iframe")).toBeNull();
+    expect(state.query).not.toHaveBeenCalled();
+    await click("加入訓練");
+    expect(state.query).toHaveBeenCalledOnce();
+    expect(state.refetch).toHaveBeenCalledOnce();
+    expect(state.query.mock.invocationCallOrder[0]).toBeLessThan(
+      state.refetch.mock.invocationCallOrder[0]
+    );
+    const source = readFileSync(
+      "client/src/components/ExerciseDetailModal.tsx",
+      "utf8"
+    );
+    expect(source).not.toMatch(/trpc|useMutation|mutateAsync/);
+  });
+  it("keeps unknown detail instructions visible and does not mount motion for a closed modal", async () => {
+    const exercise = {
+      name: "Unknown custom movement",
+      muscleGroup: "chest",
+      equipment: "Machine",
+      instructions: "Keep the reviewed custom instructions",
+    };
+    await render(
+      React.createElement(ExerciseDetailModal, {
+        exercise,
+        open: true,
+        onClose: state.refetch,
+      })
+    );
+    expect(host.querySelector("[data-exercise-motion]")).toBeNull();
     expect(host.textContent).toContain("肌群與步驟");
+    expect(host.textContent).toContain("暫未支援簡化動畫");
+    expect(host.textContent).toContain(exercise.instructions);
+    await render(
+      React.createElement(ExerciseDetailModal, {
+        exercise: {
+          name: "Lat Pulldown",
+          muscleGroup: "lats",
+          equipment: "Cable",
+        },
+        open: false,
+        onClose: state.refetch,
+      })
+    );
+    expect(host.querySelector("[data-exercise-motion]")).toBeNull();
+  });
+  it("uses the canonical guide matcher and no YouTube, paid or remote animation assets in the integration", () => {
+    const paths = [
+      "client/src/pages/Workout.tsx",
+      "client/src/components/WorkoutStudio.tsx",
+      "client/src/components/ExerciseDetailModal.tsx",
+    ];
+    for (const path of paths) {
+      const source = readFileSync(path, "utf8");
+      expect(source).toContain("ExerciseMotionPreview");
+      expect(source).toContain(
+        "getExerciseGuide(exercise.name, exercise.equipment)"
+      );
+      expect(source).not.toMatch(
+        /youtube|youtu\.be|GymworkOriginalGuide|\.glb|\.gltf|\.mp4|\.webm/i
+      );
+      expect(source).not.toContain("不複製、嵌入或以其他動畫代替");
+    }
+    const library = readFileSync(paths[0], "utf8");
+    expect(library).toContain("免費通用簡化動畫");
+    expect(library).toContain("不使用付費素材");
+    expect(library).toContain("個支援簡化動畫");
   });
   it("has a readable top time/Finish + volume/kg/kcal/sets summary and no instant save side effect", async () => {
     await render(
