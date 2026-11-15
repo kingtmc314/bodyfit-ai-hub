@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { Activity, RefreshCw, ShieldCheck } from "lucide-react";
+import RunningContextReadinessPanel from "./RunningContextReadinessPanel";
 import {
   CartesianGrid,
   Legend,
@@ -347,6 +348,8 @@ function ReportView({ report }: { report: RunningContextReport }) {
           </p>
         )}
       </div>
+
+      <RunningContextReadinessPanel readiness={report.readiness} />
 
       <div className={cardClass}>
         <h3 className="text-sm font-bold">按日期向前留出 · 實測配速誤差</h3>

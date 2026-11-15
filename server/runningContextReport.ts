@@ -1,6 +1,6 @@
-import { crossValidateRunningContext, predictRunningContext, type RunningContextHistory, type RunningContextRun, type RunningCrossValidationReport, type RunningHeldOutPrediction, type RunningStratum } from "../shared/runningCrossValidation";
-import { matchRunningPreRunContext } from "../shared/runningPreRunContext";
-import type { ContextErrorMetrics, ContextEvidenceRow, ContextGroup, RunningContextReport } from "../shared/runningContextReport";
+import { crossValidateRunningContext, predictRunningContext, RUNNING_CROSS_VALIDATION_POLICY, type RunningContextHistory, type RunningContextRun, type RunningCrossValidationReport, type RunningHeldOutPrediction, type RunningStratum } from "../shared/runningCrossValidation";
+import { matchRunningPreRunContext, type PreRunContext } from "../shared/runningPreRunContext";
+import type { ContextBaselineReadiness, ContextDayReadiness, ContextErrorMetrics, ContextEvidenceRow, ContextFactorReadiness, ContextGroup, RunningContextReadiness, RunningContextReport } from "../shared/runningContextReport";
 import type { loadRunningRecoveryDataset } from "./runningRecoveryDataset";
 import { todayHK } from "./hkTime";
 
@@ -94,6 +94,114 @@ const reasonZH: Record<string, string> = {
   model_worse: "情境模型留出誤差比歷史配速基準更差", no_meaningful_improvement: "未達到穩定的樣本外改善門檻", non_finite_prediction: "數值無效，禁止調整",
 };
 const featuresZH: Record<string, string> = { temperatureC: "氣溫", temperatureHumidityInteraction: "溫度×濕度", preRunSleepHours: "已核對跑前睡眠", restingHrDeltaBpm: "跑前靜止心率偏差" };
+/** Read-only dashboard projection. Never changes validation, matching or prediction gates. */
+export function buildRunningContextReadiness(args: {
+  full: RunningCrossValidationReport | null;
+  commonHeldOut: readonly RunningHeldOutPrediction[];
+  current: PreRunContext;
+  asOfHK: string;
+  historyComplete: boolean;
+  selectedGroup: boolean;
+  sleepDateConvention: "unknown" | "wake-date";
+  prediction: ReturnType<typeof predictRunningContext> | null;
+  correctionEnabled: boolean;
+  weatherTimingVerified: boolean;
+  unknownRoute: boolean;
+}): RunningContextReadiness {
+  const { full, current } = args;
+  const policy = RUNNING_CROSS_VALIDATION_POLICY;
+  const eligibleDays = full?.eligibleDays ?? 0;
+  const dayGate = (days: number, requiredDays: number): ContextDayReadiness => ({
+    days, requiredDays, missingDays: Math.max(0, requiredDays - days),
+  });
+  const factor = (feature: ContextFactorReadiness["feature"]): ContextFactorReadiness => {
+    const coverage = full?.featureCoverage.find(c => c.feature === feature);
+    const observedRows = coverage?.observedTrainingRows ?? 0;
+    const observedDays = coverage?.observedTrainingDays ?? 0;
+    const sampleDeficit = Math.max(0, policy.minimumFeatureObservations - observedRows);
+    const observedDayDeficit = Math.max(0, policy.minimumFeatureObservedDays - observedDays);
+    // The engine exposes an SD only for enabled scales. When a latest fit and
+    // observation gates exist but the scale was rejected, variance failed; do
+    // not invent a numeric SD of zero for constant/near-constant data.
+    const varianceKnown = !!coverage && (coverage.trainingStandardDeviation !== null
+      || ((full?.latestTrainingDays ?? 0) >= policy.minimumTrainingDays && !sampleDeficit && !observedDayDeficit));
+    const varianceSufficient = varianceKnown ? coverage?.enabledInLatestModel === true : null;
+    const blockers: string[] = [];
+    if (sampleDeficit) blockers.push(`合資格因子樣本至少還差${sampleDeficit}筆；不是健康表全域筆數。`);
+    if (observedDayDeficit) blockers.push(`合資格香港跑步日至少還差${observedDayDeficit}日；同日重複紀錄不補日數。`);
+    if (!varianceKnown) blockers.push("有效變化尚未可核驗；樣本／訓練日不足時不推定變異為零。");
+    else if (!varianceSufficient) blockers.push("因子變化未通過固定變異門檻；筆數足夠亦不代表已納入模型。");
+    if (!coverage?.enabledInLatestModel) blockers.push("此因子尚未納入最新訓練模型。");
+    if (feature === "preRunSleepHours" && args.sleepDateConvention === "unknown") blockers.push("睡眠日期語意未確認：日期／時鐘代理不能算已核對跑前睡眠；先覆核現有紀錄的起床日或明確時間戳，不必一律新增量測。");
+    return { feature, includedInLatestModel: coverage?.enabledInLatestModel ?? false,
+      observedRows, observedDays, missingRows: coverage?.missingTrainingRows ?? 0,
+      missingDays: Math.max(0, eligibleDays - observedDays), invalidRows: coverage?.invalidTrainingRows ?? 0,
+      sampleDeficit, observedDayDeficit, minimumAdditionalMatchedDays: Math.max(sampleDeficit, observedDayDeficit),
+      trainingStandardDeviation: coverage?.trainingStandardDeviation ?? null, varianceKnown, varianceSufficient, blockers };
+  };
+  const factors = { sleep: factor("preRunSleepHours"), restingHR: factor("restingHrDeltaBpm") };
+  const training = { ...dayGate(eligibleDays, policy.minimumTrainingDays), latestModelDays: full?.latestTrainingDays ?? 0 };
+  const commonHeldOut = { ...dayGate(new Set(args.commonHeldOut.map(r => r.hkDate)).size, policy.minimumHeldOutDays), rows: args.commonHeldOut.length };
+  const observedCommonRows = args.commonHeldOut.filter(r => r.observedFeatureNames.includes("preRunSleepHours")
+    && r.observedFeatureNames.includes("restingHrDeltaBpm"));
+  const commonObservedHeldOut = { ...dayGate(new Set(observedCommonRows.map(r => r.hkDate)).size, policy.minimumHeldOutDays), rows: observedCommonRows.length };
+  const deploymentEvidence = { ...dayGate(full?.deploymentEvidence?.matchedDays ?? 0, policy.minimumHeldOutDays),
+    rows: full?.deploymentEvidence?.matchedRows ?? 0, sufficient: full?.deploymentEvidenceSufficient ?? false,
+    latestFeatureNames: full?.latestFeatureNames ?? [] };
+  const baseline = current.baselines.days28;
+  const baselineKnown = !!full && current.run.valid && current.restingHr !== null
+    && baseline.source !== null && baseline.kind !== null && baseline.windowEndExclusiveHKdate !== null;
+  // Use the selected measurement's same-source/same-kind matched baseline,
+  // NOT all heart records, a run-day fallback, or the selected/same/future day.
+  const currentBaseline: ContextBaselineReadiness = {
+    measurementDateHK: full ? current.restingHr?.measurementHKdate ?? null : null,
+    windowStartHK: baselineKnown ? baseline.windowStartHKdate : null,
+    windowEndExclusiveHK: baselineKnown ? baseline.windowEndExclusiveHKdate : null,
+    lookbackDays: policy.restingHrLookbackDays, requiredEarlierDays: policy.minimumEarlierRestingHrDays,
+    observedEarlierDays: baselineKnown ? baseline.validDays : null,
+    missingEarlierDays: baselineKnown ? Math.max(0, policy.minimumEarlierRestingHrDays - baseline.validDays) : null,
+    sufficient: baselineKnown ? baseline.validDays >= policy.minimumEarlierRestingHrDays && baseline.rhrDeltaBpm !== null : null,
+    blockers: !baselineKnown ? ["未有可核對的本次跑前量測／相同來源及量測類型基準；較早基準日數未知，不以全域心率筆數代替。"]
+      : baseline.validDays < policy.minimumEarlierRestingHrDays ? [`本次靜止心率偏差仍缺至少${policy.minimumEarlierRestingHrDays - baseline.validDays}個量測日前的相同來源／類型基準日，必須位於之前${policy.restingHrLookbackDays}日內；同日及未來量測不能補足。`]
+      : baseline.rhrDeltaBpm === null ? ["本次偏差尚未可核對。"] : [],
+  };
+  const evidenceState: RunningContextReadiness["evidenceState"] = !args.historyComplete ? "partial-history"
+    : !args.selectedGroup ? "no-selected-group" : !full || !eligibleDays ? "no-eligible-runs" : "complete";
+  const dataQualified = args.historyComplete && !!full && !training.missingDays && !commonObservedHeldOut.missingDays
+    && deploymentEvidence.sufficient && factors.sleep.includedInLatestModel && factors.restingHR.includedInLatestModel;
+  const blockers = [...factors.sleep.blockers, ...factors.restingHR.blockers];
+  if (!args.historyComplete) blockers.push("歷史讀取未完成；目前數字只限已載入相符組別，不可推定未讀資料數量或啟用修正。");
+  if (!args.selectedGroup || !full) blockers.push("未有相符的已讀合資格組別；支持計數為零，不以其他組別或全域紀錄補足。");
+  if (training.missingDays) blockers.push(`相符較早訓練日至少還差${training.missingDays}日。`);
+  if (commonHeldOut.missingDays) blockers.push(`基準／天氣／完整情境的同列共同留出日至少還差${commonHeldOut.missingDays}日。`);
+  if (commonObservedHeldOut.missingDays) blockers.push(`共同留出列中睡眠及心率偏差均實測的香港日至少還差${commonObservedHeldOut.missingDays}日；各自不同列、不同日或补值不可互相補足。`);
+  if (deploymentEvidence.missingDays) blockers.push(`最新同因子結構且所有啟用因子實測的部署留出日至少還差${deploymentEvidence.missingDays}日；補值留出不算。`);
+  if (args.unknownRoute) blockers.push("路面／坡度未核對，只允許描述性比較。");
+  if (!args.weatherTimingVerified) blockers.push("歷史天氣來源／觀測時刻未與跑步起點核對。");
+  if (full && !full.deploymentEligible) blockers.push(full.status === "model_worse" ? "模型誤差比同列歷史基準更差；收齊因子不會自行啟用。" : "尚未通過穩定實測誤差改善與完整部署證據門檻；收齊筆數不保證啟用。");
+  if (args.prediction?.reason) blockers.push(reasonZH[args.prediction.reason] ?? "本次情境未通過支援門檻。");
+  if (!current.coverage.sleepWakeVerified || current.sleepHours === null) blockers.push("本次睡眠尚未核對為有效跑前量測。");
+  blockers.push(...currentBaseline.blockers);
+  return { version: "running-context-readiness-v1", scope: "full-loaded-selected-cohort-before-as-of-hk-date", asOfHK: args.asOfHK,
+    evidenceState, historyComplete: args.historyComplete, eligibleRows: full?.eligibleRows ?? 0, eligibleDays,
+    thresholds: { minimumFeatureObservations: policy.minimumFeatureObservations, minimumFeatureObservedDays: policy.minimumFeatureObservedDays,
+      minimumTrainingDays: policy.minimumTrainingDays, minimumHeldOutDays: policy.minimumHeldOutDays,
+      minimumFeatureStandardDeviation: policy.minimumFeatureStandardDeviation,
+      minimumEarlierRestingHrDays: policy.minimumEarlierRestingHrDays, restingHrLookbackDays: policy.restingHrLookbackDays },
+    factors, training, commonHeldOut, commonObservedHeldOut, deploymentEvidence, currentBaseline,
+    sleepDateConvention: args.sleepDateConvention, currentSleepVerified: current.coverage.sleepWakeVerified && current.sleepHours !== null,
+    validationStatus: full?.status ?? null, predictionBlocker: args.prediction?.reason ?? null, dataQualified,
+    advancedReady: dataQualified && args.correctionEnabled && args.sleepDateConvention === "wake-date"
+      && current.coverage.sleepWakeVerified && current.sleepHours !== null && currentBaseline.sufficient === true,
+    minimumAdditionalMatchedDays: Math.max(factors.sleep.minimumAdditionalMatchedDays, factors.restingHR.minimumAdditionalMatchedDays,
+      training.missingDays + Math.max(commonObservedHeldOut.missingDays, deploymentEvidence.missingDays)), blockers: Array.from(new Set(blockers)),
+    notes: ["所有日數是香港日期的獨立合資格跑步日；樣本列可多於日數，但同日重複資料不補缺日。睡眠是已核對跑前時長，心率因子是具較早基準的偏差，而非心率原始總筆數。",
+      "缺額是目前已讀同組別的條件式下限，並非還要新增多少原始紀錄就一定啟用；可先覆核現有睡眠日期／時間、路面、天氣時刻及有效配對。",
+      "新合資格配對必須屬相同類型／路面／坡度／配速定義及相近距離、跑前有效、具足夠變化並在訓練支援範圍；較早訓練和之後留出日不可同日或未來洩漏。",
+      `靜止心率偏差每次須有量測日前${policy.restingHrLookbackDays}日內至少${policy.minimumEarlierRestingHrDays}個更早相同來源及類型基準日；本次基準缺額不能由未來新量測倒填。`,
+      "共同三模型比較與完整最新因子結構的部署證據分開計數；兩個恢復因子均合資格亦仍須路線／天氣時刻、當次支援及穩定實測誤差改善，絕非自動修正或因果保證。"] };
+}
+
 export function buildRunningContextReport(dataset: Dataset, input: RunningContextReportInput, asOfHK = todayHK(), currentTimestamp = new Date().toISOString()): RunningContextReport {
   const prepared = prepareRunningContextHistory(dataset);
   const near = (km: number) => Math.max(km, input.targetDistanceKm) / Math.min(km, input.targetDistanceKm) <= 1.15;
@@ -172,7 +280,10 @@ export function buildRunningContextReport(dataset: Dataset, input: RunningContex
       reason: prediction?.reason ? reasonZH[prediction.reason] ?? "目前情境未通過支援與留出驗證門檻" : !weatherTimingVerified ? "歷史天氣時刻未與跑步起點核對；只作參考，不啟用額外修正" : p !== undefined ? "僅限相同訓練組別的有界配速關聯；不自動套入完賽模擬" : "沒有足夠相近歷史可作數值預測",
       currentSleepHours: current.sleep?.confidence === "verified-pre-run" ? current.sleepHours : null,
       currentSleepDateHK: current.sleep?.date ?? null, currentRestingHRDeltaBpm: current.rhrDeltaBpm, currentRestingHRDateHK: current.restingHr?.date ?? null },
-    rows: rows.slice(0, 200), limitations };
+    rows: rows.slice(0, 200), limitations,
+    readiness: buildRunningContextReadiness({ full, commonHeldOut: intersection, current, asOfHK, historyComplete: dataset.complete,
+      selectedGroup: selectedGroup !== null, sleepDateConvention: input.sleepDateConvention ?? "unknown", prediction,
+      correctionEnabled: enabled, weatherTimingVerified, unknownRoute }) };
 }
 /** Compact deterministic facts for the LLM: no raw metadata, GPS, notes, source credentials or invented effects. */
 export function runningContextAIText(dataset: Dataset, focusStartHK?: string): string {

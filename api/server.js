@@ -1217,7 +1217,7 @@ var systemRouter = router({
 
 // server/routers.ts
 import { z as z6 } from "zod";
-import { eq as eq5, and as and4, desc as desc2, gte as gte2, like, or as or3, sql as sql7, inArray as inArray2 } from "drizzle-orm";
+import { eq as eq5, and as and4, desc as desc2, gte as gte2, like, or as or3, sql as sql8, inArray as inArray2 } from "drizzle-orm";
 
 // server/_core/llm.ts
 var ensureArray = (value) => Array.isArray(value) ? value : [value];
@@ -1623,8 +1623,8 @@ function daysAgoHK(days) {
   return hkNow.toISOString().slice(0, 10);
 }
 function toHKDateString(date2) {
-  const hkDate = new Date(date2.getTime() + HK_OFFSET_MS);
-  return hkDate.toISOString().slice(0, 10);
+  const hkDate2 = new Date(date2.getTime() + HK_OFFSET_MS);
+  return hkDate2.toISOString().slice(0, 10);
 }
 
 // server/csvImport.ts
@@ -2833,6 +2833,478 @@ function parseGarminRawFile(buffer, filename) {
 import { createHash } from "node:crypto";
 import { TRPCError as TRPCError3 } from "@trpc/server";
 import { sql as sql2 } from "drizzle-orm";
+
+// server/runningGpsWeather.ts
+import { performance } from "node:perf_hooks";
+var HOUR = 36e5;
+var DAY = 24 * HOUR;
+var HK = 8 * HOUR;
+var CELL_KM = 1.5;
+var LAT_STEP = CELL_KM / 111.195;
+var MAX_ROWS = 1e5;
+var MAX_PIECES = 1e5;
+var MAX_BATCHES = 24;
+var MAX_REQUESTS = 24;
+var METRICS = ["temperature", "humidity", "apparentTemp", "windSpeed", "precipitation", "weatherCode"];
+var FIELDS = "weather_code,temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m,precipitation";
+var ENDPOINTS = {
+  archive: "https://archive-api.open-meteo.com/v1/archive",
+  "historical-forecast": "https://historical-forecast-api.open-meteo.com/v1/forecast",
+  forecast: "https://api.open-meteo.com/v1/forecast"
+};
+var KNOWN_CODES = /* @__PURE__ */ new Set([0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 97, 99]);
+var round = (n) => Number(n.toFixed(6));
+var hkTime = (ms) => new Date(ms + HK).toISOString().replace("Z", "+08:00");
+var hkHour = (ms) => new Date(ms + HK).toISOString().slice(0, 16);
+var hkDate = (ms) => hkHour(ms).slice(0, 10);
+function object(raw) {
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+}
+function finite(raw) {
+  if (typeof raw !== "number" && (typeof raw !== "string" || !raw.trim())) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+function parseRunningGpsTimestamp(raw) {
+  if (typeof raw !== "string") return null;
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:\d{2})$/);
+  if (!m) return null;
+  const [year, month, day, hour, minute, second] = m.slice(1, 7).map((n) => Number(n ?? 0));
+  if (year < 1940 || month < 1 || month > 12 || day < 1 || hour > 23 || minute > 59 || second > 59) return null;
+  const calendar = new Date(Date.UTC(year, month - 1, day));
+  if (calendar.getUTCMonth() !== month - 1 || calendar.getUTCDate() !== day) return null;
+  const offset = m[8];
+  if (offset !== "Z" && (Number(offset.slice(1, 3)) > 14 || Number(offset.slice(4)) > 59 || Number(offset.slice(1, 3)) === 14 && Number(offset.slice(4)) !== 0)) return null;
+  const t2 = Date.parse(raw);
+  return Number.isFinite(t2) ? t2 : null;
+}
+function countMetrics() {
+  return Object.fromEntries(METRICS.map((k) => [k, 0]));
+}
+function initialProvenance(maxGapSeconds) {
+  return {
+    version: 1,
+    intervalStartHK: null,
+    intervalEndHK: null,
+    timeBasis: "unknown",
+    samplingMethod: "observed-route-time-weighted-1.5km-cells-hourly",
+    spatialCellKm: 1.5,
+    maxGapSeconds,
+    totalSeconds: 0,
+    observedRouteSeconds: 0,
+    coveredSeconds: 0,
+    coverageFraction: 0,
+    metricCoveredSeconds: countMetrics(),
+    sampledCells: 0,
+    sampledHours: 0,
+    plannedCellDayBatches: 0,
+    selectedCellDayBatches: 0,
+    requestsMade: 0,
+    cacheHits: 0,
+    failedSegments: 0,
+    source: [],
+    providerTimeStartHK: null,
+    providerTimeEndHK: null,
+    precipitationBasis: "preceding-hour-mm-prorated-by-route-seconds",
+    precipitationMeanRateMmPerHour: null,
+    conditions: [],
+    mixedConditions: false,
+    reasons: ["\u5929\u6C23\u70BA Open-Meteo \u6A21\u578B\uFF0F\u518D\u5206\u6790\u4F30\u8A08\uFF1B\u7D04 1.5 km \u8DEF\u7DDA\u683C\u4E0D\u7B49\u65BC\u4F9B\u61C9\u5546\u7D04 9 km \u5929\u6C23\u89E3\u6790\u5EA6\u6216\u5206\u5340\u5BE6\u6E2C\u3002"]
+  };
+}
+var bounded = (raw, fallback, lo, hi) => Number.isFinite(raw) ? Math.max(lo, Math.min(hi, Math.floor(raw))) : fallback;
+function longitudeDelta(a, b) {
+  return (b - a + 540) % 360 - 180;
+}
+function normalizeLongitude(lon) {
+  return ((lon + 180) % 360 + 360) % 360 - 180;
+}
+function distanceMeters(a, b) {
+  const r = Math.PI / 180, dlat = (b.lat - a.lat) * r, dlon = longitudeDelta(a.lon, b.lon) * r;
+  const q = Math.sin(dlat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dlon / 2) ** 2;
+  return 6371e3 * 2 * Math.asin(Math.sqrt(Math.max(0, Math.min(1, q))));
+}
+function routePieces(a, b, start, end) {
+  const dt = b.t - a.t, dlat = b.lat - a.lat, dlon = longitudeDelta(a.lon, b.lon);
+  const f0 = (start - a.t) / dt, f1 = (end - a.t) / dt;
+  const cuts = [f0, f1];
+  const nLat = Math.ceil(180 / LAT_STEP), stepLat = 180 / nLat;
+  const cross = (origin, delta, step, base, lo, hi, out) => {
+    if (Math.abs(delta) < 1e-12) return;
+    const low = Math.min(origin + delta * lo, origin + delta * hi), high = Math.max(origin + delta * lo, origin + delta * hi);
+    for (let k = Math.floor((low - base) / step) + 1; k <= Math.floor((high - base) / step); k++) {
+      const f = (base + k * step - origin) / delta;
+      if (f > lo + 1e-12 && f < hi - 1e-12) out.push(f);
+      if (out.length > 2048) break;
+    }
+  };
+  cross(a.lat, dlat, stepLat, -90, f0, f1, cuts);
+  cuts.sort((x, y) => x - y);
+  const spatial = [...cuts];
+  for (let i = 1; i < cuts.length; i++) {
+    const lo = cuts[i - 1], hi = cuts[i], midLat = a.lat + dlat * (lo + hi) / 2;
+    const band = Math.min(nLat - 1, Math.max(0, Math.floor((midLat + 90) / stepLat)));
+    const centerLat = -90 + (band + 0.5) * stepLat;
+    const nLon = Math.max(1, Math.ceil(360 * 111.195 * Math.cos(centerLat * Math.PI / 180) / CELL_KM));
+    cross(a.lon, dlon, 360 / nLon, -180, lo, hi, spatial);
+  }
+  for (let t2 = (Math.floor(start / HOUR) + 1) * HOUR; t2 < end; t2 += HOUR) spatial.push((t2 - a.t) / dt);
+  spatial.sort((x, y) => x - y);
+  const result = [];
+  for (let i = 1; i < spatial.length; i++) {
+    const lo = spatial[i - 1], hi = spatial[i];
+    if (hi - lo < 1e-12) continue;
+    const f = (lo + hi) / 2, lat = a.lat + dlat * f, lon = normalizeLongitude(a.lon + dlon * f);
+    const band = Math.min(nLat - 1, Math.max(0, Math.floor((lat + 90) / stepLat)));
+    const latitude = -90 + (band + 0.5) * stepLat;
+    const nLon = Math.max(1, Math.ceil(360 * 111.195 * Math.cos(latitude * Math.PI / 180) / CELL_KM));
+    const col = Math.min(nLon - 1, Math.floor((lon + 180) / (360 / nLon)));
+    result.push({ cellId: `${band}:${col}`, latitude: round(latitude), longitude: round(-180 + (col + 0.5) * 360 / nLon), start: a.t + lo * dt, end: a.t + hi * dt });
+  }
+  return result;
+}
+function deriveRunningGpsWeatherPlan(input, options = {}) {
+  const maxGap = bounded(options.maxGapSeconds, 120, 1, 120), maxBatches = bounded(options.maxBatches, MAX_BATCHES, 1, MAX_BATCHES);
+  const p = initialProvenance(maxGap);
+  const empty = () => ({ segments: [], batches: [], locationLabel: "GPS\u4F4D\u7F6E", provenance: p });
+  let raw = input.timeSeries;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      p.reasons.push("\u6642\u9593\u5E8F\u5217\u7121\u6CD5\u8B80\u53D6\u3002");
+      return empty();
+    }
+  }
+  if (!Array.isArray(raw) || raw.length < 2 || raw.length > MAX_ROWS) {
+    p.reasons.push("\u6C92\u6709\u8DB3\u5920\u6642\u9593\u6A23\u672C\uFF0C\u6216\u8D85\u904E 100,000 \u500B\u6A23\u672C\u5B89\u5168\u4E0A\u9650\u3002");
+    return empty();
+  }
+  const invalidPrefix = [0];
+  const points = [];
+  let rejected = 0;
+  for (let index2 = 0; index2 < raw.length; index2++) {
+    const r = object(raw[index2]), t2 = parseRunningGpsTimestamp(r.timestamp);
+    invalidPrefix.push(invalidPrefix[index2] + (t2 === null ? 1 : 0));
+    if (t2 === null) {
+      rejected++;
+      continue;
+    }
+    let lat = finite(r.latitude), lon = finite(r.longitude);
+    if (lat === null || lon === null || Math.abs(lat) > 90 || Math.abs(lon) > 180 || lat === 0 && lon === 0) {
+      lat = null;
+      lon = null;
+      rejected++;
+    }
+    points.push({ t: t2, lat, lon, index: index2 });
+  }
+  points.sort((a, b) => a.t - b.t || a.index - b.index);
+  const unique2 = [];
+  let duplicates = 0;
+  for (const point of points) {
+    const last = unique2.at(-1);
+    if (!last || last.t !== point.t) unique2.push({ ...point });
+    else {
+      duplicates++;
+      if (last.lat !== point.lat || last.lon !== point.lon) {
+        last.lat = null;
+        last.lon = null;
+      }
+    }
+  }
+  if (rejected) p.reasons.push(`\u5DF2\u62D2\u7D55 ${rejected} \u500B\u7121\u6548 GPS\uFF0F\u660E\u78BA\u6642\u5340\u6642\u6233\u6A23\u672C\uFF1B\u4E0D\u4EE5 elapsedSec\u3001\u96F6\u503C\u6216\u9810\u8A2D\u6642\u9593\u4EE3\u66FF\u3002`);
+  if (duplicates) p.reasons.push(`\u5DF2\u5408\u4F75 ${duplicates} \u500B\u91CD\u8907\u6642\u6233\uFF1B\u4F4D\u7F6E\u885D\u7A81\u7684\u91CD\u8907\u6642\u6233\u4E0D\u5EFA\u7ACB\u5340\u9593\u3002`);
+  const details = object(input.garminDetails), explicit = input.activityWindow;
+  let start = null, end = null;
+  if (explicit?.verified === true || details.activityWindowVerified === 1 || details.activityWindowVerified === true) {
+    start = parseRunningGpsTimestamp(explicit?.startTimestamp ?? details.activityStartTimestamp);
+    end = parseRunningGpsTimestamp(explicit?.endTimestamp ?? details.activityEndTimestamp);
+    p.timeBasis = "verified-activity-window";
+  } else if (details.sourceFormat === void 0 || details.sourceFormat === "GPX" || details.sourceFormat === "TCX") {
+    start = unique2[0]?.t ?? null;
+    end = unique2.at(-1)?.t ?? null;
+    p.timeBasis = "timestamped-sample-bounds";
+    p.reasons.push("\u6D3B\u52D5\u6642\u6BB5\u63A1\u5BE6\u969B\u6642\u9593\u5E8F\u5217\u9996\u5C3E\u6642\u6233\uFF1B\u9996\u5C3E\u6A23\u672C\u4EE5\u5916\u7684\u6D3B\u52D5\u6642\u9593\u672A\u77E5\uFF0C\u4E0D\u5411\u5916\u5EF6\u4F38\u3002");
+  }
+  if (start === null || end === null || end <= start || end - start > 7 * DAY || hkDate(start) < "1940-01-01") {
+    p.timeBasis = "unknown";
+    p.reasons.push("\u6B20\u7F3A\u6709\u6548\u53EF\u9A57\u8B49\u7684\u6D3B\u52D5\u9996\u5C3E\u6642\u6233\uFF0C\u6216\u6642\u6BB5\u8D85\u904E 7 \u65E5\u5B89\u5168\u4E0A\u9650\u3002");
+    return empty();
+  }
+  p.intervalStartHK = hkTime(start);
+  p.intervalEndHK = hkTime(end);
+  p.totalSeconds = (end - start) / 1e3;
+  const segments = /* @__PURE__ */ new Map(), batches = /* @__PURE__ */ new Map();
+  let gaps = 0, invalidIntervals = 0, pieces = 0, capped = false;
+  for (let i = 1; i < unique2.length; i++) {
+    const a = unique2[i - 1], b = unique2[i], left = Math.max(start, a.t), right = Math.min(end, b.t);
+    if (right <= left) continue;
+    const loIndex = Math.min(a.index, b.index), hiIndex = Math.max(a.index, b.index);
+    if (a.lat === null || b.lat === null || invalidPrefix[hiIndex] - invalidPrefix[loIndex + 1] > 0) {
+      invalidIntervals++;
+      continue;
+    }
+    const dt = (b.t - a.t) / 1e3;
+    if (dt > maxGap) {
+      gaps++;
+      continue;
+    }
+    if (distanceMeters(a, b) / dt > 15) {
+      invalidIntervals++;
+      continue;
+    }
+    const parts = routePieces(a, b, left, right);
+    if (pieces + parts.length > MAX_PIECES) {
+      capped = true;
+      break;
+    }
+    pieces += parts.length;
+    for (const part of parts) {
+      const hour = Math.floor((part.start + 1e-3) / HOUR) * HOUR;
+      const date2 = hkDate(hour), key = `${part.cellId}/${date2}`, seconds = (part.end - part.start) / 1e3;
+      const sKey = `${key}/${hkHour(hour)}`;
+      const old = segments.get(sKey);
+      if (old) old.seconds += seconds;
+      else segments.set(sKey, { cellId: part.cellId, latitude: part.latitude, longitude: part.longitude, hourHK: hkHour(hour), precipitationHourHK: hkHour(hour + HOUR), seconds, batchKey: key });
+      const batch = batches.get(key);
+      if (batch) batch.endDate = hkDate(hour + HOUR) > batch.endDate ? hkDate(hour + HOUR) : batch.endDate;
+      else batches.set(key, { key, cellId: part.cellId, latitude: part.latitude, longitude: part.longitude, date: date2, startDate: date2, endDate: hkDate(hour + HOUR), firstTimestamp: part.start });
+      p.observedRouteSeconds += seconds;
+    }
+  }
+  if (gaps) p.reasons.push(`${gaps} \u500B\u76F8\u9130\u6A23\u672C\u7F3A\u53E3\u8D85\u904E ${maxGap} \u79D2\uFF1B\u7F3A\u53E3\u4E0D\u8A08\u5165\u8986\u84CB\u3002`);
+  if (invalidIntervals) p.reasons.push(`${invalidIntervals} \u500B\u5340\u9593\u542B\u7121\u6548 GPS\uFF0F\u672A\u5B9A\u6642\u6A23\u672C\uFF0F\u8D85\u904E 15 m/s \u8DF3\u9EDE\uFF1B\u6C92\u6709\u5047\u9020\u6CBF\u9014\u8986\u84CB\u3002`);
+  if (capped) p.reasons.push("\u8DEF\u7DDA\u5207\u5206\u9054 100,000 \u500B\u7247\u6BB5\u4E0A\u9650\uFF1B\u5176\u9918\u8DEF\u6BB5\u6C92\u6709\u8A08\u5165\u8986\u84CB\u3002");
+  if (p.observedRouteSeconds < p.totalSeconds - 1e-3) p.reasons.push("\u771F\u5BE6 GPS \u5340\u9593\u672A\u8986\u84CB\u5168\u90E8\u6D3B\u52D5\u6642\u6BB5\uFF1B\u4E0D\u5EF6\u4F38\u9996\u5C3E\u6216\u586B\u88DC\u7F3A\u53E3\u3002");
+  const all = Array.from(batches.values()).sort((a, b) => a.firstTimestamp - b.firstTimestamp || a.key.localeCompare(b.key));
+  p.plannedCellDayBatches = all.length;
+  let selected = all;
+  if (all.length > maxBatches) {
+    const indices = maxBatches === 1 ? [0] : Array.from({ length: maxBatches }, (_, i) => Math.round(i * (all.length - 1) / (maxBatches - 1)));
+    selected = indices.map((i) => all[i]);
+    p.reasons.push(`\u8DEF\u7DDA\u8D85\u904E ${maxBatches} \u500B\u4F4D\u7F6E\uFF0F\u65E5\u671F\u6279\u6B21\u4E0A\u9650\uFF1B\u5DF2\u5206\u6563\u53D6\u6A23\u9996\u5C3E\u8207\u5168\u7A0B\uFF0C\u5176\u9918\u53EA\u5217\u672A\u8986\u84CB\uFF0C\u4E0D\u80FD\u7A31\u5168\u7A0B\u5E73\u5747\u3002`);
+  }
+  p.selectedCellDayBatches = selected.length;
+  p.observedRouteSeconds = round(p.observedRouteSeconds);
+  const cells = new Map(Array.from(segments.values()).map((s) => [s.cellId, s]));
+  const sole = cells.size === 1 ? Array.from(cells.values())[0] : null;
+  return {
+    segments: Array.from(segments.values()),
+    batches: selected,
+    locationLabel: sole ? `GPS\u4F4D\u7F6E\uFF08${sole.latitude.toFixed(2)}, ${sole.longitude.toFixed(2)}\uFF09` : `GPS\u4F4D\u7F6E\uFF08\u8DE8 ${cells.size} \u500B\u7D04 1.5 km \u8DEF\u7DDA\u5206\u5340\uFF09`,
+    provenance: p
+  };
+}
+var defaultCache = /* @__PURE__ */ new Map();
+function validMetric(raw, lo, hi = Infinity) {
+  return typeof raw === "number" && Number.isFinite(raw) && raw >= lo && raw <= hi ? raw : null;
+}
+function parseProvider(raw, batch, source) {
+  const payload = object(raw), hourly = object(payload.hourly), units = object(payload.hourly_units);
+  if (payload.utc_offset_seconds !== HK / 1e3 || payload.timezone !== void 0 && payload.timezone !== "Asia/Hong_Kong") return null;
+  for (const [key, expected] of Object.entries({ temperature_2m: "\xB0C", apparent_temperature: "\xB0C", relative_humidity_2m: "%", wind_speed_10m: "km/h", precipitation: "mm" })) {
+    if (units[key] !== void 0 && units[key] !== expected) return null;
+  }
+  if (!Array.isArray(hourly.time) || hourly.time.length > 72) return null;
+  const values = /* @__PURE__ */ new Map(), duplicates = /* @__PURE__ */ new Set();
+  const at = (name, index2) => Array.isArray(hourly[name]) ? hourly[name][index2] : null;
+  hourly.time.forEach((time, index2) => {
+    if (typeof time !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:00$/.test(time) || parseRunningGpsTimestamp(`${time}+08:00`) === null || time.slice(0, 10) < batch.startDate || time.slice(0, 10) > batch.endDate) return;
+    if (values.has(time) || duplicates.has(time)) {
+      values.delete(time);
+      duplicates.add(time);
+      return;
+    }
+    const code = validMetric(at("weather_code", index2), 0, 99);
+    values.set(time, {
+      temperature: validMetric(at("temperature_2m", index2), -100, 100),
+      humidity: validMetric(at("relative_humidity_2m", index2), 0, 100),
+      apparentTemp: validMetric(at("apparent_temperature", index2), -150, 100),
+      windSpeed: validMetric(at("wind_speed_10m", index2), 0),
+      precipitation: validMetric(at("precipitation", index2), 0),
+      weatherCode: code !== null && KNOWN_CODES.has(code) ? code : null
+    });
+  });
+  return values.size ? { values, source } : null;
+}
+function providerUrl(batch, source) {
+  const url = new URL(ENDPOINTS[source]);
+  const params = {
+    latitude: String(batch.latitude),
+    longitude: String(batch.longitude),
+    start_date: batch.startDate,
+    end_date: batch.endDate,
+    hourly: FIELDS,
+    timezone: "Asia/Hong_Kong",
+    timeformat: "iso8601",
+    temperature_unit: "celsius",
+    wind_speed_unit: "kmh",
+    precipitation_unit: "mm"
+  };
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  return url;
+}
+async function getRunningGpsWeather(input, options = {}) {
+  const begun = performance.now(), budget = bounded(options.budgetMs, 19e3, 1, 2e4), deadline = begun + budget;
+  const plan = deriveRunningGpsWeatherPlan(input, options), p = plan.provenance;
+  const finishUnknown = (reason) => {
+    if (reason) p.reasons.push(reason);
+    return { status: "unknown", observation: null, provenance: p };
+  };
+  if (!plan.segments.length || !plan.batches.length) return finishUnknown("\u6CA1\u6709\u53EF\u7528\u9023\u7E8C GPS\uFF0F\u6642\u6233\u5340\u9593\uFF0C\u672A\u5957\u7528\u9999\u6E2F\u6216\u9810\u8A2D\u6642\u9593\u3002");
+  const now = options.now?.getTime() ?? Date.now();
+  if (!Number.isFinite(now) || parseRunningGpsTimestamp(p.intervalEndHK) > now) return finishUnknown("\u6D3B\u52D5\u6642\u6BB5\u5728\u672A\u4F86\u6216\u67E5\u8A62\u6642\u9418\u7121\u6548\uFF1B\u4E0D\u628A\u672A\u4F86\u9810\u5831\u7576\u5DF2\u5B8C\u6210\u6D3B\u52D5\u5929\u6C23\u3002");
+  const maxRequests = bounded(options.maxRequests, MAX_REQUESTS, 1, MAX_REQUESTS), concurrency = bounded(options.concurrency, 3, 1, 3);
+  const fetcher = options.fetch ?? globalThis.fetch;
+  const cache = options.cache === false ? null : options.cache ?? (options.fetch ? null : defaultCache);
+  const data = /* @__PURE__ */ new Map();
+  let failures = 0, fallbacks = 0;
+  async function request(batch, source) {
+    const url = providerUrl(batch, source), key = url.href, hit = cache?.get(key);
+    if (hit && hit.expiresAt > now) {
+      p.cacheHits++;
+      return hit.data;
+    }
+    if (hit) cache?.delete(key);
+    if (p.requestsMade >= maxRequests || performance.now() >= deadline) return null;
+    p.requestsMade++;
+    const wait = Math.max(1, Math.min(6e3, deadline - performance.now())), controller = new AbortController();
+    let timer;
+    try {
+      const task = (async () => {
+        const response = await fetcher(url, { signal: controller.signal });
+        if (!response.ok) return null;
+        return parseProvider(await response.json(), batch, source);
+      })();
+      const result = await Promise.race([task, new Promise((resolve) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          resolve(null);
+        }, wait);
+      })]);
+      if (result && cache) {
+        if (cache.size >= 128) cache.delete(cache.keys().next().value);
+        cache.set(key, { expiresAt: now + (source === "archive" ? HOUR : 10 * 6e4), data: result });
+      }
+      return result;
+    } catch {
+      return null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  let cursor = 0;
+  async function worker() {
+    while (cursor < plan.batches.length) {
+      const batch = plan.batches[cursor++];
+      const recent = batch.date >= hkDate(now - 5 * DAY);
+      const primary = recent ? batch.date === hkDate(now) ? "forecast" : "historical-forecast" : "archive";
+      let result = await request(batch, primary);
+      if (!result && recent && p.requestsMade < maxRequests && performance.now() < deadline) {
+        fallbacks++;
+        result = await request(batch, primary === "historical-forecast" ? "forecast" : "historical-forecast");
+      }
+      if (result) data.set(batch.key, result);
+      else failures++;
+    }
+  }
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  const sums = countMetrics(), conditions = /* @__PURE__ */ new Map(), cells = /* @__PURE__ */ new Set(), hours = /* @__PURE__ */ new Set(), sources = /* @__PURE__ */ new Set(), providerTimes = /* @__PURE__ */ new Set();
+  for (const segment of plan.segments) {
+    const payload = data.get(segment.batchKey), instant = payload?.values.get(segment.hourHK), rain = payload?.values.get(segment.precipitationHourHK);
+    const values = {
+      temperature: instant?.temperature ?? null,
+      humidity: instant?.humidity ?? null,
+      apparentTemp: instant?.apparentTemp ?? null,
+      windSpeed: instant?.windSpeed ?? null,
+      weatherCode: instant?.weatherCode ?? null,
+      precipitation: rain?.precipitation ?? null
+    };
+    const valid2 = METRICS.filter((k) => values[k] !== null);
+    if (valid2.length < METRICS.length) p.failedSegments++;
+    if (!valid2.length || !payload) continue;
+    cells.add(segment.cellId);
+    sources.add(payload.source);
+    if (valid2.some((k) => k !== "precipitation")) {
+      hours.add(segment.hourHK);
+      providerTimes.add(`${segment.hourHK}:00+08:00`);
+    }
+    if (values.precipitation !== null) {
+      hours.add(segment.precipitationHourHK);
+      providerTimes.add(`${segment.precipitationHourHK}:00+08:00`);
+    }
+    if (valid2.length === METRICS.length) p.coveredSeconds += segment.seconds;
+    for (const metric3 of valid2) {
+      p.metricCoveredSeconds[metric3] += segment.seconds;
+      sums[metric3] += values[metric3] * segment.seconds;
+    }
+    if (values.weatherCode !== null) conditions.set(values.weatherCode, (conditions.get(values.weatherCode) ?? 0) + segment.seconds);
+  }
+  p.sampledCells = cells.size;
+  p.sampledHours = hours.size;
+  p.source = Array.from(sources).sort();
+  const orderedTimes = Array.from(providerTimes).sort();
+  p.providerTimeStartHK = orderedTimes[0] ?? null;
+  p.providerTimeEndHK = orderedTimes.at(-1) ?? null;
+  p.coveredSeconds = round(p.coveredSeconds);
+  p.coverageFraction = p.totalSeconds ? Math.min(1, p.coveredSeconds / p.totalSeconds) : 0;
+  for (const metric3 of METRICS) p.metricCoveredSeconds[metric3] = round(p.metricCoveredSeconds[metric3]);
+  if (failures) p.reasons.push(`${failures} \u500B\u4F4D\u7F6E\uFF0F\u65E5\u671F\u6279\u6B21\u4E0D\u53EF\u53D6\u5F97\u3001\u672A\u9078\u53D6\u6216\u9054\u8ACB\u6C42\uFF0F\u6642\u9593\u4E0A\u9650\uFF1B\u7F3A\u5931\u4E0D\u7576\u4F5C\u96F6\u503C\u3002`);
+  if (fallbacks) p.reasons.push(`\u8FD1\u671F\u4F86\u6E90\u672A\u53D6\u5F97\u8CC7\u6599\uFF0C\u5DF2\u5617\u8A66 ${fallbacks} \u6B21\u5B98\u65B9\u8FD1\u671F\u5F8C\u5099\u4F86\u6E90\u3002`);
+  if (p.failedSegments) p.reasons.push(`${p.failedSegments} \u500B\u683C\uFF0F\u5C0F\u6642\u7247\u6BB5\u7F3A\u5C11\u5168\u90E8\u6216\u90E8\u5206\u8B8A\u6578\uFF1B\u5404\u6578\u503C\u53EA\u6309\u81EA\u8EAB\u6709\u6548\u79D2\u6578\u5E73\u5747\uFF0C\u5B8C\u6574\u8986\u84CB\u9700\u516D\u9805\u8B8A\u6578\u5168\u6709\u8CC7\u6599\u3002`);
+  if (p.requestsMade >= maxRequests) p.reasons.push(`\u6700\u591A ${maxRequests} \u6B21\u5BE6\u969B\u8ACB\u6C42\uFF1B\u4E0D\u70BA\u88DC\u9F4A\u8986\u84CB\u8D85\u51FA\u9650\u5236\u3002`);
+  if (performance.now() >= deadline) p.reasons.push(`\u5DF2\u9054 ${budget} ms \u975E\u963B\u585E\u67E5\u8A62\u9810\u7B97\u3002`);
+  p.reasons.push("\u77AC\u6642\u8B8A\u6578\u63A1\u4F9B\u61C9\u5546\u8A72\u5C0F\u6642\u503C\u4E26\u6309\u8DEF\u7DDA\u505C\u7559\u79D2\u6578\u52A0\u6B0A\uFF1B\u964D\u6C34\u7528\u4E0B\u4E00\u5C0F\u6642\u6642\u6233\u7684\u524D\u4E00\u5C0F\u6642\u6BEB\u7C73\u91CF\u6309\u79D2\u6BD4\u4F8B\u7A4D\u5206\uFF0C\u7F3A\u5931\u6642\u4E0D\u63A8\u7B97\u5168\u7A0B\u7E3D\u91CF\u3002");
+  const mean2 = (metric3) => p.metricCoveredSeconds[metric3] > 0 ? round(sums[metric3] / p.metricCoveredSeconds[metric3]) : null;
+  p.precipitationMeanRateMmPerHour = mean2("precipitation");
+  const conditionSeconds = p.metricCoveredSeconds.weatherCode;
+  p.conditions = Array.from(conditions).sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([code, seconds]) => ({ code, label: weatherConditionFromCode(code), seconds: round(seconds), fraction: conditionSeconds ? round(seconds / conditionSeconds) : 0 }));
+  p.mixedConditions = p.conditions.length > 1;
+  if (!METRICS.some((k) => p.metricCoveredSeconds[k] > 0)) return finishUnknown("\u5929\u6C23\u4F86\u6E90\u7121\u53EF\u7528\u6578\u503C\uFF1B\u4FDD\u7559\u672A\u77E5\uFF0C\u532F\u5165\u53EF\u7E7C\u7E8C\u3002");
+  const dominant = p.conditions[0];
+  const observation = {
+    temperature: mean2("temperature"),
+    humidity: mean2("humidity"),
+    apparentTemp: mean2("apparentTemp"),
+    windSpeed: mean2("windSpeed"),
+    precipitation: p.metricCoveredSeconds.precipitation > 0 ? round(sums.precipitation / 3600) : null,
+    weatherCode: dominant?.code ?? null,
+    weatherCondition: dominant ? p.mixedConditions ? `\u6DF7\u5408\u5929\u6C23\uFF08\u4EE5${dominant.label}\u70BA\u4E3B\uFF09` : dominant.label : null,
+    weatherLocation: plan.locationLabel,
+    weatherObservedAt: p.providerTimeStartHK === p.providerTimeEndHK ? p.providerTimeStartHK : `${p.providerTimeStartHK} \u2013 ${p.providerTimeEndHK}`,
+    weatherSource: `Open-Meteo ${p.source.join(" / ")} \u6A21\u578B\u4F30\u8A08\uFF08GPS\u8DEF\u7DDA\u6642\u9593\u52A0\u6B0A${p.coverageFraction >= 1 - 1e-8 ? "" : "\uFF1B\u90E8\u5206\u8986\u84CB"}\uFF09`
+  };
+  return { status: p.coverageFraction >= 1 - 1e-8 ? "complete" : "partial", observation, provenance: p };
+}
+var fetchRunningGpsWeather = getRunningGpsWeather;
+
+// server/garminGpsWeather.ts
+async function prepareGarminGpsWeather(preview) {
+  const unchanged = { fields: {}, metadata: {} };
+  const hasGps = preview.timeSeries.some((sample) => typeof sample.latitude === "number" && Number.isFinite(sample.latitude) && typeof sample.longitude === "number" && Number.isFinite(sample.longitude));
+  if (!hasGps) return unchanged;
+  try {
+    const result = await fetchRunningGpsWeather({ timeSeries: preview.timeSeries, garminDetails: preview.garminDetails });
+    const metadata = { gpsWeatherStatus: result.status, gpsWeatherProvenance: JSON.stringify(result.provenance) };
+    if (!result.observation || result.status !== "complete" || preview.fields.weatherSource?.trim()) return { fields: {}, metadata };
+    const fields = {};
+    for (const [key, value] of Object.entries(result.observation)) {
+      if (value !== null && value !== void 0) fields[key] = String(value);
+    }
+    return { fields, metadata };
+  } catch {
+    return { fields: {}, metadata: { gpsWeatherStatus: "unknown", gpsWeatherWarning: "GPS \u5929\u6C23\u66AB\u672A\u53D6\u5F97\uFF1B\u539F\u6A94\u53CA\u8DD1\u6B65\u6458\u8981\u6B63\u5E38\u4FDD\u5B58\uFF0C\u53EF\u5728\u9010\u79D2\u66F2\u7DDA\u91CD\u65B0\u53EA\u8B80\u67E5\u8A62\u3002" } };
+  }
+}
+
+// server/garminDirectSave.ts
 var SUMMARY_COLUMNS = {
   date: "date",
   runningType: "running_type",
@@ -2995,6 +3467,7 @@ async function saveGarminImport(input) {
   const rawFileHash = createHash("sha256").update(buffer).digest("hex");
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
+  const gpsWeather = await prepareGarminGpsWeather(preview);
   const result = await db.transaction(async (tx) => {
     const hashLock = BigInt.asIntN(64, BigInt(`0x${rawFileHash.slice(0, 16)}`)).toString();
     await tx.execute(sql2`SELECT pg_advisory_xact_lock(${hashLock}::bigint)`);
@@ -3098,6 +3571,7 @@ async function saveGarminImport(input) {
     }
     const fields = {
       ...preview.fields,
+      ...gpsWeather.fields,
       hour: String(Math.floor(summary.durationSec / 3600)),
       minutes: String(Math.floor(summary.durationSec % 3600 / 60)),
       second: String(Math.round(summary.durationSec % 60))
@@ -3112,7 +3586,7 @@ async function saveGarminImport(input) {
     const inserted = rowsFrom(await tx.execute(sql2`
       INSERT INTO running_logs (${sql2.raw(entries.map(([, column]) => column).join(", "))}, garmin_details, laps, time_series)
       VALUES (${sql2.join(values.map((value) => sql2`${value}`), sql2`, `)},
-        ${JSON.stringify(metadata)}::jsonb, ${JSON.stringify(preview.laps)}::jsonb, ${JSON.stringify(preview.timeSeries)}::jsonb)
+        ${JSON.stringify({ ...metadata, ...gpsWeather.metadata })}::jsonb, ${JSON.stringify(preview.laps)}::jsonb, ${JSON.stringify(preview.timeSeries)}::jsonb)
       RETURNING ${ROW_COLUMNS}
     `))[0];
     if (!inserted) throw new Error("\u672A\u80FD\u5EFA\u7ACB Garmin \u8DD1\u6B65\u7D00\u9304\uFF0C\u8ACB\u91CD\u8A66\u3002");
@@ -3183,7 +3657,7 @@ var inRange = (v, lo, hi) => {
   return n !== null && n >= lo && n <= hi ? n : null;
 };
 var meanPair = (a, b) => a !== null && b !== null ? (a + b) / 2 : null;
-var round = (n) => n === null ? null : Number(n.toFixed(4));
+var round2 = (n) => n === null ? null : Number(n.toFixed(4));
 function parseRunningPaceSeconds(raw) {
   const text2 = String(raw ?? "").trim();
   const clock2 = text2.match(/^(\d{1,2}):(\d{2})(?:\.(\d+))?$/);
@@ -3218,7 +3692,7 @@ function clip(intervals, start, end) {
 function half(intervals) {
   const speed = metric(intervals, "speed");
   const paired = intervals.filter((i) => i.speed !== null && i.hr !== null);
-  return { movingSeconds: speed.seconds, paceSecPerKm: round(speed.mean ? 1e3 / speed.mean : null), pairedSeconds: metric(paired, "speed").seconds, pairedHeartRate: round(metric(paired, "hr").mean), pairedSpeedMps: round(metric(paired, "speed").mean) };
+  return { movingSeconds: speed.seconds, paceSecPerKm: round2(speed.mean ? 1e3 / speed.mean : null), pairedSeconds: metric(paired, "speed").seconds, pairedHeartRate: round2(metric(paired, "hr").mean), pairedSpeedMps: round2(metric(paired, "speed").mean) };
 }
 function sustainedPace(intervals, duration) {
   let bestSpeed = null;
@@ -3250,7 +3724,7 @@ function sustainedPace(intervals, duration) {
       if (bestSpeed === null || speed > bestSpeed) bestSpeed = speed;
     }
   }
-  return round(bestSpeed && bestSpeed > 0 ? 1e3 / bestSpeed : null);
+  return round2(bestSpeed && bestSpeed > 0 ? 1e3 / bestSpeed : null);
 }
 function deriveRunningContinuousEvidence(raw, options = {}) {
   const value = jsonValue(raw);
@@ -3304,7 +3778,7 @@ function deriveRunningContinuousEvidence(raw, options = {}) {
   const sourceElapsed = maxElapsed === null && duration === null ? null : Math.max(maxElapsed ?? 0, duration ?? 0);
   const observedSeconds = intervals.reduce((s, i) => s + i.end - i.start, 0);
   const speed = metric(intervals, "speed"), hr = metric(intervals, "hr"), cadence = metric(intervals, "cadence"), power = metric(intervals, "power");
-  const coverage = (seconds) => sourceElapsed && sourceElapsed > 0 ? round(Math.min(1, seconds / sourceElapsed)) : null;
+  const coverage = (seconds) => sourceElapsed && sourceElapsed > 0 ? round2(Math.min(1, seconds / sourceElapsed)) : null;
   const moving = intervals.filter((i) => i.speed !== null);
   const groupDurations = /* @__PURE__ */ new Map();
   for (const i of moving) groupDurations.set(i.segment, (groupDurations.get(i.segment) ?? 0) + i.end - i.start);
@@ -3350,18 +3824,18 @@ function deriveRunningContinuousEvidence(raw, options = {}) {
     heartRateCoverage: coverage(hr.seconds),
     cadenceCoverage: coverage(cadence.seconds),
     powerCoverage: coverage(power.seconds),
-    meanMovingPaceSecPerKm: round(meanPace),
-    meanHeartRate: round(hr.mean),
-    meanCadence: round(cadence.mean),
-    meanPowerWatts: round(power.mean),
-    meanTemperatureC: round(metric(intervals, "temperature").mean),
-    meanAbsoluteGradePct: round(metric(moving.map((i) => ({ ...i, grade: i.grade === null ? null : Math.abs(i.grade) })), "grade").mean),
-    derivedStepLengthM: round(stepSeconds ? stepSum / stepSeconds : null),
+    meanMovingPaceSecPerKm: round2(meanPace),
+    meanHeartRate: round2(hr.mean),
+    meanCadence: round2(cadence.mean),
+    meanPowerWatts: round2(power.mean),
+    meanTemperatureC: round2(metric(intervals, "temperature").mean),
+    meanAbsoluteGradePct: round2(metric(moving.map((i) => ({ ...i, grade: i.grade === null ? null : Math.abs(i.grade) })), "grade").mean),
+    derivedStepLengthM: round2(stepSeconds ? stepSum / stepSeconds : null),
     firstHalf,
     secondHalf,
-    heartRateDriftPct: comparable && firstHalf.pairedHeartRate && secondHalf.pairedHeartRate ? round((secondHalf.pairedHeartRate / firstHalf.pairedHeartRate - 1) * 100) : null,
-    latePaceChangePct: firstHalf.movingSeconds >= 60 && secondHalf.movingSeconds >= 60 && firstHalf.paceSecPerKm && secondHalf.paceSecPerKm ? round((secondHalf.paceSecPerKm / firstHalf.paceSecPerKm - 1) * 100) : null,
-    efficiencyDecouplingPct: comparable && firstHalf.pairedSpeedMps && secondHalf.pairedSpeedMps && firstHalf.pairedHeartRate && secondHalf.pairedHeartRate ? round((1 - secondHalf.pairedSpeedMps / secondHalf.pairedHeartRate / (firstHalf.pairedSpeedMps / firstHalf.pairedHeartRate)) * 100) : null,
+    heartRateDriftPct: comparable && firstHalf.pairedHeartRate && secondHalf.pairedHeartRate ? round2((secondHalf.pairedHeartRate / firstHalf.pairedHeartRate - 1) * 100) : null,
+    latePaceChangePct: firstHalf.movingSeconds >= 60 && secondHalf.movingSeconds >= 60 && firstHalf.paceSecPerKm && secondHalf.paceSecPerKm ? round2((secondHalf.paceSecPerKm / firstHalf.paceSecPerKm - 1) * 100) : null,
+    efficiencyDecouplingPct: comparable && firstHalf.pairedSpeedMps && secondHalf.pairedSpeedMps && firstHalf.pairedHeartRate && secondHalf.pairedHeartRate ? round2((1 - secondHalf.pairedSpeedMps / secondHalf.pairedHeartRate / (firstHalf.pairedSpeedMps / firstHalf.pairedHeartRate)) * 100) : null,
     bestObservedPace: { seconds60: sustainedPace(intervals, 60), seconds300: sustainedPace(intervals, 300), seconds1200: sustainedPace(intervals, 1200) },
     baselineQualified,
     limitations
@@ -3532,9 +4006,9 @@ ${included.map((run) => run.line).join("\n")}
 import { sql as sql4 } from "drizzle-orm";
 
 // shared/runningPreRunContext.ts
-var HOUR = 36e5;
-var DAY = 24 * HOUR;
-var HK_OFFSET = 8 * HOUR;
+var HOUR2 = 36e5;
+var DAY2 = 24 * HOUR2;
+var HK_OFFSET = 8 * HOUR2;
 var MAX_AGE_HOURS = 48;
 function canonicalPreRunHKDate(value) {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
@@ -3594,12 +4068,12 @@ function baselineFor(selected, candidates, windowDays) {
   const result = emptyBaseline(windowDays);
   if (!selected || selected.restingHr === null) return result;
   const cutoff = selected.day;
-  result.windowStartHKdate = hkDateAt(cutoff - windowDays * DAY);
+  result.windowStartHKdate = hkDateAt(cutoff - windowDays * DAY2);
   result.windowEndExclusiveHKdate = selected.measurement.measurementHKdate;
   result.source = selected.measurement.source;
   result.kind = selected.kind === "sleep" ? "verified-overnight-sleep" : "prior-day-heart-summary";
   if (result.source === null) return result;
-  const eligible = candidates.filter((c) => c.kind === selected.kind && c.measurement.source === result.source && c.restingHr !== null && c.day >= cutoff - windowDays * DAY && c.day < cutoff && (selected.kind !== "sleep" || c.time !== null && selected.time !== null && c.time < selected.time));
+  const eligible = candidates.filter((c) => c.kind === selected.kind && c.measurement.source === result.source && c.restingHr !== null && c.day >= cutoff - windowDays * DAY2 && c.day < cutoff && (selected.kind !== "sleep" || c.time !== null && selected.time !== null && c.time < selected.time));
   const unique2 = deduplicate(eligible);
   result.records = unique2.map((c) => ({ id: c.measurement.id, date: c.measurement.date, measurementHKdate: c.measurement.measurementHKdate, source: c.measurement.source, restingHr: c.restingHr }));
   result.validDays = unique2.length;
@@ -3645,8 +4119,8 @@ function matchRunningPreRunContext(run, sleepRows, heartRows, options = {}) {
   const measurement = (row, time, method, proxyBounds) => {
     const measurementHKdate = time === null ? row.date : hkDateAt(time);
     const day = dayStart(measurementHKdate);
-    const exactAge = time !== null && start !== null ? (start - time) / HOUR : null;
-    const bounds = proxyBounds ?? (exactAge !== null ? [exactAge, exactAge] : time !== null ? [(runDay - time) / HOUR, (runDay + DAY - time) / HOUR] : [Math.max(0, ((start ?? runDay) - (day + DAY)) / HOUR), ((start ?? runDay + DAY) - day) / HOUR]);
+    const exactAge = time !== null && start !== null ? (start - time) / HOUR2 : null;
+    const bounds = proxyBounds ?? (exactAge !== null ? [exactAge, exactAge] : time !== null ? [(runDay - time) / HOUR2, (runDay + DAY2 - time) / HOUR2] : [Math.max(0, ((start ?? runDay) - (day + DAY2)) / HOUR2), ((start ?? runDay + DAY2) - day) / HOUR2]);
     return { id: row.id, date: row.date, measurementHKdate, source: typeof row.source === "string" && row.source.trim() ? row.source : null, pairingMethod: method, confidence: time === null ? "lower-confidence" : "verified-pre-run", measuredAt: time === null ? null : new Date(time).toISOString(), ageHours: exactAge, ageHoursRange: bounds };
   };
   const add = (row, kind, time, method, hours, score, proxyBounds) => {
@@ -3724,12 +4198,12 @@ function matchRunningPreRunContext(run, sleepRows, heartRows, options = {}) {
         continue;
       }
       const earliestPossibleWake = parsePreRunZonedTimestamp(`${row.date}T${row.waketime}+08:00`);
-      const latestPossibleWake = earliestPossibleWake + DAY;
+      const latestPossibleWake = earliestPossibleWake + DAY2;
       if (latestPossibleWake > start) {
         reject("ambiguous-proxy-wake-after-run");
         continue;
       }
-      proxyBounds = [(start - latestPossibleWake) / HOUR, (start - earliestPossibleWake) / HOUR];
+      proxyBounds = [(start - latestPossibleWake) / HOUR2, (start - earliestPossibleWake) / HOUR2];
     }
     add(row, "sleep", wake, method, hours, score, proxyBounds);
   }
@@ -4000,8 +4474,8 @@ var LIMITATIONS = Object.freeze([
   "Expanding history does not explicitly model fitness trends or changing effort; recent-half improvement is required but does not eliminate time confounding.",
   "Only median-baseline versus joint-context ridge is tested; individual feature effects and incremental weather-versus-physiology benefit are not separately validated."
 ]);
-var finite = (x) => typeof x === "number" && Number.isFinite(x);
-var inRange2 = (x, min, max) => finite(x) && x >= min && x <= max;
+var finite2 = (x) => typeof x === "number" && Number.isFinite(x);
+var inRange2 = (x, min, max) => finite2(x) && x >= min && x <= max;
 var validDistance = (x) => inRange2(x, 0.2, 200);
 var validPace = (x) => inRange2(x, 90, 1800);
 function validDate(date2) {
@@ -4118,7 +4592,7 @@ function solve(matrix, rhs) {
   for (let col = 0; col < rhs.length; col++) {
     let pivot = col;
     for (let row = col + 1; row < rhs.length; row++) if (Math.abs(augmented[row][col]) > Math.abs(augmented[pivot][col])) pivot = row;
-    if (!finite(augmented[pivot][col]) || Math.abs(augmented[pivot][col]) < 1e-10) return null;
+    if (!finite2(augmented[pivot][col]) || Math.abs(augmented[pivot][col]) < 1e-10) return null;
     [augmented[pivot], augmented[col]] = [augmented[col], augmented[pivot]];
     const divisor = augmented[col][col];
     for (let j = col; j <= rhs.length; j++) augmented[col][j] /= divisor;
@@ -4129,7 +4603,7 @@ function solve(matrix, rhs) {
     }
   }
   const result = augmented.map((row) => row[rhs.length]);
-  return result.every(finite) ? result : null;
+  return result.every(finite2) ? result : null;
 }
 function design(features, scales, winsorize) {
   return [1, ...scales.map((scale) => {
@@ -4155,7 +4629,7 @@ function fit(rows) {
       const all = rows.map((row) => Math.max(min, Math.min(max, row.features.values[name] ?? impute)));
       const center = weightedMean(all, weights);
       const sd = Math.sqrt(weightedMean(all.map((value) => (value - center) ** 2), weights));
-      if (sd >= POLICY.minimumFeatureStandardDeviation && finite(sd)) {
+      if (sd >= POLICY.minimumFeatureStandardDeviation && finite2(sd)) {
         scale = { name, impute, center, sd, min, max };
         scales.push(scale);
       }
@@ -4200,9 +4674,9 @@ function fit(rows) {
     const huberBound = Math.max(5, 1.5 * 1.4826 * median(residuals));
     robustWeights = weights.map((w, i) => w * (residuals[i] <= huberBound ? 1 : huberBound / residuals[i]));
   }
-  const humidities = rows.filter((row) => row.features.values.temperatureHumidityInteraction !== void 0).map((row) => row.features.humidity).filter(finite);
+  const humidities = rows.filter((row) => row.features.values.temperatureHumidityInteraction !== void 0).map((row) => row.features.humidity).filter(finite2);
   const humiditySupport = scales.some((scale) => scale.name === "temperatureHumidityInteraction") && humidities.length ? { min: quantile(humidities, 0.05), max: quantile(humidities, 0.95) } : null;
-  const temperatures = rows.map((row) => row.features.values.temperatureC).filter(finite);
+  const temperatures = rows.map((row) => row.features.values.temperatureC).filter(finite2);
   const temperatureSupport = scales.some((scale) => scale.name === "temperatureC" || scale.name === "temperatureHumidityInteraction") && temperatures.length ? { min: quantile(temperatures, 0.05), max: quantile(temperatures, 0.95) } : null;
   for (const item of coverage) {
     const index2 = scales.findIndex((scale) => scale.name === item.feature);
@@ -4422,7 +4896,7 @@ function predictRunningContext(history, query) {
   if (predicted === null) return blocked("non_finite_prediction");
   const correction = boundedCorrection(model.baseline, predicted);
   const corrected = model.baseline + correction;
-  if (!validPace(corrected) || !finite(correction)) return blocked("non_finite_prediction");
+  if (!validPace(corrected) || !finite2(correction)) return blocked("non_finite_prediction");
   return {
     status: "enabled",
     autoApplyAllowed: true,
@@ -4573,6 +5047,130 @@ var reasonZH = {
   non_finite_prediction: "\u6578\u503C\u7121\u6548\uFF0C\u7981\u6B62\u8ABF\u6574"
 };
 var featuresZH = { temperatureC: "\u6C23\u6EAB", temperatureHumidityInteraction: "\u6EAB\u5EA6\xD7\u6FD5\u5EA6", preRunSleepHours: "\u5DF2\u6838\u5C0D\u8DD1\u524D\u7761\u7720", restingHrDeltaBpm: "\u8DD1\u524D\u975C\u6B62\u5FC3\u7387\u504F\u5DEE" };
+function buildRunningContextReadiness(args) {
+  const { full, current } = args;
+  const policy = RUNNING_CROSS_VALIDATION_POLICY;
+  const eligibleDays = full?.eligibleDays ?? 0;
+  const dayGate = (days, requiredDays) => ({
+    days,
+    requiredDays,
+    missingDays: Math.max(0, requiredDays - days)
+  });
+  const factor = (feature) => {
+    const coverage = full?.featureCoverage.find((c) => c.feature === feature);
+    const observedRows = coverage?.observedTrainingRows ?? 0;
+    const observedDays = coverage?.observedTrainingDays ?? 0;
+    const sampleDeficit = Math.max(0, policy.minimumFeatureObservations - observedRows);
+    const observedDayDeficit = Math.max(0, policy.minimumFeatureObservedDays - observedDays);
+    const varianceKnown = !!coverage && (coverage.trainingStandardDeviation !== null || (full?.latestTrainingDays ?? 0) >= policy.minimumTrainingDays && !sampleDeficit && !observedDayDeficit);
+    const varianceSufficient = varianceKnown ? coverage?.enabledInLatestModel === true : null;
+    const blockers2 = [];
+    if (sampleDeficit) blockers2.push(`\u5408\u8CC7\u683C\u56E0\u5B50\u6A23\u672C\u81F3\u5C11\u9084\u5DEE${sampleDeficit}\u7B46\uFF1B\u4E0D\u662F\u5065\u5EB7\u8868\u5168\u57DF\u7B46\u6578\u3002`);
+    if (observedDayDeficit) blockers2.push(`\u5408\u8CC7\u683C\u9999\u6E2F\u8DD1\u6B65\u65E5\u81F3\u5C11\u9084\u5DEE${observedDayDeficit}\u65E5\uFF1B\u540C\u65E5\u91CD\u8907\u7D00\u9304\u4E0D\u88DC\u65E5\u6578\u3002`);
+    if (!varianceKnown) blockers2.push("\u6709\u6548\u8B8A\u5316\u5C1A\u672A\u53EF\u6838\u9A57\uFF1B\u6A23\u672C\uFF0F\u8A13\u7DF4\u65E5\u4E0D\u8DB3\u6642\u4E0D\u63A8\u5B9A\u8B8A\u7570\u70BA\u96F6\u3002");
+    else if (!varianceSufficient) blockers2.push("\u56E0\u5B50\u8B8A\u5316\u672A\u901A\u904E\u56FA\u5B9A\u8B8A\u7570\u9580\u6ABB\uFF1B\u7B46\u6578\u8DB3\u5920\u4EA6\u4E0D\u4EE3\u8868\u5DF2\u7D0D\u5165\u6A21\u578B\u3002");
+    if (!coverage?.enabledInLatestModel) blockers2.push("\u6B64\u56E0\u5B50\u5C1A\u672A\u7D0D\u5165\u6700\u65B0\u8A13\u7DF4\u6A21\u578B\u3002");
+    if (feature === "preRunSleepHours" && args.sleepDateConvention === "unknown") blockers2.push("\u7761\u7720\u65E5\u671F\u8A9E\u610F\u672A\u78BA\u8A8D\uFF1A\u65E5\u671F\uFF0F\u6642\u9418\u4EE3\u7406\u4E0D\u80FD\u7B97\u5DF2\u6838\u5C0D\u8DD1\u524D\u7761\u7720\uFF1B\u5148\u8986\u6838\u73FE\u6709\u7D00\u9304\u7684\u8D77\u5E8A\u65E5\u6216\u660E\u78BA\u6642\u9593\u6233\uFF0C\u4E0D\u5FC5\u4E00\u5F8B\u65B0\u589E\u91CF\u6E2C\u3002");
+    return {
+      feature,
+      includedInLatestModel: coverage?.enabledInLatestModel ?? false,
+      observedRows,
+      observedDays,
+      missingRows: coverage?.missingTrainingRows ?? 0,
+      missingDays: Math.max(0, eligibleDays - observedDays),
+      invalidRows: coverage?.invalidTrainingRows ?? 0,
+      sampleDeficit,
+      observedDayDeficit,
+      minimumAdditionalMatchedDays: Math.max(sampleDeficit, observedDayDeficit),
+      trainingStandardDeviation: coverage?.trainingStandardDeviation ?? null,
+      varianceKnown,
+      varianceSufficient,
+      blockers: blockers2
+    };
+  };
+  const factors = { sleep: factor("preRunSleepHours"), restingHR: factor("restingHrDeltaBpm") };
+  const training = { ...dayGate(eligibleDays, policy.minimumTrainingDays), latestModelDays: full?.latestTrainingDays ?? 0 };
+  const commonHeldOut = { ...dayGate(new Set(args.commonHeldOut.map((r) => r.hkDate)).size, policy.minimumHeldOutDays), rows: args.commonHeldOut.length };
+  const observedCommonRows = args.commonHeldOut.filter((r) => r.observedFeatureNames.includes("preRunSleepHours") && r.observedFeatureNames.includes("restingHrDeltaBpm"));
+  const commonObservedHeldOut = { ...dayGate(new Set(observedCommonRows.map((r) => r.hkDate)).size, policy.minimumHeldOutDays), rows: observedCommonRows.length };
+  const deploymentEvidence = {
+    ...dayGate(full?.deploymentEvidence?.matchedDays ?? 0, policy.minimumHeldOutDays),
+    rows: full?.deploymentEvidence?.matchedRows ?? 0,
+    sufficient: full?.deploymentEvidenceSufficient ?? false,
+    latestFeatureNames: full?.latestFeatureNames ?? []
+  };
+  const baseline = current.baselines.days28;
+  const baselineKnown = !!full && current.run.valid && current.restingHr !== null && baseline.source !== null && baseline.kind !== null && baseline.windowEndExclusiveHKdate !== null;
+  const currentBaseline = {
+    measurementDateHK: full ? current.restingHr?.measurementHKdate ?? null : null,
+    windowStartHK: baselineKnown ? baseline.windowStartHKdate : null,
+    windowEndExclusiveHK: baselineKnown ? baseline.windowEndExclusiveHKdate : null,
+    lookbackDays: policy.restingHrLookbackDays,
+    requiredEarlierDays: policy.minimumEarlierRestingHrDays,
+    observedEarlierDays: baselineKnown ? baseline.validDays : null,
+    missingEarlierDays: baselineKnown ? Math.max(0, policy.minimumEarlierRestingHrDays - baseline.validDays) : null,
+    sufficient: baselineKnown ? baseline.validDays >= policy.minimumEarlierRestingHrDays && baseline.rhrDeltaBpm !== null : null,
+    blockers: !baselineKnown ? ["\u672A\u6709\u53EF\u6838\u5C0D\u7684\u672C\u6B21\u8DD1\u524D\u91CF\u6E2C\uFF0F\u76F8\u540C\u4F86\u6E90\u53CA\u91CF\u6E2C\u985E\u578B\u57FA\u6E96\uFF1B\u8F03\u65E9\u57FA\u6E96\u65E5\u6578\u672A\u77E5\uFF0C\u4E0D\u4EE5\u5168\u57DF\u5FC3\u7387\u7B46\u6578\u4EE3\u66FF\u3002"] : baseline.validDays < policy.minimumEarlierRestingHrDays ? [`\u672C\u6B21\u975C\u6B62\u5FC3\u7387\u504F\u5DEE\u4ECD\u7F3A\u81F3\u5C11${policy.minimumEarlierRestingHrDays - baseline.validDays}\u500B\u91CF\u6E2C\u65E5\u524D\u7684\u76F8\u540C\u4F86\u6E90\uFF0F\u985E\u578B\u57FA\u6E96\u65E5\uFF0C\u5FC5\u9808\u4F4D\u65BC\u4E4B\u524D${policy.restingHrLookbackDays}\u65E5\u5167\uFF1B\u540C\u65E5\u53CA\u672A\u4F86\u91CF\u6E2C\u4E0D\u80FD\u88DC\u8DB3\u3002`] : baseline.rhrDeltaBpm === null ? ["\u672C\u6B21\u504F\u5DEE\u5C1A\u672A\u53EF\u6838\u5C0D\u3002"] : []
+  };
+  const evidenceState = !args.historyComplete ? "partial-history" : !args.selectedGroup ? "no-selected-group" : !full || !eligibleDays ? "no-eligible-runs" : "complete";
+  const dataQualified = args.historyComplete && !!full && !training.missingDays && !commonObservedHeldOut.missingDays && deploymentEvidence.sufficient && factors.sleep.includedInLatestModel && factors.restingHR.includedInLatestModel;
+  const blockers = [...factors.sleep.blockers, ...factors.restingHR.blockers];
+  if (!args.historyComplete) blockers.push("\u6B77\u53F2\u8B80\u53D6\u672A\u5B8C\u6210\uFF1B\u76EE\u524D\u6578\u5B57\u53EA\u9650\u5DF2\u8F09\u5165\u76F8\u7B26\u7D44\u5225\uFF0C\u4E0D\u53EF\u63A8\u5B9A\u672A\u8B80\u8CC7\u6599\u6578\u91CF\u6216\u555F\u7528\u4FEE\u6B63\u3002");
+  if (!args.selectedGroup || !full) blockers.push("\u672A\u6709\u76F8\u7B26\u7684\u5DF2\u8B80\u5408\u8CC7\u683C\u7D44\u5225\uFF1B\u652F\u6301\u8A08\u6578\u70BA\u96F6\uFF0C\u4E0D\u4EE5\u5176\u4ED6\u7D44\u5225\u6216\u5168\u57DF\u7D00\u9304\u88DC\u8DB3\u3002");
+  if (training.missingDays) blockers.push(`\u76F8\u7B26\u8F03\u65E9\u8A13\u7DF4\u65E5\u81F3\u5C11\u9084\u5DEE${training.missingDays}\u65E5\u3002`);
+  if (commonHeldOut.missingDays) blockers.push(`\u57FA\u6E96\uFF0F\u5929\u6C23\uFF0F\u5B8C\u6574\u60C5\u5883\u7684\u540C\u5217\u5171\u540C\u7559\u51FA\u65E5\u81F3\u5C11\u9084\u5DEE${commonHeldOut.missingDays}\u65E5\u3002`);
+  if (commonObservedHeldOut.missingDays) blockers.push(`\u5171\u540C\u7559\u51FA\u5217\u4E2D\u7761\u7720\u53CA\u5FC3\u7387\u504F\u5DEE\u5747\u5BE6\u6E2C\u7684\u9999\u6E2F\u65E5\u81F3\u5C11\u9084\u5DEE${commonObservedHeldOut.missingDays}\u65E5\uFF1B\u5404\u81EA\u4E0D\u540C\u5217\u3001\u4E0D\u540C\u65E5\u6216\u8865\u503C\u4E0D\u53EF\u4E92\u76F8\u88DC\u8DB3\u3002`);
+  if (deploymentEvidence.missingDays) blockers.push(`\u6700\u65B0\u540C\u56E0\u5B50\u7D50\u69CB\u4E14\u6240\u6709\u555F\u7528\u56E0\u5B50\u5BE6\u6E2C\u7684\u90E8\u7F72\u7559\u51FA\u65E5\u81F3\u5C11\u9084\u5DEE${deploymentEvidence.missingDays}\u65E5\uFF1B\u88DC\u503C\u7559\u51FA\u4E0D\u7B97\u3002`);
+  if (args.unknownRoute) blockers.push("\u8DEF\u9762\uFF0F\u5761\u5EA6\u672A\u6838\u5C0D\uFF0C\u53EA\u5141\u8A31\u63CF\u8FF0\u6027\u6BD4\u8F03\u3002");
+  if (!args.weatherTimingVerified) blockers.push("\u6B77\u53F2\u5929\u6C23\u4F86\u6E90\uFF0F\u89C0\u6E2C\u6642\u523B\u672A\u8207\u8DD1\u6B65\u8D77\u9EDE\u6838\u5C0D\u3002");
+  if (full && !full.deploymentEligible) blockers.push(full.status === "model_worse" ? "\u6A21\u578B\u8AA4\u5DEE\u6BD4\u540C\u5217\u6B77\u53F2\u57FA\u6E96\u66F4\u5DEE\uFF1B\u6536\u9F4A\u56E0\u5B50\u4E0D\u6703\u81EA\u884C\u555F\u7528\u3002" : "\u5C1A\u672A\u901A\u904E\u7A69\u5B9A\u5BE6\u6E2C\u8AA4\u5DEE\u6539\u5584\u8207\u5B8C\u6574\u90E8\u7F72\u8B49\u64DA\u9580\u6ABB\uFF1B\u6536\u9F4A\u7B46\u6578\u4E0D\u4FDD\u8B49\u555F\u7528\u3002");
+  if (args.prediction?.reason) blockers.push(reasonZH[args.prediction.reason] ?? "\u672C\u6B21\u60C5\u5883\u672A\u901A\u904E\u652F\u63F4\u9580\u6ABB\u3002");
+  if (!current.coverage.sleepWakeVerified || current.sleepHours === null) blockers.push("\u672C\u6B21\u7761\u7720\u5C1A\u672A\u6838\u5C0D\u70BA\u6709\u6548\u8DD1\u524D\u91CF\u6E2C\u3002");
+  blockers.push(...currentBaseline.blockers);
+  return {
+    version: "running-context-readiness-v1",
+    scope: "full-loaded-selected-cohort-before-as-of-hk-date",
+    asOfHK: args.asOfHK,
+    evidenceState,
+    historyComplete: args.historyComplete,
+    eligibleRows: full?.eligibleRows ?? 0,
+    eligibleDays,
+    thresholds: {
+      minimumFeatureObservations: policy.minimumFeatureObservations,
+      minimumFeatureObservedDays: policy.minimumFeatureObservedDays,
+      minimumTrainingDays: policy.minimumTrainingDays,
+      minimumHeldOutDays: policy.minimumHeldOutDays,
+      minimumFeatureStandardDeviation: policy.minimumFeatureStandardDeviation,
+      minimumEarlierRestingHrDays: policy.minimumEarlierRestingHrDays,
+      restingHrLookbackDays: policy.restingHrLookbackDays
+    },
+    factors,
+    training,
+    commonHeldOut,
+    commonObservedHeldOut,
+    deploymentEvidence,
+    currentBaseline,
+    sleepDateConvention: args.sleepDateConvention,
+    currentSleepVerified: current.coverage.sleepWakeVerified && current.sleepHours !== null,
+    validationStatus: full?.status ?? null,
+    predictionBlocker: args.prediction?.reason ?? null,
+    dataQualified,
+    advancedReady: dataQualified && args.correctionEnabled && args.sleepDateConvention === "wake-date" && current.coverage.sleepWakeVerified && current.sleepHours !== null && currentBaseline.sufficient === true,
+    minimumAdditionalMatchedDays: Math.max(
+      factors.sleep.minimumAdditionalMatchedDays,
+      factors.restingHR.minimumAdditionalMatchedDays,
+      training.missingDays + Math.max(commonObservedHeldOut.missingDays, deploymentEvidence.missingDays)
+    ),
+    blockers: Array.from(new Set(blockers)),
+    notes: [
+      "\u6240\u6709\u65E5\u6578\u662F\u9999\u6E2F\u65E5\u671F\u7684\u7368\u7ACB\u5408\u8CC7\u683C\u8DD1\u6B65\u65E5\uFF1B\u6A23\u672C\u5217\u53EF\u591A\u65BC\u65E5\u6578\uFF0C\u4F46\u540C\u65E5\u91CD\u8907\u8CC7\u6599\u4E0D\u88DC\u7F3A\u65E5\u3002\u7761\u7720\u662F\u5DF2\u6838\u5C0D\u8DD1\u524D\u6642\u9577\uFF0C\u5FC3\u7387\u56E0\u5B50\u662F\u5177\u8F03\u65E9\u57FA\u6E96\u7684\u504F\u5DEE\uFF0C\u800C\u975E\u5FC3\u7387\u539F\u59CB\u7E3D\u7B46\u6578\u3002",
+      "\u7F3A\u984D\u662F\u76EE\u524D\u5DF2\u8B80\u540C\u7D44\u5225\u7684\u689D\u4EF6\u5F0F\u4E0B\u9650\uFF0C\u4E26\u975E\u9084\u8981\u65B0\u589E\u591A\u5C11\u539F\u59CB\u7D00\u9304\u5C31\u4E00\u5B9A\u555F\u7528\uFF1B\u53EF\u5148\u8986\u6838\u73FE\u6709\u7761\u7720\u65E5\u671F\uFF0F\u6642\u9593\u3001\u8DEF\u9762\u3001\u5929\u6C23\u6642\u523B\u53CA\u6709\u6548\u914D\u5C0D\u3002",
+      "\u65B0\u5408\u8CC7\u683C\u914D\u5C0D\u5FC5\u9808\u5C6C\u76F8\u540C\u985E\u578B\uFF0F\u8DEF\u9762\uFF0F\u5761\u5EA6\uFF0F\u914D\u901F\u5B9A\u7FA9\u53CA\u76F8\u8FD1\u8DDD\u96E2\u3001\u8DD1\u524D\u6709\u6548\u3001\u5177\u8DB3\u5920\u8B8A\u5316\u4E26\u5728\u8A13\u7DF4\u652F\u63F4\u7BC4\u570D\uFF1B\u8F03\u65E9\u8A13\u7DF4\u548C\u4E4B\u5F8C\u7559\u51FA\u65E5\u4E0D\u53EF\u540C\u65E5\u6216\u672A\u4F86\u6D29\u6F0F\u3002",
+      `\u975C\u6B62\u5FC3\u7387\u504F\u5DEE\u6BCF\u6B21\u9808\u6709\u91CF\u6E2C\u65E5\u524D${policy.restingHrLookbackDays}\u65E5\u5167\u81F3\u5C11${policy.minimumEarlierRestingHrDays}\u500B\u66F4\u65E9\u76F8\u540C\u4F86\u6E90\u53CA\u985E\u578B\u57FA\u6E96\u65E5\uFF1B\u672C\u6B21\u57FA\u6E96\u7F3A\u984D\u4E0D\u80FD\u7531\u672A\u4F86\u65B0\u91CF\u6E2C\u5012\u586B\u3002`,
+      "\u5171\u540C\u4E09\u6A21\u578B\u6BD4\u8F03\u8207\u5B8C\u6574\u6700\u65B0\u56E0\u5B50\u7D50\u69CB\u7684\u90E8\u7F72\u8B49\u64DA\u5206\u958B\u8A08\u6578\uFF1B\u5169\u500B\u6062\u5FA9\u56E0\u5B50\u5747\u5408\u8CC7\u683C\u4EA6\u4ECD\u9808\u8DEF\u7DDA\uFF0F\u5929\u6C23\u6642\u523B\u3001\u7576\u6B21\u652F\u63F4\u53CA\u7A69\u5B9A\u5BE6\u6E2C\u8AA4\u5DEE\u6539\u5584\uFF0C\u7D55\u975E\u81EA\u52D5\u4FEE\u6B63\u6216\u56E0\u679C\u4FDD\u8B49\u3002"
+    ]
+  };
+}
 function buildRunningContextReport(dataset, input, asOfHK = todayHK(), currentTimestamp = (/* @__PURE__ */ new Date()).toISOString()) {
   const prepared = prepareRunningContextHistory(dataset);
   const near = (km) => Math.max(km, input.targetDistanceKm) / Math.min(km, input.targetDistanceKm) <= 1.15;
@@ -4692,7 +5290,20 @@ function buildRunningContextReport(dataset, input, asOfHK = todayHK(), currentTi
       currentRestingHRDateHK: current.restingHr?.date ?? null
     },
     rows: rows.slice(0, 200),
-    limitations
+    limitations,
+    readiness: buildRunningContextReadiness({
+      full,
+      commonHeldOut: intersection,
+      current,
+      asOfHK,
+      historyComplete: dataset.complete,
+      selectedGroup: selectedGroup !== null,
+      sleepDateConvention: input.sleepDateConvention ?? "unknown",
+      prediction,
+      correctionEnabled: enabled,
+      weatherTimingVerified,
+      unknownRoute
+    })
   };
 }
 function runningContextAIText(dataset, focusStartHK) {
@@ -4749,6 +5360,37 @@ function runningContextAIText(dataset, focusStartHK) {
 ## \u8DD1\u6B65\u524D\u6062\u5FA9\u8207\u5929\u6C23\u9023\u7D50\uFF08\u4F3A\u670D\u5668\u53EA\u8B80\u4E8B\u5BE6\uFF09
 ${text2.length > 18e3 ? JSON.stringify({ ...JSON.parse(text2), rows: selected.slice(0, 8), listedRows: Math.min(8, selected.length), omittedRows: Math.max(0, rows.length - 8) }) : text2}
 `;
+}
+
+// server/runningGpsWeatherRepository.ts
+import { TRPCError as TRPCError4 } from "@trpc/server";
+import { createHash as createHash2 } from "node:crypto";
+import { sql as sql5 } from "drizzle-orm";
+async function loadRunningGpsWeatherForId(id) {
+  const db = await getDb();
+  if (!db) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR", message: "\u672A\u80FD\u8B80\u53D6\u8DD1\u6B65 GPS \u8CC7\u6599\uFF1B\u6CA1\u6709\u6539\u5BEB\u7D00\u9304\u3002" });
+  const result = await db.execute(sql5`SELECT id, garmin_details, time_series FROM running_logs WHERE id = ${id} LIMIT 1`);
+  const row = result.rows[0];
+  if (!row) throw new TRPCError4({ code: "NOT_FOUND", message: "\u627E\u4E0D\u5230\u6307\u5B9A\u8DD1\u6B65\u7D00\u9304\u3002" });
+  const input = { timeSeries: row.time_series, garminDetails: row.garmin_details };
+  let details = {};
+  try {
+    const raw = typeof row.garmin_details === "string" ? JSON.parse(row.garmin_details) : row.garmin_details;
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) details = raw;
+  } catch {
+  }
+  if (![1, true].includes(details.activityWindowVerified) && typeof details.rawFileKey === "string" && /^garmin-originals\/2\/[A-Za-z0-9_./-]+\.(fit|gpx|tcx|csv)$/i.test(details.rawFileKey) && typeof details.rawFileHash === "string" && /^[a-f0-9]{64}$/i.test(details.rawFileHash)) {
+    try {
+      const bytes = await storageReadBuffer(details.rawFileKey);
+      if (createHash2("sha256").update(bytes).digest("hex") === details.rawFileHash.toLowerCase()) {
+        const parsed = parseGarminRawFile(bytes, details.rawFileKey);
+        input.timeSeries = parsed.timeSeries;
+        input.garminDetails = parsed.garminDetails;
+      }
+    } catch {
+    }
+  }
+  return fetchRunningGpsWeather(input);
 }
 
 // shared/inbodyReport.ts
@@ -5089,7 +5731,7 @@ function inBodyPrimaryMetrics(report) {
 }
 
 // server/inbodyImport.ts
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 import { nanoid } from "nanoid";
 var INBODY_MAX_PHOTO_BYTES = Math.floor(2.5 * 1024 * 1024);
 var INBODY_MAX_BASE64_LENGTH = Math.ceil(INBODY_MAX_PHOTO_BYTES / 3) * 4;
@@ -5129,7 +5771,7 @@ async function extractInBodyPhoto(input, ownerId, deps = { vision: invokeLLM, st
   if (typeof content !== "string" || !content.trim()) throw new Error("\u672A\u80FD\u8B80\u53D6\u5831\u544A\uFF0C\u8ACB\u5728\u5149\u7DDA\u5145\u8DB3\u4E0B\u62CD\u651D\u6574\u5F35 InBody \u5831\u544A\u5F8C\u518D\u8A66");
   const report = parseInBodyReport(content);
   if (!Object.values(report.metrics).some((value) => value !== null)) throw new Error("\u672A\u80FD\u8FA8\u8B58 InBody \u5BE6\u6E2C\u6578\u503C\uFF0C\u8ACB\u78BA\u8A8D\u62CD\u651D\u4E86\u5B8C\u6574\u6E05\u6670\u7684\u5831\u544A\uFF0C\u800C\u975E\u7A7A\u767D\u7BC4\u672C");
-  return { report, sourceKey: source.key, sourceHash: createHash2("sha256").update(bytes).digest("hex"), imageUrl: source.url, fileName: input.fileName.slice(0, 200) };
+  return { report, sourceKey: source.key, sourceHash: createHash3("sha256").update(bytes).digest("hex"), imageUrl: source.url, fileName: input.fileName.slice(0, 200) };
 }
 function validateReviewedInBodyReport(raw) {
   const report = inBodyReportSchema.parse(raw);
@@ -5145,7 +5787,7 @@ async function saveInBodyReport(input, ownerId, deps = { read: storageReadBuffer
   const bytes = await deps.read(input.sourceKey);
   const ext = input.sourceKey.split(".").at(-1);
   decodeInBodyPhoto(bytes.toString("base64"), ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg");
-  const sourceHash = createHash2("sha256").update(bytes).digest("hex");
+  const sourceHash = createHash3("sha256").update(bytes).digest("hex");
   await deps.initDb();
   const pool = deps.pool();
   if (!pool) throw new Error("Supabase \u66AB\u6642\u672A\u80FD\u9023\u7DDA\uFF0C\u8ACB\u7A0D\u5F8C\u91CD\u8A66\u5132\u5B58\uFF0C\u4E0D\u7528\u91CD\u65B0\u4E0A\u8F09\u76F8\u7247");
@@ -5925,7 +6567,7 @@ function getMuscleAnalysisBounds(input) {
 }
 
 // server/workoutMuscleAnalytics.ts
-import { and as and2, asc, eq as eq3, lt, gte, or, sql as sql5 } from "drizzle-orm";
+import { and as and2, asc, eq as eq3, lt, gte, or, sql as sql6 } from "drizzle-orm";
 
 // shared/exerciseGuides.ts
 var machine = ["machine"];
@@ -6776,7 +7418,7 @@ async function getWorkoutMuscleAnalysis(db, userId, input) {
       id: workoutSessions.id,
       startTime: workoutSessions.startTime,
       endTime: workoutSessions.endTime,
-      finished: sql5`coalesce((${workoutSessions.calorieDetails}->'timing'->>'finished') = 'true', false)`
+      finished: sql6`coalesce((${workoutSessions.calorieDetails}->'timing'->>'finished') = 'true', false)`
     }).from(workoutSessions).where(and2(...conditions)).orderBy(asc(workoutSessions.id)).limit(PAGE_SIZE2).offset(offset)
   );
   if (!sessions.length) return buildWorkoutMuscleAnalysis(input, [], []);
@@ -6988,11 +7630,11 @@ ${JSON.stringify(buildMusclePeriodAISnapshot(data))}` }
 import { z as z5 } from "zod";
 
 // server/gymDirectory.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 import { isIP } from "node:net";
-import { TRPCError as TRPCError4 } from "@trpc/server";
+import { TRPCError as TRPCError5 } from "@trpc/server";
 import { z as z4 } from "zod";
-import { and as and3, eq as eq4, or as or2, sql as sql6, asc as asc2 } from "drizzle-orm";
+import { and as and3, eq as eq4, or as or2, sql as sql7, asc as asc2 } from "drizzle-orm";
 
 // shared/gymDirectory.ts
 var GYM_EQUIPMENT_TYPES = [
@@ -165332,7 +165974,7 @@ function normalizeGymIdentity(value) {
   return value.normalize("NFKC").toLowerCase().trim().replace(/\s+/g, " ");
 }
 function gymIdentityKey(name, address) {
-  return createHash3("sha256").update(`${normalizeGymIdentity(name)}
+  return createHash4("sha256").update(`${normalizeGymIdentity(name)}
 ${normalizeGymIdentity(address)}`).digest("hex");
 }
 function escapeGymLike(value) {
@@ -165501,7 +166143,7 @@ function mergeGymLocations(groups) {
 async function requireDb() {
   const db = await getDb();
   if (!db)
-    throw new TRPCError4({
+    throw new TRPCError5({
       code: "PRECONDITION_FAILED",
       message: "\u5065\u8EAB\u623F\u8CC7\u6599\u5EAB\u672A\u5C31\u7DD2\uFF0C\u8ACB\u7A0D\u5F8C\u91CD\u8A66"
     });
@@ -165517,15 +166159,15 @@ async function getSavedGymRows(query = "", country) {
       ...terms.map((term) => {
         const pattern = `%${escapeGymLike(term)}%`;
         return or2(
-          sql6`${gymLocations.name} ILIKE ${pattern} ESCAPE '\\'`,
-          sql6`${gymLocations.address} ILIKE ${pattern} ESCAPE '\\'`,
-          sql6`${gymLocations.brand} ILIKE ${pattern} ESCAPE '\\'`
+          sql7`${gymLocations.name} ILIKE ${pattern} ESCAPE '\\'`,
+          sql7`${gymLocations.address} ILIKE ${pattern} ESCAPE '\\'`,
+          sql7`${gymLocations.brand} ILIKE ${pattern} ESCAPE '\\'`
         );
       })
     ) : void 0,
     country ? or2(
       ...gymCountrySearchNames(country).map(
-        (name) => sql6`lower(trim(${gymLocations.country})) = lower(${name})`
+        (name) => sql7`lower(trim(${gymLocations.country})) = lower(${name})`
       )
     ) : void 0
   );
@@ -165764,7 +166406,7 @@ async function ownedGym(id) {
     and3(eq4(gymLocations.id, id), eq4(gymLocations.userId, GYM_OWNER_USER_ID))
   ).limit(1);
   if (!row || row.userId !== GYM_OWNER_USER_ID)
-    throw new TRPCError4({
+    throw new TRPCError5({
       code: "NOT_FOUND",
       message: "\u627E\u4E0D\u5230\u5DF2\u4FDD\u5B58\u7684\u5065\u8EAB\u623F\uFF0C\u8ACB\u5148\u5132\u5B58\u5730\u5740"
     });
@@ -165875,7 +166517,7 @@ async function getGymEquipment(gymId) {
   } else {
     const official = officialGymLocations().find((g) => g.id === gymId);
     if (!official)
-      throw new TRPCError4({
+      throw new TRPCError5({
         code: "NOT_FOUND",
         message: "\u8ACB\u5148\u660E\u78BA\u9078\u64C7\u4E26\u5132\u5B58\u6B64\u5730\u5740\uFF0C\u624D\u53EF\u78BA\u8A8D\u5206\u5E97\u5668\u6750"
       });
@@ -165948,7 +166590,7 @@ async function saveGymLocation(raw) {
   if (inserted) return publicLocation(inserted);
   const [duplicate] = await db.select(locationFields).from(gymLocations).where(where).orderBy(asc2(gymLocations.id)).limit(1);
   if (!duplicate)
-    throw new TRPCError4({
+    throw new TRPCError5({
       code: "CONFLICT",
       message: "\u5730\u5740\u5132\u5B58\u885D\u7A81\uFF0C\u8ACB\u91CD\u65B0\u641C\u5C0B\u5DF2\u4FDD\u5B58\u5730\u5740"
     });
@@ -165962,7 +166604,7 @@ async function upsertGymEquipment(raw) {
     (o) => o.machineKey === input.machineKey
   );
   if (known && known.equipment !== input.equipment)
-    throw new TRPCError4({
+    throw new TRPCError5({
       code: "BAD_REQUEST",
       message: "\u5668\u6750\u7A2E\u985E\u5FC5\u9808\u7B26\u5408\u6B64\u7CBE\u78BA\u5668\u68B0\u4EE3\u78BC\uFF1B\u4E0D\u53EF\u6697\u4E2D\u66FF\u63DB\u52D5\u4F5C"
     });
@@ -165991,7 +166633,7 @@ async function upsertGymEquipment(raw) {
     }
   }).returning(equipmentFields);
   if (!row)
-    throw new TRPCError4({
+    throw new TRPCError5({
       code: "INTERNAL_SERVER_ERROR",
       message: "\u5668\u6750\u78BA\u8A8D\u672A\u80FD\u5132\u5B58"
     });
@@ -166004,7 +166646,7 @@ async function deleteGymEquipment(id) {
     and3(eq4(gymEquipment.id, id), eq4(gymEquipment.userId, GYM_OWNER_USER_ID))
   ).returning({ id: gymEquipment.id });
   if (!row)
-    throw new TRPCError4({
+    throw new TRPCError5({
       code: "NOT_FOUND",
       message: "\u627E\u4E0D\u5230\u6B64\u64C1\u6709\u4EBA\u7684\u5668\u6750\u78BA\u8A8D\u8A18\u9304"
     });
@@ -166076,8 +166718,8 @@ var nutritionRouter = router({
     if (!db) return [];
     return db.select().from(mealLogs).where(and4(
       eq5(mealLogs.userId, OWNER_USER_ID),
-      sql7`${mealLogs.logDate} >= ${input.startDate}::date`,
-      sql7`${mealLogs.logDate} <= ${input.endDate}::date`
+      sql8`${mealLogs.logDate} >= ${input.startDate}::date`,
+      sql8`${mealLogs.logDate} <= ${input.endDate}::date`
     )).orderBy(desc2(mealLogs.logDate));
   }),
   // Add meal log
@@ -166329,8 +166971,8 @@ var workoutRouter = router({
     const db = await getDb();
     if (!db) return [];
     const conditions = [eq5(workoutSessions.userId, OWNER_USER_ID)];
-    if (input?.startDate) conditions.push(sql7`${workoutSessions.startTime} >= ${/* @__PURE__ */ new Date(input.startDate + "T00:00:00+08:00")}`);
-    if (input?.endDate) conditions.push(sql7`${workoutSessions.startTime} <= ${/* @__PURE__ */ new Date(input.endDate + "T23:59:59+08:00")}`);
+    if (input?.startDate) conditions.push(sql8`${workoutSessions.startTime} >= ${/* @__PURE__ */ new Date(input.startDate + "T00:00:00+08:00")}`);
+    if (input?.endDate) conditions.push(sql8`${workoutSessions.startTime} <= ${/* @__PURE__ */ new Date(input.endDate + "T23:59:59+08:00")}`);
     const sessions = await db.select().from(workoutSessions).where(and4(...conditions)).orderBy(desc2(workoutSessions.startTime));
     return getWorkoutCalorieReadModels(db, sessions, OWNER_USER_ID);
   }),
@@ -166352,16 +166994,16 @@ var workoutRouter = router({
     const dayEnd = /* @__PURE__ */ new Date(input.date + "T23:59:59+08:00");
     const rawSessions = await db.select().from(workoutSessions).where(and4(
       eq5(workoutSessions.userId, OWNER_USER_ID),
-      sql7`${workoutSessions.startTime} >= ${dayStart2}`,
-      sql7`${workoutSessions.startTime} <= ${dayEnd}`
+      sql8`${workoutSessions.startTime} >= ${dayStart2}`,
+      sql8`${workoutSessions.startTime} <= ${dayEnd}`
     )).orderBy(desc2(workoutSessions.startTime));
     const sessions = await getWorkoutCalorieReadModels(db, rawSessions, OWNER_USER_ID);
     const caloriesBurned = sessions.reduce((sum, s) => sum + (s.caloriesBurned ?? 0), 0);
-    const runningRows = await db.select({ calories: runningLogs.calories }).from(runningLogs).where(sql7`${runningLogs.date} = ${input.date}`);
+    const runningRows = await db.select({ calories: runningLogs.calories }).from(runningLogs).where(sql8`${runningLogs.date} = ${input.date}`);
     const runningBurned = runningRows.reduce((s, r) => s + (r.calories ?? 0), 0);
     const stepsRows = await db.select({ calories: dailySteps.calories }).from(dailySteps).where(and4(
       eq5(dailySteps.userId, OWNER_USER_ID),
-      sql7`${dailySteps.date} = ${input.date}`
+      sql8`${dailySteps.date} = ${input.date}`
     ));
     const stepsBurned = stepsRows.reduce((s, r) => s + (r.calories ?? 0), 0);
     const totalBurned = caloriesBurned + runningBurned + stepsBurned;
@@ -166507,7 +167149,7 @@ var workoutRouter = router({
   getFavourites: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.execute(sql7`
+    const rows = await db.execute(sql8`
         SELECT exercise_name FROM favourite_exercises
         WHERE user_id = ${OWNER_USER_ID}
         ORDER BY created_at DESC
@@ -166517,19 +167159,19 @@ var workoutRouter = router({
   toggleFavourite: ownerProcedure.input(z6.object({ exerciseName: z6.string().min(1) })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const existing = await db.execute(sql7`
+    const existing = await db.execute(sql8`
         SELECT id FROM favourite_exercises
         WHERE user_id = ${OWNER_USER_ID} AND exercise_name = ${input.exerciseName}
       `);
     const rows = existing.rows ?? existing;
     if (rows.length > 0) {
-      await db.execute(sql7`
+      await db.execute(sql8`
           DELETE FROM favourite_exercises
           WHERE user_id = ${OWNER_USER_ID} AND exercise_name = ${input.exerciseName}
         `);
       return { isFavourite: false };
     } else {
-      await db.execute(sql7`
+      await db.execute(sql8`
           INSERT INTO favourite_exercises (user_id, exercise_name)
           VALUES (${OWNER_USER_ID}, ${input.exerciseName})
         `);
@@ -166712,7 +167354,7 @@ Provide a brief trend analysis and exactly 3 specific recommendations covering: 
   getExercisePRs: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return {};
-    const rows = await db.execute(sql7`
+    const rows = await db.execute(sql8`
         SELECT ws.exercise_name, MAX(ws.weight) as max_weight
         FROM workout_sets ws
         INNER JOIN workout_sessions sess ON ws.session_id = sess.id
@@ -166732,7 +167374,7 @@ Provide a brief trend analysis and exactly 3 specific recommendations covering: 
   getPRHistory: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.execute(sql7`
+    const rows = await db.execute(sql8`
         WITH ranked_weights AS (
           SELECT
             ws.exercise_name,
@@ -166783,9 +167425,9 @@ Provide a brief trend analysis and exactly 3 specific recommendations covering: 
     }).from(workoutSets).innerJoin(workoutSessions, eq5(workoutSets.sessionId, workoutSessions.id)).where(and4(
       eq5(workoutSessions.userId, OWNER_USER_ID),
       eq5(workoutSets.exerciseName, input.exerciseName),
-      sql7`${workoutSessions.endTime} IS NOT NULL`,
-      sql7`${workoutSets.reps} IS NOT NULL`,
-      sql7`${workoutSets.weight} IS NOT NULL`
+      sql8`${workoutSessions.endTime} IS NOT NULL`,
+      sql8`${workoutSets.reps} IS NOT NULL`,
+      sql8`${workoutSets.weight} IS NOT NULL`
     )).orderBy(desc2(workoutSets.createdAt)).limit(12);
     return buildProgressionSuggestion(rows);
   })
@@ -166851,8 +167493,8 @@ var bodyRouter = router({
       weight: bodyComposition.weight
     }).from(bodyComposition).where(and4(
       eq5(bodyComposition.userId, OWNER_USER_ID),
-      sql7`${bodyComposition.date} <= ${input.date}`,
-      sql7`${bodyComposition.weight} IS NOT NULL`
+      sql8`${bodyComposition.date} <= ${input.date}`,
+      sql8`${bodyComposition.weight} IS NOT NULL`
     )).orderBy(desc2(bodyComposition.date)).limit(1);
     return rows[0] ?? null;
   }),
@@ -166983,7 +167625,7 @@ var heartRateRouter = router({
   getMaxHr: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return { maxHr: null };
-    const result = await db.select({ maxHr: sql7`MAX(${heartRateLogs.highHr})` }).from(heartRateLogs).where(eq5(heartRateLogs.userId, OWNER_USER_ID));
+    const result = await db.select({ maxHr: sql8`MAX(${heartRateLogs.highHr})` }).from(heartRateLogs).where(eq5(heartRateLogs.userId, OWNER_USER_ID));
     return { maxHr: result[0]?.maxHr ?? null };
   })
 });
@@ -167190,15 +167832,15 @@ var insightsRouter = router({
     const weekAgo = /* @__PURE__ */ new Date(weekAgoStr + "T00:00:00+08:00");
     const monthAgoStr = daysAgoHK(30);
     const [meals, sessions, workoutSetRows, body, sleep, hr, running, steps, bloodPressure, goals, profile] = await Promise.all([
-      db.select().from(mealLogs).where(and4(eq5(mealLogs.userId, OWNER_USER_ID), sql7`${mealLogs.logDate} >= ${weekAgoStr}::date`)).limit(50),
-      db.select().from(workoutSessions).where(and4(eq5(workoutSessions.userId, OWNER_USER_ID), sql7`${workoutSessions.startTime} >= ${weekAgo}`)),
-      db.select().from(workoutSets).innerJoin(workoutSessions, eq5(workoutSets.sessionId, workoutSessions.id)).where(and4(eq5(workoutSessions.userId, OWNER_USER_ID), sql7`${workoutSessions.startTime} >= ${weekAgo}`)).limit(100),
+      db.select().from(mealLogs).where(and4(eq5(mealLogs.userId, OWNER_USER_ID), sql8`${mealLogs.logDate} >= ${weekAgoStr}::date`)).limit(50),
+      db.select().from(workoutSessions).where(and4(eq5(workoutSessions.userId, OWNER_USER_ID), sql8`${workoutSessions.startTime} >= ${weekAgo}`)),
+      db.select().from(workoutSets).innerJoin(workoutSessions, eq5(workoutSets.sessionId, workoutSessions.id)).where(and4(eq5(workoutSessions.userId, OWNER_USER_ID), sql8`${workoutSessions.startTime} >= ${weekAgo}`)).limit(100),
       db.select().from(bodyComposition).where(eq5(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc2(bodyComposition.date)).limit(10),
       db.select().from(sleepLogs).where(and4(eq5(sleepLogs.userId, OWNER_USER_ID), gte2(sleepLogs.date, weekAgoStr))),
       db.select().from(heartRateLogs).where(and4(eq5(heartRateLogs.userId, OWNER_USER_ID), gte2(heartRateLogs.date, weekAgoStr))),
-      db.select().from(runningLogs).where(sql7`${runningLogs.date} >= ${weekAgoStr}`).orderBy(desc2(runningLogs.date)).limit(10),
-      db.select().from(dailySteps).where(and4(eq5(dailySteps.userId, OWNER_USER_ID), sql7`${dailySteps.date} >= ${weekAgoStr}::date`)),
-      db.select().from(bloodPressureLogs).where(and4(eq5(bloodPressureLogs.userId, OWNER_USER_ID), sql7`${bloodPressureLogs.measuredAt} >= ${weekAgo}`)).orderBy(desc2(bloodPressureLogs.measuredAt)).limit(20),
+      db.select().from(runningLogs).where(sql8`${runningLogs.date} >= ${weekAgoStr}`).orderBy(desc2(runningLogs.date)).limit(10),
+      db.select().from(dailySteps).where(and4(eq5(dailySteps.userId, OWNER_USER_ID), sql8`${dailySteps.date} >= ${weekAgoStr}::date`)),
+      db.select().from(bloodPressureLogs).where(and4(eq5(bloodPressureLogs.userId, OWNER_USER_ID), sql8`${bloodPressureLogs.measuredAt} >= ${weekAgo}`)).orderBy(desc2(bloodPressureLogs.measuredAt)).limit(20),
       db.select().from(healthGoals).where(and4(eq5(healthGoals.userId, OWNER_USER_ID), eq5(healthGoals.isActive, true))).limit(10),
       db.select().from(userProfile).where(eq5(userProfile.userId, OWNER_USER_ID)).limit(1)
     ]);
@@ -167285,25 +167927,25 @@ var dashboardRouter = router({
     const weekAgoDate = /* @__PURE__ */ new Date(weekAgoStr + "T00:00:00+08:00");
     const [todayMeals, rawRecentSessions, latestBody, latestSleep, latestHr, weekMeals, rawTodayWorkouts, todayRunning, todayStepsRows, profileRows, todayCardioSets] = await Promise.all([
       db.select().from(mealLogs).where(and4(eq5(mealLogs.userId, OWNER_USER_ID), eq5(mealLogs.logDate, todayStr))),
-      db.select().from(workoutSessions).where(and4(eq5(workoutSessions.userId, OWNER_USER_ID), sql7`${workoutSessions.startTime} >= ${weekAgoDate}`)).orderBy(desc2(workoutSessions.startTime)).limit(7),
+      db.select().from(workoutSessions).where(and4(eq5(workoutSessions.userId, OWNER_USER_ID), sql8`${workoutSessions.startTime} >= ${weekAgoDate}`)).orderBy(desc2(workoutSessions.startTime)).limit(7),
       db.select().from(bodyComposition).where(eq5(bodyComposition.userId, OWNER_USER_ID)).orderBy(desc2(bodyComposition.date)).limit(2),
       db.select().from(sleepLogs).where(eq5(sleepLogs.userId, OWNER_USER_ID)).orderBy(desc2(sleepLogs.date)).limit(1),
       db.select().from(heartRateLogs).where(eq5(heartRateLogs.userId, OWNER_USER_ID)).orderBy(desc2(heartRateLogs.date)).limit(1),
-      db.select().from(mealLogs).where(and4(eq5(mealLogs.userId, OWNER_USER_ID), sql7`${mealLogs.logDate} >= ${weekAgoStr}::date`)),
+      db.select().from(mealLogs).where(and4(eq5(mealLogs.userId, OWNER_USER_ID), sql8`${mealLogs.logDate} >= ${weekAgoStr}::date`)),
       // Today's workout sessions
-      db.select().from(workoutSessions).where(and4(eq5(workoutSessions.userId, OWNER_USER_ID), sql7`${workoutSessions.startTime} >= ${todayStart}`, sql7`${workoutSessions.startTime} <= ${todayEnd}`)),
+      db.select().from(workoutSessions).where(and4(eq5(workoutSessions.userId, OWNER_USER_ID), sql8`${workoutSessions.startTime} >= ${todayStart}`, sql8`${workoutSessions.startTime} <= ${todayEnd}`)),
       // Today's running logs
-      db.select({ id: runningLogs.id, distanceKm: runningLogs.distanceKm, calories: runningLogs.calories }).from(runningLogs).where(sql7`${runningLogs.date} = ${todayStr}`),
+      db.select({ id: runningLogs.id, distanceKm: runningLogs.distanceKm, calories: runningLogs.calories }).from(runningLogs).where(sql8`${runningLogs.date} = ${todayStr}`),
       // Today's steps
-      db.select({ id: dailySteps.id, steps: dailySteps.steps, floorsClimbed: dailySteps.floorsClimbed, calories: dailySteps.calories }).from(dailySteps).where(and4(eq5(dailySteps.userId, OWNER_USER_ID), sql7`${dailySteps.date} = ${todayStr}`)),
+      db.select({ id: dailySteps.id, steps: dailySteps.steps, floorsClimbed: dailySteps.floorsClimbed, calories: dailySteps.calories }).from(dailySteps).where(and4(eq5(dailySteps.userId, OWNER_USER_ID), sql8`${dailySteps.date} = ${todayStr}`)),
       // User profile for Mifflin-St Jeor BMR
       db.select().from(userProfile).where(eq5(userProfile.userId, OWNER_USER_ID)).limit(1),
       // Today's cardio sets calories (from workout_sets joined with today's sessions)
       db.select({ calories: workoutSets.calories, exerciseName: workoutSets.exerciseName, duration: workoutSets.duration, distance: workoutSets.distance }).from(workoutSets).innerJoin(workoutSessions, eq5(workoutSets.sessionId, workoutSessions.id)).where(and4(
         eq5(workoutSessions.userId, OWNER_USER_ID),
-        sql7`${workoutSessions.startTime} >= ${todayStart}`,
-        sql7`${workoutSessions.startTime} <= ${todayEnd}`,
-        sql7`${workoutSets.exerciseName} = ANY(${sql7.raw(`ARRAY[${CARDIO_EXERCISE_NAMES.map((n) => `'${n.replace(/'/g, "''")}' `).join(",")}]::text[]`)})`
+        sql8`${workoutSessions.startTime} >= ${todayStart}`,
+        sql8`${workoutSessions.startTime} <= ${todayEnd}`,
+        sql8`${workoutSets.exerciseName} = ANY(${sql8.raw(`ARRAY[${CARDIO_EXERCISE_NAMES.map((n) => `'${n.replace(/'/g, "''")}' `).join(",")}]::text[]`)})`
       ))
     ]);
     const correctedSessions = await getWorkoutCalorieReadModels(
@@ -167536,7 +168178,7 @@ var csvImportRouter = router({
     } else if (input.dataType === "running") {
       for (const r of rows) {
         try {
-          await db.execute(sql7`
+          await db.execute(sql8`
               INSERT INTO running_logs (
                 date, running_type, route_type, running_shoes, distance_km, hour, minutes, second,
                 average_pace, best_pace, average_heart_rate, maximum_heart_rate,
@@ -167601,7 +168243,7 @@ var chartsRouter = router({
       bmi: bodyComposition.bmi
     }).from(bodyComposition).where(and4(
       eq5(bodyComposition.userId, OWNER_USER_ID),
-      sql7`${bodyComposition.date} >= ${sinceStr}`
+      sql8`${bodyComposition.date} >= ${sinceStr}`
     )).orderBy(bodyComposition.date);
   }),
   // Fetch sleep history for charting
@@ -167625,7 +168267,7 @@ var chartsRouter = router({
       waketime: sleepLogs.waketime
     }).from(sleepLogs).where(and4(
       eq5(sleepLogs.userId, OWNER_USER_ID),
-      sql7`${sleepLogs.date} >= ${sinceStr}`
+      sql8`${sleepLogs.date} >= ${sinceStr}`
     )).orderBy(sleepLogs.date);
     const toHrs = (v) => v != null && v > 24 ? Math.round(v / 60 * 10) / 10 : v;
     return rows.map((r) => ({
@@ -167649,15 +168291,15 @@ var chartsRouter = router({
       avgHr: heartRateLogs.avgHr
     }).from(heartRateLogs).where(and4(
       eq5(heartRateLogs.userId, OWNER_USER_ID),
-      sql7`${heartRateLogs.date} >= ${sinceStr}`
+      sql8`${heartRateLogs.date} >= ${sinceStr}`
     )).orderBy(heartRateLogs.date);
     const sleepHrvRows = await db.select({
       date: sleepLogs.date,
       hrv: sleepLogs.hrv
     }).from(sleepLogs).where(and4(
       eq5(sleepLogs.userId, OWNER_USER_ID),
-      sql7`${sleepLogs.date} >= ${sinceStr}`,
-      sql7`${sleepLogs.hrv} IS NOT NULL`
+      sql8`${sleepLogs.date} >= ${sinceStr}`,
+      sql8`${sleepLogs.hrv} IS NOT NULL`
     )).orderBy(sleepLogs.date);
     const hrvByDate = new Map(sleepHrvRows.map((r) => [r.date, r.hrv]));
     const allDates = /* @__PURE__ */ new Set([...hrRows.map((r) => r.date), ...sleepHrvRows.map((r) => r.date)]);
@@ -167680,13 +168322,13 @@ var chartsRouter = router({
     const sinceStr = daysAgoHK(input.days);
     const sinceDate = /* @__PURE__ */ new Date(sinceStr + "T00:00:00+08:00");
     return db.select({
-      date: sql7`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
+      date: sql8`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
       duration: workoutSessions.duration,
       totalVolume: workoutSessions.totalVolume,
       name: workoutSessions.name
     }).from(workoutSessions).where(and4(
       eq5(workoutSessions.userId, OWNER_USER_ID),
-      sql7`${workoutSessions.startTime} >= ${sinceDate}`
+      sql8`${workoutSessions.startTime} >= ${sinceDate}`
     )).orderBy(workoutSessions.startTime);
   }),
   // Weekly exercise calories burned breakdown (workout + running + steps)
@@ -167697,20 +168339,20 @@ var chartsRouter = router({
     const sinceDateStr = sessionHKDate(sinceDate);
     const rawWorkouts = await db.select().from(workoutSessions).where(and4(
       eq5(workoutSessions.userId, OWNER_USER_ID),
-      sql7`${workoutSessions.startTime} >= ${sinceDate}`
+      sql8`${workoutSessions.startTime} >= ${sinceDate}`
     ));
     const workoutModels = await getWorkoutCalorieReadModels(db, rawWorkouts, OWNER_USER_ID);
     const workoutRows = workoutModels.map((session) => ({ date: sessionHKDate(session.startTime), calories: session.caloriesBurned }));
     const runningRows = await db.select({
       date: runningLogs.date,
-      calories: sql7`COALESCE(SUM(${runningLogs.calories}), 0)`.as("calories")
-    }).from(runningLogs).where(sql7`${runningLogs.date} >= ${sinceDateStr}`).groupBy(runningLogs.date);
+      calories: sql8`COALESCE(SUM(${runningLogs.calories}), 0)`.as("calories")
+    }).from(runningLogs).where(sql8`${runningLogs.date} >= ${sinceDateStr}`).groupBy(runningLogs.date);
     const stepsRows = await db.select({
       date: dailySteps.date,
-      calories: sql7`COALESCE(SUM(${dailySteps.calories}), 0)`.as("calories")
+      calories: sql8`COALESCE(SUM(${dailySteps.calories}), 0)`.as("calories")
     }).from(dailySteps).where(and4(
       eq5(dailySteps.userId, OWNER_USER_ID),
-      sql7`${dailySteps.date} >= ${sinceDateStr}`
+      sql8`${dailySteps.date} >= ${sinceDateStr}`
     )).groupBy(dailySteps.date);
     const weekMap = {};
     const getWeekLabel = workoutWeekMonday;
@@ -167755,13 +168397,13 @@ var chartsRouter = router({
       "Jacob's Ladder"
     ];
     const cardioSets = await db.select({
-      date: sql7`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
+      date: sql8`TO_CHAR(${workoutSessions.startTime} AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')`.as("date"),
       calories: workoutSets.calories,
       duration: workoutSets.duration,
       exerciseName: workoutSets.exerciseName
     }).from(workoutSets).innerJoin(workoutSessions, eq5(workoutSets.sessionId, workoutSessions.id)).where(and4(
       eq5(workoutSessions.userId, OWNER_USER_ID),
-      sql7`${workoutSessions.startTime} >= ${sinceDate}`,
+      sql8`${workoutSessions.startTime} >= ${sinceDate}`,
       inArray2(workoutSets.exerciseName, CARDIO_NAMES_LIST)
     ));
     const dayMap = {};
@@ -167783,15 +168425,15 @@ var chartsRouter = router({
     if (!db) return [];
     const sinceStr = daysAgoHK(input.days);
     const rows = await db.select({
-      date: sql7`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`.as("date"),
-      totalCalories: sql7`COALESCE(SUM(${mealLogs.calories}), 0)`.as("totalCalories"),
-      totalProtein: sql7`COALESCE(SUM(${mealLogs.protein}), 0)`.as("totalProtein"),
-      totalCarbs: sql7`COALESCE(SUM(${mealLogs.carbs}), 0)`.as("totalCarbs"),
-      totalFat: sql7`COALESCE(SUM(${mealLogs.fat}), 0)`.as("totalFat")
+      date: sql8`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`.as("date"),
+      totalCalories: sql8`COALESCE(SUM(${mealLogs.calories}), 0)`.as("totalCalories"),
+      totalProtein: sql8`COALESCE(SUM(${mealLogs.protein}), 0)`.as("totalProtein"),
+      totalCarbs: sql8`COALESCE(SUM(${mealLogs.carbs}), 0)`.as("totalCarbs"),
+      totalFat: sql8`COALESCE(SUM(${mealLogs.fat}), 0)`.as("totalFat")
     }).from(mealLogs).where(and4(
       eq5(mealLogs.userId, OWNER_USER_ID),
-      sql7`${mealLogs.logDate} >= ${sinceStr}::date`
-    )).groupBy(sql7`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`).orderBy(sql7`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`);
+      sql8`${mealLogs.logDate} >= ${sinceStr}::date`
+    )).groupBy(sql8`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`).orderBy(sql8`TO_CHAR(${mealLogs.logDate}, 'YYYY-MM-DD')`);
     return rows;
   })
 });
@@ -168239,7 +168881,7 @@ var runningRouter = router({
   getActiveShoes: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.execute(sql7`
+    const rows = await db.execute(sql8`
         SELECT id, shoes_name, brand, status, firstusedate, retirement_date
         FROM running_shoes
         WHERE status != 'Retired'
@@ -168251,7 +168893,7 @@ var runningRouter = router({
     const db = await getDb();
     if (!db) return [];
     const rows = await db.execute(
-      sql7`SELECT * FROM running_logs ORDER BY date DESC, id DESC LIMIT ${input.limit}`
+      sql8`SELECT * FROM running_logs ORDER BY date DESC, id DESC LIMIT ${input.limit}`
     );
     return rows.rows ?? rows;
   }),
@@ -168265,31 +168907,31 @@ var runningRouter = router({
     const db = await getDb();
     if (!db) return { rows: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
     const conditions = [];
-    if (input.runningType !== "all") conditions.push(sql7`running_type = ${input.runningType}`);
+    if (input.runningType !== "all") conditions.push(sql8`running_type = ${input.runningType}`);
     if (input.search) {
       const pattern = `%${input.search}%`;
-      conditions.push(sql7`(
+      conditions.push(sql8`(
           COALESCE(running_type, '') ILIKE ${pattern}
           OR COALESCE(running_shoes, '') ILIKE ${pattern}
           OR COALESCE(route_type, '') ILIKE ${pattern}
           OR COALESCE(notes, '') ILIKE ${pattern}
         )`);
     }
-    const whereClause = conditions.length ? sql7.join(conditions, sql7` AND `) : sql7`TRUE`;
-    const orderBy = input.sort === "date_asc" ? sql7`date ASC, id ASC` : input.sort === "distance_desc" ? sql7`distance_km DESC NULLS LAST, date DESC, id DESC` : input.sort === "pace_asc" ? sql7`
+    const whereClause = conditions.length ? sql8.join(conditions, sql8` AND `) : sql8`TRUE`;
+    const orderBy = input.sort === "date_asc" ? sql8`date ASC, id ASC` : input.sort === "distance_desc" ? sql8`distance_km DESC NULLS LAST, date DESC, id DESC` : input.sort === "pace_asc" ? sql8`
               CASE
                 WHEN TRIM(COALESCE(average_pace, '')) ~ '^[0-9]+:[0-9]{2}(\\.[0-9]+)?$'
                   THEN SPLIT_PART(TRIM(average_pace), ':', 1)::numeric * 60 + SPLIT_PART(TRIM(average_pace), ':', 2)::numeric
                 WHEN TRIM(COALESCE(average_pace, '')) ~ '^[0-9]+(\\.[0-9]+)?$'
                   THEN TRIM(average_pace)::numeric * 60
                 ELSE NULL
-              END ASC NULLS LAST, date DESC, id DESC` : input.sort === "hr_asc" ? sql7`average_heart_rate ASC NULLS LAST, date DESC, id DESC` : sql7`date DESC, id DESC`;
-    const countResult = await db.execute(sql7`SELECT COUNT(*)::int AS total FROM running_logs WHERE ${whereClause}`);
+              END ASC NULLS LAST, date DESC, id DESC` : input.sort === "hr_asc" ? sql8`average_heart_rate ASC NULLS LAST, date DESC, id DESC` : sql8`date DESC, id DESC`;
+    const countResult = await db.execute(sql8`SELECT COUNT(*)::int AS total FROM running_logs WHERE ${whereClause}`);
     const total = Number((countResult.rows ?? countResult)[0]?.total ?? 0);
     const totalPages = Math.max(1, Math.ceil(total / input.pageSize));
     const page = Math.min(input.page, totalPages);
     const offset = (page - 1) * input.pageSize;
-    const rows = await db.execute(sql7`
+    const rows = await db.execute(sql8`
         SELECT * FROM running_logs
         WHERE ${whereClause}
         ORDER BY ${orderBy}
@@ -168303,9 +168945,9 @@ var runningRouter = router({
   })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
-    const distanceWhere = input.distanceBand === "short" ? sql7`distance_km < 5` : input.distanceBand === "medium" ? sql7`distance_km >= 5 AND distance_km < 10` : input.distanceBand === "long" ? sql7`distance_km >= 10 AND distance_km < 21.1` : input.distanceBand === "ultra" ? sql7`distance_km >= 21.1` : sql7`TRUE`;
-    const routeWhere = input.routeType === "all" ? sql7`TRUE` : sql7`route_type = ${input.routeType}`;
-    const rows = await db.execute(sql7`
+    const distanceWhere = input.distanceBand === "short" ? sql8`distance_km < 5` : input.distanceBand === "medium" ? sql8`distance_km >= 5 AND distance_km < 10` : input.distanceBand === "long" ? sql8`distance_km >= 10 AND distance_km < 21.1` : input.distanceBand === "ultra" ? sql8`distance_km >= 21.1` : sql8`TRUE`;
+    const routeWhere = input.routeType === "all" ? sql8`TRUE` : sql8`route_type = ${input.routeType}`;
+    const rows = await db.execute(sql8`
         SELECT
           running_shoes AS shoe,
           COUNT(*)::int AS runs,
@@ -168327,7 +168969,7 @@ var runningRouter = router({
   getStats: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return null;
-    const rows = await db.execute(sql7`
+    const rows = await db.execute(sql8`
         SELECT
           COUNT(*) as total_runs,
           SUM(distance_km::numeric) as total_distance,
@@ -168342,13 +168984,13 @@ var runningRouter = router({
           MAX(date) as last_run
         FROM running_logs
       `);
-    const typeRows = await db.execute(sql7`
+    const typeRows = await db.execute(sql8`
         SELECT running_type, COUNT(*) as count, SUM(distance_km::numeric) as total_km
         FROM running_logs
         GROUP BY running_type
         ORDER BY count DESC
       `);
-    const monthlyRows = await db.execute(sql7`
+    const monthlyRows = await db.execute(sql8`
         SELECT
           SUBSTRING(date, 1, 7) as month,
           COUNT(*) as runs,
@@ -168370,7 +169012,7 @@ var runningRouter = router({
     const db = await getDb();
     if (!db) return null;
     const [runResult, sleepResult, heartResult, bodyResult] = await Promise.all([
-      db.execute(sql7`
+      db.execute(sql8`
           SELECT id, date, running_type, route_type, distance_km, hour, minutes, second,
                  average_pace, best_pace, average_heart_rate, maximum_heart_rate,
                  average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
@@ -168383,14 +169025,14 @@ var runningRouter = router({
           FROM running_logs
           ORDER BY date DESC, id DESC
         `),
-      db.execute(sql7`
+      db.execute(sql8`
           SELECT date, sleep_score, sleep_duration, body_battery, hrv, resting_hr, pulse_ox, respiration
           FROM sleep_logs
           WHERE user_id = ${OWNER_USER_ID}
           ORDER BY date DESC
           LIMIT 120
         `),
-      db.execute(sql7`
+      db.execute(sql8`
           SELECT date, resting_hr, high_hr, hrv, avg_hr,
                  zone1_minutes, zone2_minutes, zone3_minutes, zone4_minutes, zone5_minutes
           FROM heart_rate_logs
@@ -168398,7 +169040,7 @@ var runningRouter = router({
           ORDER BY date DESC
           LIMIT 120
         `),
-      db.execute(sql7`
+      db.execute(sql8`
           SELECT date, weight, body_fat_pct, muscle_mass, bmi
           FROM body_composition
           WHERE user_id = ${OWNER_USER_ID}
@@ -168410,7 +169052,7 @@ var runningRouter = router({
     const sleeps = sleepResult.rows ?? sleepResult;
     const hearts = heartResult.rows ?? heartResult;
     const bodies = bodyResult.rows ?? bodyResult;
-    const finite2 = (value) => {
+    const finite3 = (value) => {
       const parsed = Number(value);
       return Number.isFinite(parsed) ? parsed : null;
     };
@@ -168418,7 +169060,7 @@ var runningRouter = router({
       const source = String(value ?? "").trim();
       const clock2 = source.match(/^(\d{1,2}):(\d{2})(?:\.\d+)?$/);
       if (clock2) return Number(clock2[1]) * 60 + Number(clock2[2]);
-      const numeric2 = finite2(source);
+      const numeric2 = finite3(source);
       return numeric2 !== null && numeric2 >= 2 && numeric2 <= 30 ? numeric2 * 60 : null;
     };
     const asRecord = (value) => {
@@ -168435,33 +169077,33 @@ var runningRouter = router({
     };
     const runs = rawRuns.map((row) => {
       const details = asRecord(row.garmin_details);
-      const sampleCount = finite2(row.time_series_count) ?? 0;
-      const durationSec = (finite2(row.hour) ?? 0) * 3600 + (finite2(row.minutes) ?? 0) * 60 + (finite2(row.second) ?? 0);
+      const sampleCount = finite3(row.time_series_count) ?? 0;
+      const durationSec = (finite3(row.hour) ?? 0) * 3600 + (finite3(row.minutes) ?? 0) * 60 + (finite3(row.second) ?? 0);
       const sourceFormat = typeof details.rawFileFormat === "string" ? details.rawFileFormat : typeof details.sourceFormat === "string" ? details.sourceFormat : null;
       return {
         id: Number(row.id),
         date: String(row.date ?? ""),
         runningType: row.running_type ?? null,
         routeType: row.route_type ?? null,
-        distanceKm: finite2(row.distance_km),
+        distanceKm: finite3(row.distance_km),
         durationSec: durationSec || null,
         paceSecPerKm: parsePaceSeconds(row.average_pace),
         bestPaceSecPerKm: parsePaceSeconds(row.best_pace),
-        averageHeartRate: finite2(row.average_heart_rate),
-        maximumHeartRate: finite2(row.maximum_heart_rate),
-        averageCadence: finite2(row.average_cadence),
-        maxCadence: finite2(row.max_cadence),
-        avgStrideLengthM: finite2(row.avg_stride_length_m),
-        avgVerticalRatio: finite2(row.avg_vertical_ratio),
-        verticalOscillationCm: finite2(row.vertical_oscillation_cm),
-        avgGroundContactTimeMs: finite2(row.avg_ground_contact_time_ms),
-        calories: finite2(row.calories),
+        averageHeartRate: finite3(row.average_heart_rate),
+        maximumHeartRate: finite3(row.maximum_heart_rate),
+        averageCadence: finite3(row.average_cadence),
+        maxCadence: finite3(row.max_cadence),
+        avgStrideLengthM: finite3(row.avg_stride_length_m),
+        avgVerticalRatio: finite3(row.avg_vertical_ratio),
+        verticalOscillationCm: finite3(row.vertical_oscillation_cm),
+        avgGroundContactTimeMs: finite3(row.avg_ground_contact_time_ms),
+        calories: finite3(row.calories),
         sourceFormat,
-        rawSampleCount: (finite2(details.rawSampleCount) ?? sampleCount) || null,
+        rawSampleCount: (finite3(details.rawSampleCount) ?? sampleCount) || null,
         hasTimeSeries: sampleCount > 0,
         hasGps: Boolean(row.has_gps),
-        hasPower: Boolean(row.has_power_samples) || finite2(details.avgPowerW) !== null,
-        hasAltitude: Boolean(row.has_altitude_samples) || finite2(details.totalAscentM) !== null
+        hasPower: Boolean(row.has_power_samples) || finite3(details.avgPowerW) !== null,
+        hasAltitude: Boolean(row.has_altitude_samples) || finite3(details.totalAscentM) !== null
       };
     });
     const mean2 = (values) => {
@@ -168484,30 +169126,30 @@ var runningRouter = router({
     const trainingLoad = Array.from(weeklyMap.values()).sort((first, second) => first.week.localeCompare(second.week)).slice(-12);
     const recoverySleep = sleeps.slice(0, 30).reverse().map((row) => ({
       date: String(row.date ?? ""),
-      sleepScore: finite2(row.sleep_score),
-      sleepDurationHours: finite2(row.sleep_duration),
-      bodyBattery: finite2(row.body_battery),
-      hrv: finite2(row.hrv),
-      restingHr: finite2(row.resting_hr)
+      sleepScore: finite3(row.sleep_score),
+      sleepDurationHours: finite3(row.sleep_duration),
+      bodyBattery: finite3(row.body_battery),
+      hrv: finite3(row.hrv),
+      restingHr: finite3(row.resting_hr)
     }));
     const recoveryHeart = hearts.slice(0, 30).reverse().map((row) => ({
       date: String(row.date ?? ""),
-      restingHr: finite2(row.resting_hr),
-      highHr: finite2(row.high_hr),
-      hrv: finite2(row.hrv),
-      averageHr: finite2(row.avg_hr)
+      restingHr: finite3(row.resting_hr),
+      highHr: finite3(row.high_hr),
+      hrv: finite3(row.hrv),
+      averageHr: finite3(row.avg_hr)
     }));
     const recoveryBody = bodies.slice(0, 30).reverse().map((row) => ({
       date: String(row.date ?? ""),
-      weightKg: finite2(row.weight),
-      bodyFatPct: finite2(row.body_fat_pct),
-      muscleMassKg: finite2(row.muscle_mass),
-      bmi: finite2(row.bmi)
+      weightKg: finite3(row.weight),
+      bodyFatPct: finite3(row.body_fat_pct),
+      muscleMassKg: finite3(row.muscle_mass),
+      bmi: finite3(row.bmi)
     }));
     const latestHeart = hearts[0];
-    const maxHeartRate = (finite2(latestHeart?.high_hr) ?? Math.max(...runs.map((run) => run.maximumHeartRate ?? 0), 0)) || null;
-    const restingHeartRate = finite2(latestHeart?.resting_hr) ?? finite2(sleeps[0]?.resting_hr);
-    const zoneCounts = [1, 2, 3, 4, 5].map((zone) => hearts.reduce((sum, row) => sum + (finite2(row[`zone${zone}_minutes`]) ?? 0), 0));
+    const maxHeartRate = (finite3(latestHeart?.high_hr) ?? Math.max(...runs.map((run) => run.maximumHeartRate ?? 0), 0)) || null;
+    const restingHeartRate = finite3(latestHeart?.resting_hr) ?? finite3(sleeps[0]?.resting_hr);
+    const zoneCounts = [1, 2, 3, 4, 5].map((zone) => hearts.reduce((sum, row) => sum + (finite3(row[`zone${zone}_minutes`]) ?? 0), 0));
     const totalZoneMinutes = zoneCounts.reduce((sum, count) => sum + count, 0);
     const dynamics = recentRuns.map((run) => ({
       date: run.date,
@@ -168572,7 +169214,7 @@ var runningRouter = router({
   getGarminRunDetail: publicProcedure.input(z6.object({ id: z6.number().int().positive() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return null;
-    const result = await db.execute(sql7`
+    const result = await db.execute(sql8`
         SELECT id, date, running_type, route_type, distance_km, hour, minutes, second,
                average_pace, best_pace, average_heart_rate, maximum_heart_rate,
                average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
@@ -168659,7 +169301,7 @@ var runningRouter = router({
       rawFileFormat: input.sourceFormat,
       rawSampleCount: input.sampleCount
     });
-    await db.execute(sql7`
+    await db.execute(sql8`
         UPDATE running_logs
         SET garmin_details = COALESCE(garmin_details, '{}'::jsonb) || ${metadata}::jsonb
         WHERE id = ${input.runningLogId}
@@ -168722,11 +169364,11 @@ var runningRouter = router({
     if (!db) throw new Error("DB unavailable");
     let shoesId = null;
     if (input.runningShoes) {
-      const shoeRow = await db.execute(sql7`SELECT id FROM running_shoes WHERE shoes_name = ${input.runningShoes} LIMIT 1`);
+      const shoeRow = await db.execute(sql8`SELECT id FROM running_shoes WHERE shoes_name = ${input.runningShoes} LIMIT 1`);
       const found = (shoeRow.rows ?? shoeRow)[0];
       if (found) shoesId = Number(found.id);
     }
-    const result = await db.execute(sql7`
+    const result = await db.execute(sql8`
         INSERT INTO running_logs (
           date, running_type, route_type, running_shoes, shoes_id, distance_km, hour, minutes, second,
           average_pace, best_pace, average_heart_rate, maximum_heart_rate,
@@ -168838,25 +169480,25 @@ var runningRouter = router({
     if (!db) throw new Error("DB unavailable");
     const { id, ...fields } = input;
     if (fields.runningShoes !== void 0) {
-      const shoeRow = await db.execute(sql7`SELECT id FROM running_shoes WHERE shoes_name = ${fields.runningShoes} LIMIT 1`);
+      const shoeRow = await db.execute(sql8`SELECT id FROM running_shoes WHERE shoes_name = ${fields.runningShoes} LIMIT 1`);
       const found = (shoeRow.rows ?? shoeRow)[0];
       fields.shoesId = found ? Number(found.id) : null;
     }
     const setClauses = Object.entries(fields).filter(([, v]) => v !== void 0).map(([k, v]) => {
       const col = k.replace(/([A-Z])/g, "_$1").toLowerCase();
       if (k === "garminDetails" || k === "laps" || k === "timeSeries") {
-        return sql7`${sql7.raw(col)} = ${JSON.stringify(v)}::jsonb`;
+        return sql8`${sql8.raw(col)} = ${JSON.stringify(v)}::jsonb`;
       }
-      return sql7`${sql7.raw(col)} = ${v}`;
+      return sql8`${sql8.raw(col)} = ${v}`;
     });
     if (!setClauses.length) return { success: true };
-    await db.execute(sql7`UPDATE running_logs SET ${sql7.join(setClauses, sql7`, `)} WHERE id = ${id}`);
+    await db.execute(sql8`UPDATE running_logs SET ${sql8.join(setClauses, sql8`, `)} WHERE id = ${id}`);
     return { success: true };
   }),
   deleteLog: ownerProcedure.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    await db.execute(sql7`DELETE FROM running_logs WHERE id = ${input.id}`);
+    await db.execute(sql8`DELETE FROM running_logs WHERE id = ${input.id}`);
     return { success: true };
   }),
   getCrossValidation: ownerProcedure.input(z6.object({
@@ -168873,13 +169515,14 @@ var runningRouter = router({
     const recovery = await loadRunningRecoveryDataset(db, OWNER_USER_ID, history, todayHK(), { dateConvention: input.sleepDateConvention });
     return buildRunningContextReport(recovery, input);
   }),
+  getGpsWeather: ownerProcedure.input(z6.object({ id: z6.number().int().positive() })).query(({ input }) => loadRunningGpsWeatherForId(input.id)),
   getLabPersonalization: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return { body: null, baselinePaceSecPerKm: null, maxHeartRate: null, restingHeartRate: null, runTypeDistribution: [], historicalRunCount: 0, baselineRunCount: 0, historicalRuns: [] };
     const [profileRows, bodyRows, heartRows, history] = await Promise.all([
-      db.execute(sql7`SELECT height FROM user_profile WHERE user_id = ${OWNER_USER_ID} LIMIT 1`),
-      db.execute(sql7`SELECT weight, body_fat_pct, muscle_mass, date FROM body_composition WHERE user_id = ${OWNER_USER_ID} AND date <= ${todayHK()} ORDER BY date DESC LIMIT 1`),
-      db.execute(sql7`SELECT resting_hr, high_hr FROM heart_rate_logs WHERE user_id = ${OWNER_USER_ID} AND date < ${todayHK()} ORDER BY date DESC LIMIT 1`),
+      db.execute(sql8`SELECT height FROM user_profile WHERE user_id = ${OWNER_USER_ID} LIMIT 1`),
+      db.execute(sql8`SELECT weight, body_fat_pct, muscle_mass, date FROM body_composition WHERE user_id = ${OWNER_USER_ID} AND date <= ${todayHK()} ORDER BY date DESC LIMIT 1`),
+      db.execute(sql8`SELECT resting_hr, high_hr FROM heart_rate_logs WHERE user_id = ${OWNER_USER_ID} AND date < ${todayHK()} ORDER BY date DESC LIMIT 1`),
       loadRunningHistory(db)
     ]);
     const profile = (profileRows.rows ?? profileRows)[0] ?? null;
@@ -168937,12 +169580,12 @@ var runningRouter = router({
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     const [logRows, raceRows] = await Promise.all([
-      input.scope === "races" ? Promise.resolve([]) : db.execute(sql7`
+      input.scope === "races" ? Promise.resolve([]) : db.execute(sql8`
           SELECT id, date, route_type, temperature, humidity, wind_speed, apparent_temp, precipitation,
                  weather_code, weather_condition, weather_location
           FROM running_logs WHERE date BETWEEN ${input.startDate} AND ${input.endDate} ORDER BY date DESC
         `),
-      input.scope === "logs" ? Promise.resolve([]) : db.execute(sql7`
+      input.scope === "logs" ? Promise.resolve([]) : db.execute(sql8`
           SELECT id, date, temperature, humidity, wind_speed, apparent_temp, precipitation,
                  weather_code, weather_condition, weather_location
           FROM races WHERE date BETWEEN ${input.startDate} AND ${input.endDate} ORDER BY date DESC
@@ -168970,12 +169613,12 @@ var runningRouter = router({
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     const [logRows, raceRows] = await Promise.all([
-      input.scope === "races" ? Promise.resolve([]) : db.execute(sql7`
+      input.scope === "races" ? Promise.resolve([]) : db.execute(sql8`
           SELECT id, date, route_type, temperature, humidity, wind_speed, apparent_temp, precipitation,
                  weather_code, weather_condition, weather_location
           FROM running_logs WHERE date BETWEEN ${input.startDate} AND ${input.endDate} ORDER BY date ASC
         `),
-      input.scope === "logs" ? Promise.resolve([]) : db.execute(sql7`
+      input.scope === "logs" ? Promise.resolve([]) : db.execute(sql8`
           SELECT id, date, location, temperature, humidity, wind_speed, apparent_temp, precipitation,
                  weather_code, weather_condition, weather_location
           FROM races WHERE date BETWEEN ${input.startDate} AND ${input.endDate} ORDER BY date ASC
@@ -169019,7 +169662,7 @@ var runningRouter = router({
       try {
         const sets = [];
         if (candidate.needsRouteType && input.routeType) {
-          sets.push(sql7`route_type = ${input.routeType}`);
+          sets.push(sql8`route_type = ${input.routeType}`);
           routeTypeUpdates += 1;
         }
         if (candidate.needsWeather) {
@@ -169030,24 +169673,24 @@ var runningRouter = router({
             skippedNoData += 1;
           } else {
             sets.push(
-              sql7`temperature = ${weather.temperature}`,
-              sql7`humidity = ${weather.humidity}`,
-              sql7`wind_speed = ${weather.windSpeed}`,
-              sql7`apparent_temp = ${weather.apparentTemp}`,
-              sql7`precipitation = ${weather.precipitation}`,
-              sql7`weather_code = ${weather.weatherCode}`,
-              sql7`weather_condition = ${weather.weatherCondition}`,
-              sql7`weather_location = ${weather.weatherLocation}`,
-              sql7`weather_observed_at = ${weather.weatherObservedAt}`,
-              sql7`weather_source = ${weather.weatherSource}`
+              sql8`temperature = ${weather.temperature}`,
+              sql8`humidity = ${weather.humidity}`,
+              sql8`wind_speed = ${weather.windSpeed}`,
+              sql8`apparent_temp = ${weather.apparentTemp}`,
+              sql8`precipitation = ${weather.precipitation}`,
+              sql8`weather_code = ${weather.weatherCode}`,
+              sql8`weather_condition = ${weather.weatherCondition}`,
+              sql8`weather_location = ${weather.weatherLocation}`,
+              sql8`weather_observed_at = ${weather.weatherObservedAt}`,
+              sql8`weather_source = ${weather.weatherSource}`
             );
             weatherUpdates += 1;
           }
         }
         if (!sets.length) continue;
-        sets.push(sql7`updated_at = NOW()`);
+        sets.push(sql8`updated_at = NOW()`);
         const table = candidate.kind === "log" ? "running_logs" : "races";
-        await db.execute(sql7`UPDATE ${sql7.raw(table)} SET ${sql7.join(sets, sql7`, `)} WHERE id = ${candidate.id}`);
+        await db.execute(sql8`UPDATE ${sql8.raw(table)} SET ${sql8.join(sets, sql8`, `)} WHERE id = ${candidate.id}`);
       } catch (error) {
         failures.push({ id: candidate.id, kind: candidate.kind, message: error instanceof Error ? error.message : "\u66F4\u65B0\u5931\u6557" });
       }
@@ -169104,7 +169747,7 @@ var runningRouter = router({
     const historyContext = buildRunningHistoryContext(history, { startHK: daysAgoHK(input.weeks * 7), endHK: todayHK() }, 36e3);
     const recovery = await loadRunningRecoveryDataset(db, OWNER_USER_ID, history, todayHK());
     const recoveryContext = runningContextAIText(recovery, daysAgoHK(input.weeks * 7));
-    const upcomingRaceRows = await db.execute(sql7`
+    const upcomingRaceRows = await db.execute(sql8`
         SELECT race_name, date, distance_km, location
         FROM races
         WHERE date >= ${todayHK()}
@@ -169112,7 +169755,7 @@ var runningRouter = router({
         LIMIT 10
       `);
     const upcomingRaces = upcomingRaceRows.rows ?? upcomingRaceRows;
-    const pastRaceRows = await db.execute(sql7`
+    const pastRaceRows = await db.execute(sql8`
         SELECT race_name, date, distance_km, finish_time, finish_hr, finish_min, finish_sec, is_pb, overall_place, gender_group_place, age_group_place, location, notes
         FROM races
         WHERE date < ${todayHK()}
@@ -169121,7 +169764,7 @@ var runningRouter = router({
         LIMIT 20
       `);
     const pastRaces = pastRaceRows.rows ?? pastRaceRows;
-    const activeShoeRows = await db.execute(sql7`
+    const activeShoeRows = await db.execute(sql8`
         SELECT s.shoes_name, s.brand, s.model,
           COALESCE(s.initial_km::numeric, 0) + COALESCE(SUM(r.distance_km::numeric), 0) AS total_km
         FROM running_shoes s
@@ -169213,7 +169856,7 @@ ${activeShoeSummary || "\u66AB\u7121\u8DD1\u978B\u8A18\u9304"}
   })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const runRows = await db.execute(sql7`
+    const runRows = await db.execute(sql8`
         SELECT date, running_type, distance_km, hour, minutes, second,
                average_pace, best_pace, average_heart_rate, maximum_heart_rate,
                average_cadence, max_cadence, avg_stride_length_m, avg_vertical_ratio,
@@ -169221,29 +169864,29 @@ ${activeShoeSummary || "\u66AB\u7121\u8DD1\u978B\u8A18\u9304"}
         FROM running_logs ORDER BY date DESC LIMIT 60
       `);
     const runs = runRows.rows ?? runRows;
-    const raceRows = await db.execute(sql7`
+    const raceRows = await db.execute(sql8`
         SELECT race_name, date, distance_km, finish_hr, finish_min, finish_sec, finish_time, is_pb, overall_place, location
         FROM races ORDER BY date DESC LIMIT 30
       `);
     const allRaces = raceRows.rows ?? raceRows;
-    const bodyRows = await db.execute(sql7`
+    const bodyRows = await db.execute(sql8`
         SELECT weight, body_fat_pct, muscle_mass, bmi, bmr, visceral_fat
         FROM body_composition ORDER BY date DESC LIMIT 1
       `);
     const body = (bodyRows.rows ?? bodyRows)[0] ?? null;
-    const hrRows = await db.execute(sql7`
+    const hrRows = await db.execute(sql8`
         SELECT resting_hr, high_hr, hrv, avg_hr, zone1_minutes, zone2_minutes, zone3_minutes, zone4_minutes, zone5_minutes
         FROM heart_rate_logs ORDER BY date DESC LIMIT 1
       `);
     const hr = (hrRows.rows ?? hrRows)[0] ?? null;
-    const sleepRows = await db.execute(sql7`
+    const sleepRows = await db.execute(sql8`
         SELECT AVG(sleep_score) as avg_score, AVG(sleep_duration) as avg_duration,
                AVG(hrv) as avg_hrv, AVG(resting_hr) as avg_resting_hr,
                AVG(body_battery) as avg_battery, AVG(deep_sleep) as avg_deep
         FROM sleep_logs WHERE date >= TO_CHAR(NOW() - interval '14 days', 'YYYY-MM-DD')
       `);
     const sleep = (sleepRows.rows ?? sleepRows)[0] ?? null;
-    const shoeRows = await db.execute(sql7`
+    const shoeRows = await db.execute(sql8`
         SELECT s.shoes_name, s.brand,
           COALESCE(s.initial_km::numeric, 0) + COALESCE(SUM(r.distance_km::numeric), 0) AS total_km
         FROM running_shoes s
@@ -169366,7 +170009,7 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   getShoes: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.execute(sql7`
+    const rows = await db.execute(sql8`
         SELECT s.*,
           COALESCE(s.initial_km::numeric, 0) + COALESCE(SUM(r.distance_km::numeric), 0) AS total_km,
           COALESCE(COUNT(r.id), 0) AS run_count,
@@ -169394,7 +170037,7 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    await db.execute(sql7`
+    await db.execute(sql8`
         INSERT INTO running_shoes (shoes_name, brand, model, status, purchase_date, retirement_date, initial_km, max_km, notes, price, firstusedate, photo_url)
         VALUES (${input.shoesName}, ${input.brand ?? null}, ${input.model ?? null}, ${input.status ?? "Active"},
           ${input.purchaseDate ?? null}, ${input.retirementDate ?? null}, ${input.initialKm ?? 0},
@@ -169483,13 +170126,13 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   deleteShoe: ownerProcedure.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    await db.execute(sql7`DELETE FROM running_shoes WHERE id = ${input.id}`);
+    await db.execute(sql8`DELETE FROM running_shoes WHERE id = ${input.id}`);
     return { success: true };
   }),
   getShoeRunHistory: publicProcedure.input(z6.object({ shoeId: z6.number().optional(), shoeName: z6.string().optional() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.execute(sql7`
+    const rows = await db.execute(sql8`
         SELECT id, date, distance_km, hour, minutes, second, average_pace, average_heart_rate,
                average_cadence, calories, running_type, notes
         FROM running_logs
@@ -169504,7 +170147,7 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   getRaces: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.execute(sql7`
+    const rows = await db.execute(sql8`
         SELECT id, race_name, date, distance_km, location, registration, bib_no, is_pb,
           finish_time, finish_hr, finish_min, finish_sec, target_hr, target_min, target_sec,
           overall_place, age_group_place, gender_group_place, running_shoes, shoes_id,
@@ -169549,7 +170192,7 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    await db.execute(sql7`
+    await db.execute(sql8`
         INSERT INTO races (race_name, date, distance_km, location, registration, bib_no, is_pb, finish_time,
           finish_hr, finish_min, finish_sec, target_hr, target_min, target_sec,
           overall_place, age_group_place, gender_group_place, running_shoes, shoes_id,
@@ -169738,13 +170381,13 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   deleteRace: ownerProcedure.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    await db.execute(sql7`DELETE FROM races WHERE id = ${input.id}`);
+    await db.execute(sql8`DELETE FROM races WHERE id = ${input.id}`);
     return { success: true };
   }),
   getPBs: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db.execute(sql7`
+    const rows = await db.execute(sql8`
         SELECT DISTINCT ON (distance_km) distance_km, race_name, date, finish_time,
           finish_hr, finish_min, finish_sec, location
         FROM races
@@ -169758,14 +170401,14 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   getRacesEnriched: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const raceRows = await db.execute(sql7`SELECT * FROM races ORDER BY date DESC`);
+    const raceRows = await db.execute(sql8`SELECT * FROM races ORDER BY date DESC`);
     const races3 = raceRows.rows ?? raceRows;
     const enriched = await Promise.all(races3.map(async (race) => {
       if (!race.date || !race.distance_km) return { ...race, runLog: null };
       const distKm = parseFloat(race.distance_km);
       const minDist = distKm * 0.9;
       const maxDist = distKm * 1.1;
-      const logRows = await db.execute(sql7`
+      const logRows = await db.execute(sql8`
           SELECT id, date, distance_km, average_pace, best_pace, average_heart_rate, maximum_heart_rate, average_cadence,
                  running_shoes, hour, minutes, second, calories, running_type,
                  max_cadence, avg_stride_length_m, avg_vertical_ratio, vertical_oscillation_cm,
@@ -169784,12 +170427,12 @@ ${shoesSummary || "\u7121\u8A18\u9304"}
   analyzeRace: ownerProcedure.input(z6.object({ raceId: z6.number() })).mutation(async ({ input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const raceRows = await db.execute(sql7`SELECT id, race_name, date::text AS date, distance_km, location, is_pb, finish_time,
+    const raceRows = await db.execute(sql8`SELECT id, race_name, date::text AS date, distance_km, location, is_pb, finish_time,
         overall_place, gender_group_place, age_group_place, temperature, humidity, wind_speed, weather_source, weather_observed_at
         FROM races WHERE id = ${input.raceId} LIMIT 1`);
     const race = (raceRows.rows ?? raceRows)[0];
     if (!race) throw new Error("Race not found");
-    const pbRows = await db.execute(sql7`
+    const pbRows = await db.execute(sql8`
         SELECT distance_km, finish_time FROM races
         WHERE is_pb = true AND finish_time IS NOT NULL
           AND date < ${race.date} AND date < ${todayHK()} AND id <> ${input.raceId}
@@ -169853,7 +170496,7 @@ ${recoveryContext}
     const ext = input.mimeType.includes("png") ? "png" : "jpg";
     const key = `running-photos/${OWNER_USER_ID}/${input.runningLogId}/${nanoid2()}.${ext}`;
     const { url } = await storagePut(key, buffer, input.mimeType);
-    const existing = await db.select({ cnt: sql7`COUNT(*)` }).from(runningLogPhotos).where(and4(eq5(runningLogPhotos.runningLogId, input.runningLogId), eq5(runningLogPhotos.userId, OWNER_USER_ID)));
+    const existing = await db.select({ cnt: sql8`COUNT(*)` }).from(runningLogPhotos).where(and4(eq5(runningLogPhotos.runningLogId, input.runningLogId), eq5(runningLogPhotos.userId, OWNER_USER_ID)));
     const sortOrder = Number(existing[0]?.cnt ?? 0);
     await db.insert(runningLogPhotos).values({ userId: OWNER_USER_ID, runningLogId: input.runningLogId, photoUrl: url, fileKey: key, caption: input.caption, sortOrder });
     return { url, key };
@@ -169961,7 +170604,7 @@ var stepsRouter = router({
     const ext = input.mimeType.includes("png") ? "png" : "jpg";
     const key = `step-photos/${OWNER_USER_ID}/${input.stepLogId}/${nanoid2()}.${ext}`;
     const { url } = await storagePut(key, buffer, input.mimeType);
-    const existing = await db.select({ cnt: sql7`COUNT(*)` }).from(stepLogPhotos).where(and4(eq5(stepLogPhotos.stepLogId, input.stepLogId), eq5(stepLogPhotos.userId, OWNER_USER_ID)));
+    const existing = await db.select({ cnt: sql8`COUNT(*)` }).from(stepLogPhotos).where(and4(eq5(stepLogPhotos.stepLogId, input.stepLogId), eq5(stepLogPhotos.userId, OWNER_USER_ID)));
     const sortOrder = Number(existing[0]?.cnt ?? 0);
     await db.insert(stepLogPhotos).values({ userId: OWNER_USER_ID, stepLogId: input.stepLogId, photoUrl: url, fileKey: key, caption: input.caption, sortOrder });
     return { url, key };
@@ -169980,7 +170623,7 @@ var stepsRouter = router({
     if (!db) throw new Error("DB unavailable");
     const stepsToFill = await db.select().from(dailySteps).where(and4(
       eq5(dailySteps.userId, OWNER_USER_ID),
-      sql7`${dailySteps.steps} > 0`
+      sql8`${dailySteps.steps} > 0`
     )).orderBy(dailySteps.date);
     if (stepsToFill.length === 0) return { updated: 0 };
     const bodyRecords = await db.select({
@@ -169988,7 +170631,7 @@ var stepsRouter = router({
       weight: bodyComposition.weight
     }).from(bodyComposition).where(and4(
       eq5(bodyComposition.userId, OWNER_USER_ID),
-      sql7`${bodyComposition.weight} IS NOT NULL`
+      sql8`${bodyComposition.weight} IS NOT NULL`
     )).orderBy(bodyComposition.date);
     let updated = 0;
     for (const step of stepsToFill) {
@@ -170036,7 +170679,7 @@ var bloodPressureRouter = router({
     const sinceDate = /* @__PURE__ */ new Date(sinceStr + "T00:00:00+08:00");
     return db.select().from(bloodPressureLogs).where(and4(
       eq5(bloodPressureLogs.userId, OWNER_USER_ID),
-      sql7`${bloodPressureLogs.measuredAt} >= ${sinceDate}`
+      sql8`${bloodPressureLogs.measuredAt} >= ${sinceDate}`
     )).orderBy(desc2(bloodPressureLogs.measuredAt));
   }),
   add: ownerProcedure.input(z6.object({
@@ -170277,7 +170920,7 @@ async function createContext(opts) {
 }
 
 // server/reminderHandler.ts
-import { gte as gte3, sql as sql8 } from "drizzle-orm";
+import { gte as gte3, sql as sql9 } from "drizzle-orm";
 async function dailyReminderHandler(req, res) {
   try {
     const user = await sdk.authenticateRequest(req);
@@ -170291,8 +170934,8 @@ async function dailyReminderHandler(req, res) {
     const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
     const todayStart = new Date(today);
     const [todayMeals, todayWorkouts, todayBody, todaySleepLogs] = await Promise.all([
-      db.select().from(mealLogs).where(sql8`${mealLogs.loggedAt} >= ${today}`).limit(1),
-      db.select().from(workoutSessions).where(sql8`${workoutSessions.startTime} >= ${todayStart}`).limit(1),
+      db.select().from(mealLogs).where(sql9`${mealLogs.loggedAt} >= ${today}`).limit(1),
+      db.select().from(workoutSessions).where(sql9`${workoutSessions.startTime} >= ${todayStart}`).limit(1),
       db.select().from(bodyComposition).where(gte3(bodyComposition.date, today)).limit(1),
       db.select().from(sleepLogs).where(gte3(sleepLogs.date, today)).limit(1)
     ]);

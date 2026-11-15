@@ -29,6 +29,7 @@ import { persistSupabaseBatch } from "./supabaseBatch";
 import { loadRunningHistory, toLabHistoricalRun, buildRunningHistoryContext, RUNNING_EVIDENCE_INSTRUCTIONS } from "./runningContinuousAnalysis";
 import { loadRunningRecoveryDataset } from "./runningRecoveryDataset";
 import { buildRunningContextReport, runningContextAIText } from "./runningContextReport";
+import { loadRunningGpsWeatherForId } from "./runningGpsWeatherRepository";
 import { inBodyReportSchema } from "@shared/inbodyReport";
 import { decodeInBodyPhoto, extractInBodyPhoto, saveInBodyReport, INBODY_MAX_BASE64_LENGTH } from "./inbodyImport";
 import Papa from "papaparse";
@@ -3214,6 +3215,10 @@ const runningRouter = router({
       const recovery = await loadRunningRecoveryDataset(db, OWNER_USER_ID, history, todayHK(), { dateConvention: input.sleepDateConvention });
       return buildRunningContextReport(recovery, input);
     }),
+
+  getGpsWeather: ownerProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(({ input }) => loadRunningGpsWeatherForId(input.id)),
 
   getLabPersonalization: publicProcedure
     .query(async () => {

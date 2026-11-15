@@ -9,11 +9,13 @@ import { parseGarminRawFile } from "./garminFileImport";
 import { storageReadBuffer } from "./storage";
 import { ensureSheetHeaders, writeRowToSheet } from "./sheetsService";
 import { isValidGarminDate, saveGarminImport, selectGarminHistoryMatch, validateGarminSummary } from "./garminDirectSave";
+import { prepareGarminGpsWeather } from "./garminGpsWeather";
 
 vi.mock("./db", () => ({ getDb: vi.fn() }));
 vi.mock("./garminFileImport", () => ({ parseGarminRawFile: vi.fn() }));
 vi.mock("./storage", () => ({ storageReadBuffer: vi.fn() }));
 vi.mock("./sheetsService", () => ({ ensureSheetHeaders: vi.fn(), writeRowToSheet: vi.fn() }));
+vi.mock("./garminGpsWeather", () => ({ prepareGarminGpsWeather: vi.fn() }));
 
 type Row = Record<string, any>;
 const dialect = new PgDialect();
@@ -142,6 +144,44 @@ beforeEach(() => {
   vi.mocked(parseGarminRawFile).mockReturnValue(preview());
   vi.mocked(ensureSheetHeaders).mockResolvedValue();
   vi.mocked(writeRowToSheet).mockResolvedValue();
+  vi.mocked(prepareGarminGpsWeather).mockResolvedValue({ fields: {}, metadata: {} });
+});
+
+describe("GPS weather is new-summary-only enrichment", () => {
+  const enrichment = () => ({ fields: { temperature: "0", humidity: "65.5", weatherLocation: "GPS 路線 · 2 個取樣格", weatherSource: "Open-Meteo 全程時間加權", weatherObservedAt: "2026-11-02T06:00:00+08:00 至 2026-11-02T07:00:00+08:00" }, metadata: { gpsWeatherStatus: "complete", gpsWeatherProvenance: '{"version":1,"coverageFraction":1}' } });
+  it("adds labelled GPS averages only to a new summary and preserves the source hash and samples", async () => {
+    const db = mockDatabase();
+    vi.mocked(prepareGarminGpsWeather).mockResolvedValue(enrichment());
+    const result = await saveGarminImport(input);
+    expect(result.action).toBe("created");
+    expect(result.fields.temperature).toBe("0");
+    expect(result.fields.humidity).toBe("65.5");
+    expect(result.fields.weatherLocation).toContain("2 個取樣格");
+    expect(result.garminDetails.rawFileHash).toBe(hash);
+    expect(result.garminDetails.gpsWeatherStatus).toBe("complete");
+    expect(result.timeSeries).toEqual(preview().timeSeries);
+    expect(db.rows()).toHaveLength(1);
+  });
+  it("does not overwrite existing manual weather or persist weather on an attachment", async () => {
+    const before = historical();
+    const db = mockDatabase([before]);
+    vi.mocked(prepareGarminGpsWeather).mockResolvedValue(enrichment());
+    const result = await saveGarminImport({ ...input, runningLogId: before.id });
+    expect(result.action).toBe("attached");
+    expect(db.rows()[0].temperature).toBe(before.temperature);
+    expect(db.rows()[0].weather_source).toBe("manual");
+    expect(result.garminDetails.gpsWeatherStatus).toBeUndefined();
+    expect(writeRowToSheet).not.toHaveBeenCalled();
+  });
+  it("a duplicate remains the saved original summary, not a new GPS-weather result", async () => {
+    const before = historical({ garmin_details: { rawFileHash: hash }, time_series: preview().timeSeries });
+    const db = mockDatabase([before]);
+    vi.mocked(prepareGarminGpsWeather).mockResolvedValue(enrichment());
+    const result = await saveGarminImport(input);
+    expect(result.action).toBe("duplicate");
+    expect(result.fields.temperature).toBe("25.5");
+    expect(db.rows()).toEqual([before]);
+  });
 });
 
 describe("Garmin direct-save pure validation and history selection", () => {

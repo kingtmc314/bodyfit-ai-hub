@@ -5,7 +5,9 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ContextEvidenceRow,
+  ContextFactorReadiness,
   ContextGroup,
+  RunningContextReadiness,
   RunningContextReport,
 } from "../shared/runningContextReport";
 import RunningCrossValidationPanel, {
@@ -625,7 +627,9 @@ describe("Running context read-only evidence frontend", () => {
     await render({ ...props, temperatureC: 30, humidityPct: 90, windKph: 20 });
     expect(prediction()).toBeNull();
     expect(host.textContent).toContain("等待天氣設定穩定");
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 380)); });
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 380));
+    });
     expect(state.query.mock.calls.at(-1)?.[0]).toEqual({
       ...queryInput,
       temperatureC: 30,
@@ -641,7 +645,9 @@ describe("Running context read-only evidence frontend", () => {
     state.placeholder = false;
     await render();
     expect(prediction()).toBeNull();
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 380)); });
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 380));
+    });
     expect(prediction()).not.toBeNull();
     state.fetching = true;
     await render();
@@ -727,8 +733,558 @@ describe("weather query coalescing", () => {
     await render({ ...props, temperatureC: 30 });
     expect(prediction()).toBeNull();
     expect(state.query.mock.calls.length).toBe(calls);
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 390)); });
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 390));
+    });
     expect(state.query.mock.calls.length).toBe(calls + 1);
     expect(state.query.mock.lastCall?.[0].temperatureC).toBe(30);
+  });
+});
+
+function factorReadiness(
+  feature: ContextFactorReadiness["feature"]
+): ContextFactorReadiness {
+  return {
+    feature,
+    includedInLatestModel: false,
+    observedRows: 0,
+    observedDays: 0,
+    missingRows: 25,
+    missingDays: 25,
+    invalidRows: 0,
+    sampleDeficit: 10,
+    observedDayDeficit: 10,
+    minimumAdditionalMatchedDays: 10,
+    trainingStandardDeviation: null,
+    varianceKnown: false,
+    varianceSufficient: null,
+    blockers: ["此因子尚未納入最新訓練模型。"],
+  };
+}
+function realLikeReadiness(): RunningContextReadiness {
+  return {
+    version: "running-context-readiness-v1",
+    scope: "full-loaded-selected-cohort-before-as-of-hk-date",
+    asOfHK: "2026-11-15",
+    evidenceState: "complete",
+    historyComplete: true,
+    eligibleRows: 25,
+    eligibleDays: 25,
+    thresholds: {
+      minimumFeatureObservations: 10,
+      minimumFeatureObservedDays: 10,
+      minimumTrainingDays: 20,
+      minimumHeldOutDays: 10,
+      minimumFeatureStandardDeviation: 0.000001,
+      minimumEarlierRestingHrDays: 7,
+      restingHrLookbackDays: 28,
+    },
+    factors: {
+      sleep: factorReadiness("preRunSleepHours"),
+      restingHR: {
+        ...factorReadiness("restingHrDeltaBpm"),
+        observedRows: 2,
+        observedDays: 2,
+        missingRows: 23,
+        missingDays: 23,
+        invalidRows: 1,
+        sampleDeficit: 8,
+        observedDayDeficit: 8,
+        minimumAdditionalMatchedDays: 8,
+      },
+    },
+    training: {
+      days: 25,
+      requiredDays: 20,
+      missingDays: 0,
+      latestModelDays: 25,
+    },
+    commonHeldOut: { days: 5, requiredDays: 10, missingDays: 5, rows: 5 },
+    commonObservedHeldOut: {
+      days: 0,
+      requiredDays: 10,
+      missingDays: 10,
+      rows: 0,
+    },
+    deploymentEvidence: {
+      days: 5,
+      requiredDays: 10,
+      missingDays: 5,
+      rows: 5,
+      sufficient: false,
+      latestFeatureNames: ["temperatureC", "temperatureHumidityInteraction"],
+    },
+    currentBaseline: {
+      measurementDateHK: null,
+      windowStartHK: null,
+      windowEndExclusiveHK: null,
+      lookbackDays: 28,
+      requiredEarlierDays: 7,
+      observedEarlierDays: null,
+      missingEarlierDays: null,
+      sufficient: null,
+      blockers: ["未有可核對的本次跑前量測；較早基準日數未知。"],
+    },
+    sleepDateConvention: "unknown",
+    currentSleepVerified: false,
+    validationStatus: "no_evidence",
+    predictionBlocker: "insufficient_deployment_evidence",
+    dataQualified: false,
+    advancedReady: false,
+    minimumAdditionalMatchedDays: 10,
+    blockers: ["歷史天氣觀測時刻未與跑步開始時間核對。"],
+    notes: ["缺額不是新增原始紀錄的保證。"],
+  };
+}
+function qualifiedReadiness(): RunningContextReadiness {
+  const readiness = realLikeReadiness();
+  const qualifiedFactor = (
+    feature: ContextFactorReadiness["feature"]
+  ): ContextFactorReadiness => ({
+    ...factorReadiness(feature),
+    includedInLatestModel: true,
+    observedRows: 42,
+    observedDays: 35,
+    missingRows: 3,
+    missingDays: 0,
+    sampleDeficit: 0,
+    observedDayDeficit: 0,
+    minimumAdditionalMatchedDays: 0,
+    trainingStandardDeviation: feature === "preRunSleepHours" ? 0.8 : 2.3,
+    varianceKnown: true,
+    varianceSufficient: true,
+    blockers: [],
+  });
+  return {
+    ...readiness,
+    eligibleRows: 45,
+    eligibleDays: 35,
+    factors: {
+      sleep: qualifiedFactor("preRunSleepHours"),
+      restingHR: qualifiedFactor("restingHrDeltaBpm"),
+    },
+    training: {
+      days: 35,
+      requiredDays: 20,
+      missingDays: 0,
+      latestModelDays: 35,
+    },
+    commonHeldOut: { days: 16, requiredDays: 10, missingDays: 0, rows: 18 },
+    commonObservedHeldOut: {
+      days: 14,
+      requiredDays: 10,
+      missingDays: 0,
+      rows: 15,
+    },
+    deploymentEvidence: {
+      days: 12,
+      requiredDays: 10,
+      missingDays: 0,
+      rows: 12,
+      sufficient: true,
+      latestFeatureNames: [
+        "temperatureC",
+        "temperatureHumidityInteraction",
+        "preRunSleepHours",
+        "restingHrDeltaBpm",
+      ],
+    },
+    currentBaseline: {
+      measurementDateHK: "2026-11-14",
+      windowStartHK: "2026-10-17",
+      windowEndExclusiveHK: "2026-11-14",
+      lookbackDays: 28,
+      requiredEarlierDays: 7,
+      observedEarlierDays: 9,
+      missingEarlierDays: 0,
+      sufficient: true,
+      blockers: [],
+    },
+    sleepDateConvention: "wake-date",
+    currentSleepVerified: true,
+    validationStatus: "supported",
+    predictionBlocker: null,
+    dataQualified: true,
+    advancedReady: true,
+    minimumAdditionalMatchedDays: 0,
+    blockers: [],
+  };
+}
+const readinessRegion = () =>
+  [...host.querySelectorAll<HTMLElement>("section[aria-labelledby]")].find(
+    section => {
+      const heading = document.getElementById(
+        section.getAttribute("aria-labelledby") ?? ""
+      );
+      return heading?.textContent === "進階交叉驗算 · 數據完整度";
+    }
+  );
+const readinessProgress = (label: string): HTMLElement => {
+  const bar = [
+    ...(readinessRegion()?.querySelectorAll<HTMLElement>(
+      '[role="progressbar"]'
+    ) ?? []),
+  ].find(element => {
+    const name = document.getElementById(
+      element.getAttribute("aria-labelledby") ?? ""
+    );
+    return name?.firstElementChild?.textContent === label;
+  });
+  if (!bar) throw new Error(`Missing readiness progress ${label}`);
+  return bar;
+};
+const progressCardText = (label: string) =>
+  readinessProgress(label).parentElement?.parentElement?.textContent;
+
+describe("server-projected context readiness DOM", () => {
+  it("shows sleep0 HR2 and deficits10/8 separately from weathercommon5 and fully observed sleep+HR0", async () => {
+    const report = fixture();
+    report.targetDistanceKm = 5;
+    report.coverage = {
+      ...report.coverage,
+      runs: 600,
+      sleeps: 200,
+      hearts: 400,
+    };
+    report.status = "insufficient-data";
+    report.prediction.correctionEnabled = false;
+    report.readiness = realLikeReadiness();
+    state.data = report;
+    await render({ ...props, targetDistanceKm: 5 });
+    const region = readinessRegion();
+    expect(region).toBeDefined();
+    const text = region?.textContent;
+    expect(text).toContain("合資格跑步 25 次／25 個香港日期");
+    expect(text).toContain("不是全域健康紀錄或本頁證據筆數");
+    expect(progressCardText("跑前睡眠有效觀測樣本")).toContain(
+      "樣本缺額 10 筆；觀測日缺額 10 日"
+    );
+    expect(progressCardText("靜息心率差值有效觀測樣本")).toContain(
+      "樣本缺額 8 筆；觀測日缺額 8 日"
+    );
+    expect(progressCardText("跑前睡眠有效觀測樣本")).toContain(
+      "缺失 25 筆／25 個香港跑步日；無效 0 筆"
+    );
+    expect(progressCardText("靜息心率差值有效觀測樣本")).toContain(
+      "缺失 23 筆／23 個香港跑步日；無效 1 筆"
+    );
+    expect(progressCardText("跑前睡眠香港觀測日")).toContain("變化核驗：未知");
+    expect(progressCardText("跑前睡眠香港觀測日")).toContain(
+      "最新模型：未納入"
+    );
+    for (const [label, now, required, width] of [
+      ["跑前睡眠有效觀測樣本", 0, 10, "0%"],
+      ["跑前睡眠香港觀測日", 0, 10, "0%"],
+      ["靜息心率差值有效觀測樣本", 2, 10, "20%"],
+      ["靜息心率差值香港觀測日", 2, 10, "20%"],
+      ["合資格訓練日", 25, 20, "100%"],
+      ["同列共同留出日", 5, 10, "50%"],
+      ["共同留出中睡眠及心率差值均實測日", 0, 10, "0%"],
+      ["最新模型完整實測部署留出日", 5, 10, "50%"],
+    ] as const) {
+      const bar = readinessProgress(label);
+      expect(bar.getAttribute("aria-valuenow")).toBe(String(now));
+      expect(bar.getAttribute("aria-valuemax")).toBe(
+        String(Math.max(now, required))
+      );
+      expect(bar.getAttribute("aria-valuetext")).toContain(
+        `最低門檻 ${required}`
+      );
+      expect((bar.firstElementChild as HTMLElement).style.width).toBe(width);
+    }
+    expect(progressCardText("最新模型完整實測部署留出日")).toContain(
+      "最新特徵：氣溫、氣溫與濕度交互作用"
+    );
+    expect(progressCardText("同列共同留出日")).toContain("5 次共同留出");
+    expect(progressCardText("共同留出中睡眠及心率差值均實測日")).toContain(
+      "0 次"
+    );
+    expect(text).toContain("整體最低合資格配對日缺額（後端條件式下限）：10 日");
+    expect(text).toContain("必要但非充分條件");
+    expect(text).toContain(
+      "先覆核現有紀錄；只有日期確實代表起床日期，才勾選上方確認"
+    );
+    expect(text).toContain("不能為了達標而確認");
+    expect(text).toContain("不一定要新增 10 筆睡眠紀錄");
+    expect(text).not.toMatch(/整體\s*\d+%|完成\s*\d+%|再新增\s*10\s*筆/);
+    expect(correction().disabled).toBe(true);
+  });
+
+  it("exposes an accessible h3 region and independent honest progress ranges with visually capped widths", async () => {
+    state.data = { ...fixture(), readiness: qualifiedReadiness() };
+    await render();
+    const region = readinessRegion()!;
+    expect(
+      document.getElementById(region.getAttribute("aria-labelledby")!)?.tagName
+    ).toBe("H3");
+    expect(region.previousElementSibling?.textContent).toContain(
+      "實際讀取覆蓋"
+    );
+    expect(
+      region.nextElementSibling?.querySelector("h3")?.textContent
+    ).toContain("實測配速誤差");
+    const bars = [
+      ...region.querySelectorAll<HTMLElement>('[role="progressbar"]'),
+    ];
+    expect(bars).toHaveLength(9);
+    for (const bar of bars) {
+      const label = document.getElementById(
+        bar.getAttribute("aria-labelledby")!
+      );
+      expect(label?.textContent).toBeTruthy();
+      expect(Number(bar.getAttribute("aria-valuemin"))).toBe(0);
+      const now = Number(bar.getAttribute("aria-valuenow"));
+      const maximum = Number(bar.getAttribute("aria-valuemax"));
+      expect(now).toBeGreaterThanOrEqual(0);
+      expect(now).toBeLessThanOrEqual(maximum);
+      expect(bar.getAttribute("aria-valuetext")).toContain("只代表此項計數");
+      expect((bar.firstElementChild as HTMLElement).style.width).toBe("100%");
+      expect(bar.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
+    }
+    expect(
+      readinessProgress("跑前睡眠有效觀測樣本").getAttribute("aria-valuenow")
+    ).toBe("42");
+    expect(
+      readinessProgress("跑前睡眠有效觀測樣本").getAttribute("aria-valuetext")
+    ).toContain("最低門檻 10 筆");
+    expect(region.textContent).toContain("42 / 10 筆");
+    expect(region.textContent).toContain("35 / 20 日");
+    expect(region.textContent).toContain("變化核驗：已通過");
+    expect(region.textContent).toContain("最新模型：已納入");
+    expect(region.querySelectorAll(".grid-cols-1").length).toBe(3);
+    expect(region.textContent).not.toMatch(/100%|完成率|整體進度/);
+  });
+
+  it.each(["model_worse", "unsupported_stratum"] as const)(
+    "keeps correction disabled despite qualified counts for %s",
+    async blocker => {
+      const report = fixture();
+      const readiness = qualifiedReadiness();
+      readiness.advancedReady = false;
+      readiness.predictionBlocker = blocker;
+      readiness.validationStatus =
+        blocker === "model_worse" ? "model_worse" : "supported";
+      readiness.blockers = [
+        blocker === "model_worse"
+          ? "模型誤差較同列基準差；收齊因子不會自行啟用。"
+          : "路面／坡度及路線未知，只允許描述性比較。",
+      ];
+      report.readiness = readiness;
+      report.status =
+        blocker === "model_worse" ? "not-improved" : "unsupported-context";
+      report.prediction.correctionEnabled = false;
+      report.prediction.supported = false;
+      state.data = report;
+      await render();
+      expect(readinessRegion()?.textContent).toContain(
+        "已達計數、變化及歷史門檻"
+      );
+      expect(readinessRegion()?.textContent).toContain(
+        "整體最低合資格配對日缺額（後端條件式下限）：0 日"
+      );
+      expect(readinessRegion()?.textContent).toContain(
+        "進階條件：後端未確認通過"
+      );
+      expect(readinessRegion()?.textContent).toContain(readiness.blockers[0]);
+      for (const gate of [
+        "完整歷史",
+        "有效跑前實測",
+        "距離／路面／坡度／路線",
+        "天氣來源和觀測時刻",
+        "相同實測列量度樣本外誤差改善",
+        "之後整日留出",
+      ]) {
+        expect(readinessRegion()?.textContent).toContain(gate);
+      }
+      expect(correction().disabled).toBe(true);
+      expect(correction().checked).toBe(false);
+      expect(prediction()).toBeNull();
+    }
+  );
+
+  it("does not recompute server counts, thresholds, deficits, variance or model inclusion", async () => {
+    const readiness = realLikeReadiness();
+    readiness.thresholds.minimumFeatureObservations = 12;
+    readiness.thresholds.minimumFeatureObservedDays = 11;
+    readiness.training = {
+      days: 18,
+      requiredDays: 22,
+      missingDays: 4,
+      latestModelDays: 17,
+    };
+    readiness.factors.sleep = {
+      ...readiness.factors.sleep,
+      observedRows: 1,
+      observedDays: 1,
+      sampleDeficit: 4,
+      observedDayDeficit: 6,
+      minimumAdditionalMatchedDays: 9,
+      varianceKnown: true,
+      varianceSufficient: false,
+      trainingStandardDeviation: null,
+      includedInLatestModel: false,
+    };
+    readiness.minimumAdditionalMatchedDays = 13;
+    readiness.evidenceState = "partial-history";
+    readiness.historyComplete = false;
+    state.data = { ...fixture(), readiness };
+    await render();
+    expect(progressCardText("跑前睡眠有效觀測樣本")).toContain("1 / 12 筆");
+    expect(progressCardText("跑前睡眠香港觀測日")).toContain("1 / 11 日");
+    expect(progressCardText("跑前睡眠有效觀測樣本")).toContain(
+      "樣本缺額 4 筆；觀測日缺額 6 日"
+    );
+    expect(progressCardText("跑前睡眠有效觀測樣本")).toContain(
+      "最低合資格配對日缺額：9 日"
+    );
+    expect(progressCardText("跑前睡眠有效觀測樣本")).toContain(
+      "變化核驗：未通過"
+    );
+    expect(progressCardText("跑前睡眠有效觀測樣本")).toContain(
+      "標準差 未知（不當作 0）"
+    );
+    expect(progressCardText("合資格訓練日")).toContain("18 / 22 日");
+    expect(progressCardText("合資格訓練日")).toContain(
+      "最新模型實際訓練 17 日"
+    );
+    expect(readinessRegion()?.textContent).toContain(
+      "整體最低合資格配對日缺額（後端條件式下限）：13 日"
+    );
+    expect(readinessRegion()?.textContent).toContain("歷史完整性：未完整");
+    expect(readinessRegion()?.textContent).toContain("計數只限已載入資料");
+  });
+
+  it("shows current HR baseline unknown without a zero bar, then supplied days/required and exact earlier window", async () => {
+    state.data = { ...fixture(), readiness: realLikeReadiness() };
+    await render();
+    expect(readinessRegion()?.textContent).toContain(
+      "較早基準日數：未知（最低 7 日；量測日前 28 日視窗）"
+    );
+    expect(readinessRegion()?.textContent).toContain(
+      "基準缺額：未知；後端基準核驗：未知"
+    );
+    expect(() => readinessProgress("目前心率較早基準日")).toThrow(
+      "Missing readiness progress"
+    );
+    expect(readinessRegion()?.textContent).not.toContain("0 / 7");
+    state.data.readiness = qualifiedReadiness();
+    state.data.readiness.currentBaseline = {
+      ...state.data.readiness.currentBaseline,
+      observedEarlierDays: 3,
+      missingEarlierDays: 4,
+      sufficient: false,
+    };
+    await render();
+    expect(
+      readinessProgress("目前心率較早基準日").getAttribute("aria-valuenow")
+    ).toBe("3");
+    expect(
+      readinessProgress("目前心率較早基準日").getAttribute("aria-valuemax")
+    ).toBe("7");
+    expect(readinessRegion()?.textContent).toContain("3 / 7 日");
+    expect(readinessRegion()?.textContent).toContain(
+      "較早 28 日視窗：2026-10-17 至 2026-11-14（不包括結束日）"
+    );
+    expect(readinessRegion()?.textContent).toContain(
+      "基準缺額：4 日；後端基準核驗：未通過"
+    );
+    expect(readinessRegion()?.textContent).toContain(
+      "量測同日及未來資料不可補足"
+    );
+  });
+
+  it("reports old reports as unknown with no server counters or progress inferred from coverage", async () => {
+    const report = fixture();
+    report.coverage.runs = 200;
+    report.coverage.sleeps = 200;
+    report.coverage.hearts = 200;
+    state.data = report;
+    await render();
+    const region = readinessRegion();
+    expect(region?.querySelector('[role="status"]')?.textContent).toContain(
+      "準備度未知"
+    );
+    expect(region?.textContent).toContain("未提供伺服器準備度計數");
+    expect(region?.textContent).toContain("目前心率基準日數均未知");
+    expect(region?.textContent).toContain(
+      "不從全域歷史總數、最近證據表或 200 筆紀錄推算"
+    );
+    expect(region?.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
+    expect(region?.textContent).not.toMatch(/\d+\s*\/\s*\d+|已達門檻|已納入/);
+  });
+
+  it("hides stale readiness immediately on group/distance selection and while pending or a placeholder", async () => {
+    const report = { ...fixture(), readiness: realLikeReadiness() };
+    state.data = report;
+    await render();
+    expect(readinessRegion()).toBeDefined();
+    await selectGroup(groups[1].key);
+    expect(readinessRegion()).toBeUndefined();
+    expect(host.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
+    state.data = { ...report, selectedGroup: { ...groups[1] } };
+    await render();
+    expect(readinessRegion()).toBeDefined();
+    state.fetching = true;
+    await render();
+    expect(readinessRegion()).toBeUndefined();
+    expect(host.textContent).not.toContain("樣本缺額 10 筆");
+    state.fetching = false;
+    state.placeholder = true;
+    await render();
+    expect(readinessRegion()).toBeUndefined();
+    state.placeholder = false;
+    await render();
+    expect(readinessRegion()).toBeDefined();
+    await click("6 km");
+    expect(readinessRegion()).toBeUndefined();
+    state.data = { ...report, targetDistanceKm: 6 };
+    state.loading = true;
+    state.fetching = true;
+    await render();
+    expect(readinessRegion()).toBeUndefined();
+    state.loading = false;
+    state.fetching = false;
+    await render();
+    expect(readinessRegion()).toBeDefined();
+  });
+
+  it("hides readiness while weather is debounced, wake-date refetch is pending and refresh fails", async () => {
+    state.data = { ...fixture(), readiness: realLikeReadiness() };
+    await render();
+    expect(readinessRegion()).toBeDefined();
+    const calls = state.query.mock.calls.length;
+    await render({ ...props, temperatureC: 30 });
+    expect(readinessRegion()).toBeUndefined();
+    expect(host.textContent).not.toContain("合資格配對日缺額");
+    expect(state.query.mock.calls.length).toBe(calls);
+    state.fetching = true;
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 390));
+    });
+    expect(readinessRegion()).toBeUndefined();
+    state.fetching = false;
+    await render({ ...props, temperatureC: 30 });
+    expect(readinessRegion()).toBeDefined();
+    const label = [...host.querySelectorAll("label")].find(
+      element => element.textContent === "我確認睡眠紀錄日期是起床日期"
+    )!;
+    const checkbox = host.querySelector<HTMLInputElement>(
+      `input[id="${label.htmlFor}"]`
+    )!;
+    state.fetching = true;
+    await act(async () => checkbox.click());
+    expect(state.query.mock.lastCall?.[0].sleepDateConvention).toBe(
+      "wake-date"
+    );
+    expect(readinessRegion()).toBeUndefined();
+    state.fetching = false;
+    state.error = { message: "載入失敗" };
+    await render({ ...props, temperatureC: 30 });
+    expect(readinessRegion()).toBeUndefined();
+    expect(host.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      "載入失敗"
+    );
+    expect(state.refetch).not.toHaveBeenCalled();
   });
 });

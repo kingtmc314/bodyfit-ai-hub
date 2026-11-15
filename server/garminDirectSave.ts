@@ -5,6 +5,7 @@ import { getDb } from "./db";
 import { parseGarminRawFile } from "./garminFileImport";
 import { storageReadBuffer } from "./storage";
 import { ensureSheetHeaders, writeRowToSheet } from "./sheetsService";
+import { prepareGarminGpsWeather } from "./garminGpsWeather";
 
 type GarminPreview = ReturnType<typeof parseGarminRawFile>;
 type RunningRow = Record<string, unknown> & { id: number; date: string };
@@ -228,6 +229,8 @@ export async function saveGarminImport(input: GarminDirectSaveInput): Promise<Ga
   const rawFileHash = createHash("sha256").update(buffer).digest("hex");
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
+  // Network lookups never hold date/hash transaction locks or prevent a source save.
+  const gpsWeather = await prepareGarminGpsWeather(preview);
 
   const result = await db.transaction(async tx => {
     // PostgreSQL transaction-scoped locks work across server instances. Truncate
@@ -342,7 +345,7 @@ export async function saveGarminImport(input: GarminDirectSaveInput): Promise<Ga
     }
 
     // Create only from the validated file summary, including running dynamics.
-    const fields: Record<string, string> = { ...preview.fields,
+    const fields: Record<string, string> = { ...preview.fields, ...gpsWeather.fields,
       hour: String(Math.floor(summary.durationSec / 3600)),
       minutes: String(Math.floor(summary.durationSec % 3600 / 60)),
       second: String(Math.round(summary.durationSec % 60)),
@@ -357,7 +360,7 @@ export async function saveGarminImport(input: GarminDirectSaveInput): Promise<Ga
     const inserted = rowsFrom(await tx.execute(sql`
       INSERT INTO running_logs (${sql.raw(entries.map(([, column]) => column).join(", "))}, garmin_details, laps, time_series)
       VALUES (${sql.join(values.map(value => sql`${value}`), sql`, `)},
-        ${JSON.stringify(metadata)}::jsonb, ${JSON.stringify(preview.laps)}::jsonb, ${JSON.stringify(preview.timeSeries)}::jsonb)
+        ${JSON.stringify({ ...metadata, ...gpsWeather.metadata })}::jsonb, ${JSON.stringify(preview.laps)}::jsonb, ${JSON.stringify(preview.timeSeries)}::jsonb)
       RETURNING ${ROW_COLUMNS}
     `))[0];
     if (!inserted) throw new Error("未能建立 Garmin 跑步紀錄，請重試。");

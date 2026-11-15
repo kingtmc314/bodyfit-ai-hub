@@ -17,6 +17,7 @@ import GarminRunImporter from "@/components/GarminRunImporter";
 import GarminRawFileImporter from "@/components/GarminRawFileImporter";
 import GarminTimeSeriesChart from "@/components/GarminTimeSeriesChart";
 import GarminHealthBriefing from "@/components/GarminHealthBriefing";
+import RunningGpsWeatherPanel from "@/components/RunningGpsWeatherPanel";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart, Area
@@ -157,7 +158,7 @@ export default function Running() {
   const [garminImportBusy, setGarminImportBusy] = useState(false);
   const [garminDirectSaved, setGarminDirectSaved] = useState(false);
   const [garminUnconfirmed, setGarminUnconfirmed] = useState(false);
-  const [timeSeriesRun, setTimeSeriesRun] = useState<{ label: string; samples: Array<Record<string, unknown>> } | null>(null);
+  const [timeSeriesRun, setTimeSeriesRun] = useState<{ id: number; label: string; samples: Array<Record<string, unknown>> } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [aiWeeks, setAiWeeks] = useState(12);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
@@ -1049,6 +1050,7 @@ export default function Running() {
                                 aria-label={`查看 ${formatHKDate(row.date)} 的 Garmin 逐秒曲線`}
                                 title="查看 Garmin 逐秒曲線"
                                 onClick={() => setTimeSeriesRun({
+                                  id: Number(row.id),
                                   label: `${formatHKDate(row.date)}${row.running_type ? ` · ${row.running_type}` : ""}`,
                                   samples: toGarminTimeSeries(row.time_series),
                                 })}
@@ -2251,6 +2253,7 @@ export default function Running() {
               Garmin 逐秒跑步曲線
             </DialogTitle>
           </DialogHeader>
+          {timeSeriesRun && <RunningGpsWeatherPanel key={timeSeriesRun.id} runningLogId={timeSeriesRun.id} />}
           {timeSeriesRun && (
             <GarminTimeSeriesChart
               timeSeries={timeSeriesRun.samples}

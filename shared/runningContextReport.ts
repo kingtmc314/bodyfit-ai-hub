@@ -1,3 +1,79 @@
+import type { RunningContextFeature, RunningPredictionBlocker, RunningValidationStatus } from "./runningCrossValidation";
+
+/** Counts describe the full loaded, qualifying cohort, never the recent evidence table. */
+export type ContextFactorReadiness = {
+  feature: "preRunSleepHours" | "restingHrDeltaBpm";
+  includedInLatestModel: boolean;
+  observedRows: number;
+  observedDays: number;
+  missingRows: number;
+  /** Eligible HK run-days with no qualifying observation of this factor. */
+  missingDays: number;
+  invalidRows: number;
+  sampleDeficit: number;
+  observedDayDeficit: number;
+  minimumAdditionalMatchedDays: number;
+  trainingStandardDeviation: number | null;
+  varianceKnown: boolean;
+  varianceSufficient: boolean | null;
+  blockers: string[];
+};
+export type ContextDayReadiness = {
+  days: number;
+  requiredDays: number;
+  missingDays: number;
+};
+export type ContextBaselineReadiness = {
+  measurementDateHK: string | null;
+  windowStartHK: string | null;
+  windowEndExclusiveHK: string | null;
+  lookbackDays: number;
+  requiredEarlierDays: number;
+  /** Null when no selected measurement/comparable provenance is available. */
+  observedEarlierDays: number | null;
+  missingEarlierDays: number | null;
+  sufficient: boolean | null;
+  blockers: string[];
+};
+export type RunningContextReadiness = {
+  version: "running-context-readiness-v1";
+  scope: "full-loaded-selected-cohort-before-as-of-hk-date";
+  asOfHK: string;
+  evidenceState: "complete" | "partial-history" | "no-selected-group" | "no-eligible-runs";
+  historyComplete: boolean;
+  eligibleRows: number;
+  eligibleDays: number;
+  thresholds: {
+    minimumFeatureObservations: number;
+    minimumFeatureObservedDays: number;
+    minimumTrainingDays: number;
+    minimumHeldOutDays: number;
+    minimumFeatureStandardDeviation: number;
+    minimumEarlierRestingHrDays: number;
+    restingHrLookbackDays: number;
+  };
+  factors: { sleep: ContextFactorReadiness; restingHR: ContextFactorReadiness };
+  training: ContextDayReadiness & { latestModelDays: number };
+  /** Exact same rows used by baseline/weather/full-context error comparison. */
+  commonHeldOut: ContextDayReadiness & { rows: number };
+  /** Common rows with BOTH sleep and HR-deviation actually observed, never imputed. */
+  commonObservedHeldOut: ContextDayReadiness & { rows: number };
+  /** All active inputs observed on the exact latest feature schema; not imputed aggregate evidence. */
+  deploymentEvidence: ContextDayReadiness & { rows: number; sufficient: boolean; latestFeatureNames: RunningContextFeature[] };
+  currentBaseline: ContextBaselineReadiness;
+  sleepDateConvention: "unknown" | "wake-date";
+  currentSleepVerified: boolean;
+  validationStatus: RunningValidationStatus | null;
+  predictionBlocker: RunningPredictionBlocker | null;
+  /** Count/variation/history gates only, not an improvement or prediction claim. */
+  dataQualified: boolean;
+  advancedReady: boolean;
+  /** Conditional lower bound, NOT an exact number of new raw records or an enablement guarantee. */
+  minimumAdditionalMatchedDays: number;
+  blockers: string[];
+  notes: string[];
+};
+
 export type ContextPaceBasis = "continuous-moving" | "summary";
 export type ContextGroup = {
   key: string;
@@ -77,4 +153,6 @@ export type RunningContextReport = {
   };
   rows: ContextEvidenceRow[];
   limitations: string[];
+  /** Optional for backwards compatibility with previously saved reports. */
+  readiness?: RunningContextReadiness;
 };
