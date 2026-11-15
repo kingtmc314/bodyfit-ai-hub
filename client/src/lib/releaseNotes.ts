@@ -36,6 +36,23 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.17.1",
+    status: "released",
+    title: "官方健身室地區與多詞搜尋修正",
+    summary:
+      "修正官方分店以 HK／CN／SG／TW／MO 保存，但使用香港等地區名稱搜尋時未能匹配的問題。",
+    changes: {
+      added: [],
+      removed: [],
+      improved: [
+        "ISO 代碼、香港／Hong Kong、台灣／Taiwan、澳門／Macau、中國大陸／China、新加坡／Singapore 同義匹配，亦涵蓋已保存地址；品牌、地點及官方別名可跨名稱／地址匹配。",
+      ],
+      revised: [
+        "供應商故障時仍能依地區找到官方器械分店；不修改任何既有健身資料，Gymwork 內嵌授權狀態不變。",
+      ],
+    },
+  },
+  {
     version: "3.17.0",
     status: "released",
     title: "Volume 力量耗能、肌群分析與分店器械工作室",
@@ -699,7 +716,7 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
     status: "released",
     summary:
       "Volume 力量耗能、週月年／全部肌群與 AI 分析、分店器械和 3D 肌肉檢視；Gymwork 原作在官方頁觀看，App 內嵌仍待授權。",
-    lastRevisedVersion: "3.17.0",
+    lastRevisedVersion: "3.17.1",
     lastRevisedDateHK: "2026年11月15日（香港）",
     history: [
       {

@@ -632,3 +632,8 @@
 - [x] Global gym address search with official/owner priority, provider pagination and honest fallback; 325 official 24/7 addresses across HK/CN/SG/TW/MO; global all-chain completeness not claimed
 - [x] Additive owner-scoped gym/confirmed-equipment tables applied with RLS; strict inputs/source/ownership;325 identity-validated public detail snapshots yielded293 published branch inventories/12444 raw inventory entries,32 unknown, no guessed machines; source/counts and owner confirmations separated
 - [x] Branch selection affects new-session location only; official search/filter20-entry pages/manual/photo-assisted confirmation UI and regressions; real rollback-only temp-table address/upsert dedup,52 YuenLong official rows,owner precedence,branch isolation/deletion passed; no production health or gym records/sequences changed by tests
+
+### v3.17.1 production validation follow-up (08:35 HK)
+- [x] Vercel 668951c1 deployed, but production read validator caught a real official-directory match problem: source uses ISO HK/CN/SG/TW/MO while UI country can be 香港/Hong Kong; query brand + location words also required contiguous text incorrectly. Do not claim that original production check passed.
+- [x] Fix five-region ISO/English/Traditional/Simplified aliases in official and saved-country filtering; require all query words across name/address/brand/verified aliases rather than one contiguous string; source precedence retained. Real local HK Chinese/English YuenLong and SG searches now return official rows first.
+- [ ] Full new regressions/typecheck/web/Vercel build, checkpoint/immediate push, production Volume/muscle/directory validation, cross-device production UI and final release record. Gymwork inline animation still blocked separately.

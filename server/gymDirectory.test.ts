@@ -6,6 +6,7 @@ import { makeRequest } from "./_core/map";
 import { GYM_OFFICIAL_SEEDS } from "../shared/gymOfficialSeeds";
 import { GYM_OFFICIAL_INVENTORY } from "../shared/gymOfficialInventory";
 import {
+  normalizeGymCountry,
   gymSearchSchema,
   gymSaveLocationSchema,
   gymUpsertEquipmentSchema,
@@ -272,6 +273,83 @@ describe("gym validation and stable identity", () => {
   });
 });
 describe("read-only address directory and honest provider coverage", () => {
+  it("matches brand and location terms across official name/aliases without provider guessing", async () => {
+    (GYM_OFFICIAL_SEEDS as any[]).push({
+      ...seed(1),
+      name: "元朗第一分店",
+      address: "59A Public Road",
+      country: "HK",
+      aliases: ["Yuen Long"],
+    });
+    vi.mocked(makeRequest).mockResolvedValue({ status: "REQUEST_DENIED" });
+    for (const query of ["24/7 Fitness 元朗", "24/7 Fitness Yuen Long"]) {
+      const result = await searchGyms({
+        query,
+        country: "香港",
+        limit: 20,
+        offset: 0,
+      });
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0].source).toBe("official_seed");
+    }
+    expect(
+      (
+        await searchGyms({
+          query: "24/7 Fitness Seattle",
+          country: "香港",
+          limit: 20,
+          offset: 0,
+        })
+      ).results
+    ).toHaveLength(0);
+  });
+
+  it.each([
+    ["HK", "香港"],
+    ["HK", "Hong Kong"],
+    ["HK", " hk "],
+    ["CN", "中國大陸"],
+    ["CN", "Mainland China"],
+    ["CN", "China"],
+    ["SG", "新加坡"],
+    ["SG", "Singapore"],
+    ["TW", "台灣"],
+    ["TW", "臺灣"],
+    ["TW", "Taiwan"],
+    ["MO", "澳門"],
+    ["MO", "Macau"],
+  ])(
+    "matches official ISO %s with user country %s during provider outage",
+    async (iso, country) => {
+      (GYM_OFFICIAL_SEEDS as any[]).push({ ...seed(1), country: iso });
+      vi.mocked(makeRequest).mockResolvedValue({ status: "REQUEST_DENIED" });
+      expect(normalizeGymCountry(country)).toBe(iso);
+      const result = await searchGyms({
+        query: "24/7 Fitness",
+        country,
+        limit: 20,
+        offset: 0,
+      });
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0].source).toBe("official_seed");
+      expect(result.results[0].country).toBe(iso);
+    }
+  );
+  it("does not admit another country through shared brand aliases", async () => {
+    (GYM_OFFICIAL_SEEDS as any[]).push({ ...seed(1), country: "SG" });
+    vi.mocked(makeRequest).mockResolvedValue({ status: "REQUEST_DENIED" });
+    expect(
+      (
+        await searchGyms({
+          query: "24/7 Fitness",
+          country: "香港",
+          limit: 20,
+          offset: 0,
+        })
+      ).results
+    ).toHaveLength(0);
+  });
+
   it("returns all indexed official seeds with stable bounded pagination during outage", async () => {
     (GYM_OFFICIAL_SEEDS as any[]).push(
       ...Array.from({ length: 123 }, (_, i) => seed(i + 1))

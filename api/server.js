@@ -164092,17 +164092,43 @@ function seedLocation(seed) {
 function officialGymLocations() {
   return GYM_OFFICIAL_SEEDS.map(seedLocation).filter((g) => !!g);
 }
-function officialAliasMatch(g, query) {
-  const seed = GYM_OFFICIAL_SEEDS.find(
-    (s) => `official:${s.id}` === g.id
-  );
-  return (seed?.aliases ?? []).some(
-    (a) => normalizeGymIdentity(a).includes(normalizeGymIdentity(query))
-  );
+var OFFICIAL_COUNTRY_NAMES = {
+  HK: ["HK", "Hong Kong", "\u9999\u6E2F", "Hong Kong SAR", "\u4E2D\u570B\u9999\u6E2F", "\u4E2D\u56FD\u9999\u6E2F"],
+  CN: [
+    "CN",
+    "China",
+    "Mainland China",
+    "\u4E2D\u570B",
+    "\u4E2D\u56FD",
+    "\u4E2D\u570B\u5927\u9678",
+    "\u4E2D\u56FD\u5927\u9646",
+    "\u5167\u5730",
+    "\u5185\u5730"
+  ],
+  SG: ["SG", "Singapore", "\u65B0\u52A0\u5761"],
+  TW: ["TW", "Taiwan", "\u53F0\u7063", "\u81FA\u7063", "\u53F0\u6E7E"],
+  MO: ["MO", "Macau", "Macao", "\u6FB3\u9580", "\u6FB3\u95E8"]
+};
+function normalizeGymCountry(value) {
+  const normalized = normalizeGymIdentity(value);
+  return Object.entries(OFFICIAL_COUNTRY_NAMES).find(
+    ([, names]) => names.some((name) => normalizeGymIdentity(name) === normalized)
+  )?.[0] ?? normalized;
 }
-var textMatch = (g, query, country) => (!country || normalizeGymIdentity(g.country ?? "") === normalizeGymIdentity(country)) && (normalizeGymIdentity([g.name, g.address, g.brand].join(" ")).includes(
-  normalizeGymIdentity(query)
-) || officialAliasMatch(g, query));
+function gymCountrySearchNames(value) {
+  return OFFICIAL_COUNTRY_NAMES[normalizeGymCountry(value)] ?? [value];
+}
+function officialSearchAliases(g) {
+  const seed = GYM_OFFICIAL_SEEDS.find(
+    (s) => `official:${s.id}` === g.id || gymIdentityKey(s.name, s.address) === gymIdentityKey(g.name, g.address)
+  );
+  return seed?.aliases ?? [];
+}
+var textMatch = (g, query, country) => (!country || normalizeGymCountry(g.country ?? "") === normalizeGymCountry(country)) && normalizeGymIdentity(query).split(" ").filter(Boolean).every(
+  (term) => normalizeGymIdentity(
+    [g.name, g.address, g.brand, ...officialSearchAliases(g)].join(" ")
+  ).includes(term)
+);
 var priority = (g) => /24\s*\/?\s*7\s*fitness/i.test(`${g.brand ?? ""} ${g.name}`) ? 0 : 1;
 function mergeGymLocations(groups) {
   const rows = [];
@@ -164139,15 +164165,24 @@ async function requireDb() {
 async function getSavedGymRows(query = "", country) {
   const db = await getDb();
   if (!db) return [];
-  const pattern = `%${escapeGymLike(query)}%`;
+  const terms = query.trim().split(/\s+/).filter(Boolean);
   const where = and3(
     eq4(gymLocations.userId, GYM_OWNER_USER_ID),
-    query ? or2(
-      sql5`${gymLocations.name} ILIKE ${pattern} ESCAPE '\\'`,
-      sql5`${gymLocations.address} ILIKE ${pattern} ESCAPE '\\'`,
-      sql5`${gymLocations.brand} ILIKE ${pattern} ESCAPE '\\'`
+    query ? and3(
+      ...terms.map((term) => {
+        const pattern = `%${escapeGymLike(term)}%`;
+        return or2(
+          sql5`${gymLocations.name} ILIKE ${pattern} ESCAPE '\\'`,
+          sql5`${gymLocations.address} ILIKE ${pattern} ESCAPE '\\'`,
+          sql5`${gymLocations.brand} ILIKE ${pattern} ESCAPE '\\'`
+        );
+      })
     ) : void 0,
-    country ? sql5`lower(${gymLocations.country}) = lower(${country})` : void 0
+    country ? or2(
+      ...gymCountrySearchNames(country).map(
+        (name) => sql5`lower(trim(${gymLocations.country})) = lower(${name})`
+      )
+    ) : void 0
   );
   const rows = [];
   for (let offset = 0; ; offset += READ_PAGE_SIZE) {

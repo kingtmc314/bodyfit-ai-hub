@@ -264,21 +264,53 @@ export function officialGymLocations(): GymLocation[] {
     .map(seedLocation)
     .filter((g): g is GymLocation => !!g);
 }
-function officialAliasMatch(g: GymLocation, query: string) {
+const OFFICIAL_COUNTRY_NAMES: Record<string, readonly string[]> = {
+  HK: ["HK", "Hong Kong", "香港", "Hong Kong SAR", "中國香港", "中国香港"],
+  CN: [
+    "CN",
+    "China",
+    "Mainland China",
+    "中國",
+    "中国",
+    "中國大陸",
+    "中国大陆",
+    "內地",
+    "内地",
+  ],
+  SG: ["SG", "Singapore", "新加坡"],
+  TW: ["TW", "Taiwan", "台灣", "臺灣", "台湾"],
+  MO: ["MO", "Macau", "Macao", "澳門", "澳门"],
+};
+export function normalizeGymCountry(value: string): string {
+  const normalized = normalizeGymIdentity(value);
+  return (
+    Object.entries(OFFICIAL_COUNTRY_NAMES).find(([, names]) =>
+      names.some(name => normalizeGymIdentity(name) === normalized)
+    )?.[0] ?? normalized
+  );
+}
+function gymCountrySearchNames(value: string): readonly string[] {
+  return OFFICIAL_COUNTRY_NAMES[normalizeGymCountry(value)] ?? [value];
+}
+function officialSearchAliases(g: GymLocation): readonly string[] {
   const seed = (GYM_OFFICIAL_SEEDS as readonly GymOfficialSeed[]).find(
-    s => `official:${s.id}` === g.id
+    s =>
+      `official:${s.id}` === g.id ||
+      gymIdentityKey(s.name, s.address) === gymIdentityKey(g.name, g.address)
   );
-  return (seed?.aliases ?? []).some(a =>
-    normalizeGymIdentity(a).includes(normalizeGymIdentity(query))
-  );
+  return seed?.aliases ?? [];
 }
 const textMatch = (g: GymLocation, query: string, country?: string) =>
   (!country ||
-    normalizeGymIdentity(g.country ?? "") === normalizeGymIdentity(country)) &&
-  (normalizeGymIdentity([g.name, g.address, g.brand].join(" ")).includes(
-    normalizeGymIdentity(query)
-  ) ||
-    officialAliasMatch(g, query));
+    normalizeGymCountry(g.country ?? "") === normalizeGymCountry(country)) &&
+  normalizeGymIdentity(query)
+    .split(" ")
+    .filter(Boolean)
+    .every(term =>
+      normalizeGymIdentity(
+        [g.name, g.address, g.brand, ...officialSearchAliases(g)].join(" ")
+      ).includes(term)
+    );
 const priority = (g: GymLocation) =>
   /24\s*\/?\s*7\s*fitness/i.test(`${g.brand ?? ""} ${g.name}`) ? 0 : 1;
 export function mergeGymLocations(groups: GymLocation[][]): GymLocation[] {
@@ -325,18 +357,27 @@ export async function getSavedGymRows(
 ): Promise<SavedGymLocation[]> {
   const db = await getDb();
   if (!db) return [];
-  const pattern = `%${escapeGymLike(query)}%`;
+  const terms = query.trim().split(/\s+/).filter(Boolean);
   const where = and(
     eq(gymLocations.userId, GYM_OWNER_USER_ID),
     query
-      ? or(
-          sql`${gymLocations.name} ILIKE ${pattern} ESCAPE '\\'`,
-          sql`${gymLocations.address} ILIKE ${pattern} ESCAPE '\\'`,
-          sql`${gymLocations.brand} ILIKE ${pattern} ESCAPE '\\'`
+      ? and(
+          ...terms.map(term => {
+            const pattern = `%${escapeGymLike(term)}%`;
+            return or(
+              sql`${gymLocations.name} ILIKE ${pattern} ESCAPE '\\'`,
+              sql`${gymLocations.address} ILIKE ${pattern} ESCAPE '\\'`,
+              sql`${gymLocations.brand} ILIKE ${pattern} ESCAPE '\\'`
+            );
+          })
         )
       : undefined,
     country
-      ? sql`lower(${gymLocations.country}) = lower(${country})`
+      ? or(
+          ...gymCountrySearchNames(country).map(
+            name => sql`lower(trim(${gymLocations.country})) = lower(${name})`
+          )
+        )
       : undefined
   );
   const rows: SavedGymLocation[] = [];
