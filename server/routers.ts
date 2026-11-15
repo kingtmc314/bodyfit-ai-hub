@@ -32,6 +32,10 @@ import { decodeInBodyPhoto, extractInBodyPhoto, saveInBodyReport, INBODY_MAX_BAS
 import Papa from "papaparse";
 import { CARDIO_EXERCISE_NAMES, estimateWorkoutCalories, calorieEstimateSummary } from "@shared/workoutCalories";
 import { getWorkoutCalorieReadModels, planWorkoutCreation, updateWorkoutSession, finishWorkoutSession, requireWorkoutSession, requireWorkoutSet, refreshWorkoutSessionCalories, sessionHKDate, workoutWeekMonday, validateWorkoutSetChange } from "./workoutCalorieService";
+import { isMuscleAnalysisDate, MUSCLE_ANALYSIS_PERIODS } from "@shared/workoutMuscleAnalytics";
+import { getWorkoutMuscleAnalysis } from "./workoutMuscleAnalytics";
+import { analyzeWorkoutMusclePeriod } from "./workoutMuscleAI";
+import { gymRouter } from "./gymDirectoryRouter";
 // Fixed owner user ID - no login required
 const OWNER_USER_ID = 2;
 const MAX_GARMIN_RAW_FILE_BYTES = 25 * 1024 * 1024;
@@ -341,6 +345,31 @@ const nutritionRouter = router({
 
 // ─── Workout Router ───────────────────────────────────────────────────────────
 const workoutRouter = router({
+  // Read-only muscle attribution across every saved owner gym session in the HK range.
+  getMuscleAnalysis: ownerProcedure
+    .input(z.object({
+      period: z.enum(MUSCLE_ANALYSIS_PERIODS),
+      anchorDate: z.string().refine(isMuscleAnalysisDate, "anchorDate must be a valid YYYY-MM-DD date"),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      return getWorkoutMuscleAnalysis(db, OWNER_USER_ID, input);
+    }),
+
+  // Explicit AI invocation; reads the same full period snapshot and never saves a review or alters records.
+  analyzeMusclePeriod: ownerProcedure
+    .input(z.object({
+      period: z.enum(MUSCLE_ANALYSIS_PERIODS),
+      anchorDate: z.string().refine(isMuscleAnalysisDate, "anchorDate must be a valid YYYY-MM-DD date"),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const snapshot = await getWorkoutMuscleAnalysis(db, OWNER_USER_ID, input);
+      return analyzeWorkoutMusclePeriod(snapshot);
+    }),
+
   // Get all exercises (built-in + user's custom)
   getExercises: publicProcedure
     .input(z.object({ muscleGroup: z.string().optional() }).optional())
@@ -4568,6 +4597,7 @@ export const appRouter = router({
     }),
   }),
   nutrition: nutritionRouter,
+  gym: gymRouter,
   workout: workoutRouter,
   body: bodyRouter,
   heartRate: heartRateRouter,

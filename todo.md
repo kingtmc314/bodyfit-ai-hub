@@ -612,3 +612,23 @@
 - [x] Separate actual recorded duration from set-based calorie heuristic; never prefill or persist guessed minutes as real session duration; show unsaved recalculation preview for reviewed minutes/intensity/weight and retain unknown source/manual values; original 60 remains 60, corrupt 694 becomes unknown not guessed 8; exact user offending record/actual time remains unprovided and is not guessed or rewritten
 - [x] Add source/controls/errors/cleanup/buffering and time/preview/persistence regressions; 43 files/406 tests, TypeScript, web/Vercel builds and diff check passed; version/history 3.16.1; real Postgres temp-table rollback-only E2E validated finish/retry/location/manual0 and no health writes
 - [x] Checkpoint 2cca4636 immediately pushed to BodyFit GitHub main; Vercel success and v3.16.1 frontend/28-session actual-time contract verified read-only; production browser confirmed all four exact official video cards/source IDs, retained explicit missing-motion labels and 3D; all verification left health records unchanged. This final record preserves the disclosed cloud YouTube buffering limitation rather than claiming all four streams played.
+
+## v3.17.0 Gym-only Volume, muscle analytics and responsive movement studio
+- [x] Introduce explicit load × reps × completed sets Volume energy component with transparent assumptions; keep actual time/manual/source/legacy provenance intact, no bulk DB rewrites; real rollback temp-table finish/retry/manual0/cardio-once E2E passed
+- [x] Add HK week/month/year/all muscle analysis from full existing history; separate primary/secondary, conservative allocation, no fabricated activation or population rank; actual 29 sessions/410 sets read successfully
+- [x] Verify common machine movement/muscles and front/back maps, exact original-source metadata and unsupported states; original animation prototype removed from release after 07:40 source clarification
+- [x] Changed requirement handled: gym UI uses exact Gymwork original-page links only, no YouTube/original-motion substitution or copying; inline animation intentionally not marked complete (separate blocker below)
+- [x] Upgrade ONLY gym UI using screenshots: sets/Volume/rest/history/library/detail, equipment and grouped instructions; six Chromium/WebKit phone390/tablet820/desktop1440 scenarios passed, no overflow/page errors/health writes; browser emulation, not physical-device testing
+- [x] Final source-priority/history state passed 51 files/558 tests, TypeScript/web/Vercel build/diff check; v3.17.0 visible/history; exact initial MD5 of 29 sessions and410 sets unchanged; real all-history AI20.7s and temp-table Volume/branch E2Es passed with no health writes
+- [ ] Save checkpoint then immediately BodyFit GitHub push, verify Vercel production frontend/backend/animation/muscle analysis; final record/checkpoint/push
+
+### v3.17.0 user clarification at 07:40 HK
+- Exact Gymwork originals requested; no YouTube or independent original motion substitute. Official CSP excludes BodyFit embed domains. Deferred clarification pending licensed files/API or original-site-only interim delivery. Do not bypass CSP or extract CDN.
+- [x] Explicitly disclose original-source blocker and remove unapproved motion replacement from shipped UI; original links and muscle/technique metadata integrated without asset extraction
+- [ ] BLOCKED: actual Gymwork animations inside BodyFit still require usable licensed files/API/embed permission; source site CSP forbids iframe, no credentials/assets or authorization supplied. Never claim this requirement is complete.
+- [x] Quantitative period chart AI review and optional 3D muscle inspection integrated; real all-history AI returned complete structured review in20.7s with three suggestions and source limitations, no writes
+
+### v3.17.0 gym directory added at 07:47 HK
+- [x] Global gym address search with official/owner priority, provider pagination and honest fallback; 325 official 24/7 addresses across HK/CN/SG/TW/MO; global all-chain completeness not claimed
+- [x] Additive owner-scoped gym/confirmed-equipment tables applied with RLS; strict inputs/source/ownership;325 identity-validated public detail snapshots yielded293 published branch inventories/12444 raw inventory entries,32 unknown, no guessed machines; source/counts and owner confirmations separated
+- [x] Branch selection affects new-session location only; official search/filter20-entry pages/manual/photo-assisted confirmation UI and regressions; real rollback-only temp-table address/upsert dedup,52 YuenLong official rows,owner precedence,branch isolation/deletion passed; no production health or gym records/sequences changed by tests

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTableName } from "drizzle-orm";
-import { estimateWorkoutCalories } from "../shared/workoutCalories";
+import { estimateWorkoutCalories, WORKOUT_CALORIE_VERSION, PREVIOUS_WORKOUT_CALORIE_VERSION } from "../shared/workoutCalories";
 import { finishWorkoutSession, getWorkoutCalorieReadModels, refreshWorkoutSessionCalories, updateWorkoutSession } from "./workoutCalorieService";
 import { appRouter } from "./routers";
 import { getDb } from "./db";
@@ -73,13 +73,55 @@ describe("non-destructive calorie service persistence", () => {
     expect(mock.db.update).not.toHaveBeenCalled();
     expect(mock.session.caloriesBurned).toBe(original);
   });
-  it("refreshes new versioned sessions and keeps workload independent of MET", async () => {
+  it("refreshes new v2 sessions with logged volume, not a full-duration MET overlay", async () => {
     const details = estimateWorkoutCalories({ sets, verifiedDurationMinutes: 60 }); details.origin = "new";
     const mock = fakeDb({ ...baseSession, calorieDetails: details });
     const result = await refreshWorkoutSessionCalories(mock.db, 1, 2);
-    expect(result.caloriesBurned).toBe(263);
-    expect(mock.writes[0].values).toMatchObject({ totalVolume: 400, caloriesBurned: 263 });
-    expect(mock.writes[0].values.calorieDetails.version).toBe("workout-active-v1");
+    expect(result.caloriesBurned).toBe(133);
+    expect(mock.writes[0].values).toMatchObject({ totalVolume: 400, caloriesBurned: 133 });
+    expect(mock.writes[0].values.calorieDetails.version).toBe(WORKOUT_CALORIE_VERSION);
+    expect(result.calorieEstimate.volume?.totalVolumeKgReps).toBe(400);
+  });
+  it("v1 automatic provenance recomputes on read without touching saved calories, timing or raw evidence", async () => {
+    const { volume, modelVersion, ...old } = estimateWorkoutCalories({ sets, verifiedDurationMinutes: 45 });
+    const prior = { ...old, version: PREVIOUS_WORKOUT_CALORIE_VERSION, origin: "new", manualCalories: null, rawOriginalCalories: 999 };
+    const mock = fakeDb({ ...baseSession, duration: 694, calorieDetails: prior, caloriesBurned: 213 });
+    const before = JSON.stringify(mock.session);
+    const [read] = await getWorkoutCalorieReadModels(mock.db, [mock.session], 2);
+    expect(read.calorieReadModel).toBe("current");
+    expect(read.calorieDetails.source).toBe("mixed");
+    expect(read.calorieDetails.version).toBe(WORKOUT_CALORIE_VERSION);
+    expect(read.duration).toBe(45);
+    expect(read.rawOriginalCalories).toBe(999);
+    expect(mock.writes).toEqual([]);
+    expect(JSON.stringify(mock.session)).toBe(before);
+    await refreshWorkoutSessionCalories(mock.db, 1, 2);
+    expect(mock.writes[0].values).not.toHaveProperty("caloriesBurned");
+    expect(mock.writes[0].values).not.toHaveProperty("calorieDetails");
+    expect(mock.session.calorieDetails.version).toBe(PREVIOUS_WORKOUT_CALORIE_VERSION);
+  });
+  it("v1 manual zero survives read and user-initiated volume refresh", async () => {
+    const prior = { ...estimateWorkoutCalories({ sets, manualCalories: 0, verifiedDurationMinutes: 45 }),
+      version: PREVIOUS_WORKOUT_CALORIE_VERSION, origin: "new", rawOriginalCalories: 777 };
+    const mock = fakeDb({ ...baseSession, calorieDetails: prior, caloriesBurned: 0 });
+    const [read] = await getWorkoutCalorieReadModels(mock.db, [mock.session], 2);
+    expect(read.caloriesBurned).toBe(0);
+    expect(read.calorieReadModel).toBe("manual_preserved");
+    expect(read.rawOriginalCalories).toBe(777);
+    expect((await refreshWorkoutSessionCalories(mock.db, 1, 2)).caloriesBurned).toBe(0);
+    expect(mock.writes[0].values).not.toHaveProperty("caloriesBurned");
+  });
+  it("v1 location-only edits never rewrite saved kcal, duration or model metadata", async () => {
+    const prior = { ...estimateWorkoutCalories({ sets, verifiedDurationMinutes: 45 }),
+      version: PREVIOUS_WORKOUT_CALORIE_VERSION, origin: "new", rawOriginalCalories: 999 };
+    const mock = fakeDb({ ...baseSession, calorieDetails: prior, caloriesBurned: 213 });
+    await updateWorkoutSession(mock.db, 1, 2, { location: "私人健身室" }, now);
+    expect(mock.writes[0].values).toMatchObject({ location: "私人健身室", totalVolume: 400 });
+    expect(mock.writes[0].values).not.toHaveProperty("caloriesBurned");
+    expect(mock.writes[0].values).not.toHaveProperty("duration");
+    expect(mock.writes[0].values).not.toHaveProperty("calorieDetails");
+    expect(mock.session.caloriesBurned).toBe(213);
+    expect(mock.session.calorieDetails.version).toBe(PREVIOUS_WORKOUT_CALORIE_VERSION);
   });
   it("legacy set refresh changes only volume, never auto-backfills calories or metadata", async () => {
     const mock = fakeDb();
@@ -99,7 +141,7 @@ describe("non-destructive calorie service persistence", () => {
     const mock = fakeDb({ ...baseSession, startTime: new Date("2026-11-01T12:00:00+08:00"), duration: 694, caloriesBurned: Math.round(5 * 70 * 694 / 60) });
     const original = mock.session.caloriesBurned;
     const finished = await finishWorkoutSession(mock.db, 1, 2, { duration: 60, intensity: "vigorous", bodyWeightKg: 80 }, now);
-    expect(finished.caloriesBurned).toBe(397);
+    expect(finished.caloriesBurned).toBe(133);
     expect(mock.session.caloriesBurned).toBe(original);
     expect(mock.session.duration).toBe(694);
     expect(mock.session.calorieDetails).toMatchObject({ origin: "legacy", rawOriginalCalories: original, intensity: "vigorous" });
@@ -169,12 +211,12 @@ describe("workout/dashboard routers use one corrected read model", () => {
     const detail = await caller.workout.getSessionWithSets({ sessionId: 1 });
     const daily = await caller.workout.getDailyCaloriesBurned({ date: "2026-11-11" });
     const dashboard = await caller.dashboard.getSummary();
-    expect(list[0].caloriesBurned).toBe(263);
-    expect(detail?.session.caloriesBurned).toBe(263);
-    expect(daily.totalBurned).toBe(263);
-    expect(dashboard?.exercise.workoutBurned).toBe(263);
+    expect(list[0].caloriesBurned).toBe(133);
+    expect(detail?.session.caloriesBurned).toBe(133);
+    expect(daily.totalBurned).toBe(133);
+    expect(dashboard?.exercise.workoutBurned).toBe(133);
     expect(dashboard?.exercise.cardioBurned).toBe(130);
-    expect(dashboard?.exercise.totalBurned).toBe(263);
+    expect(dashboard?.exercise.totalBurned).toBe(133);
     expect(mock.writes).toEqual([]);
   });
   it("weekly aggregate agrees with daily corrected total and uses HK ISO week", async () => {
@@ -182,7 +224,7 @@ describe("workout/dashboard routers use one corrected read model", () => {
     const mock = fakeDb({ ...baseSession, calorieDetails: details });
     vi.mocked(getDb).mockResolvedValue(mock.db);
     const weekly = await caller.charts.weeklyExerciseCalories({ weeks: 8 });
-    expect(weekly).toEqual([{ week: "2026-11-09", label: "11-09", workout: 263, running: 0, steps: 0, total: 263 }]);
+    expect(weekly).toEqual([{ week: "2026-11-09", label: "11-09", workout: 133, running: 0, steps: 0, total: 133 }]);
     expect(mock.writes).toEqual([]);
   });
   it("source contract has no direct SQL SUM of legacy workout calories", () => {

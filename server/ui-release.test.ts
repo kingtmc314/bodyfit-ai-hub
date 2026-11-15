@@ -6,7 +6,7 @@ import { formatHKLongDate, getHKHour } from "../client/src/lib/hkTime";
 describe("UI release metadata", () => {
   it("keeps the sidebar application version aligned with package metadata", () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    expect(APP_VERSION).toBe("3.16.1");
+    expect(APP_VERSION).toBe("3.17.0");
     expect(packageJson.version).toBe(APP_VERSION);
   });
 });
@@ -23,9 +23,10 @@ describe("Premium feature page hierarchy", () => {
     expect(heroSource).toContain("feature-hero-metrics-many");
   });
 
-  it("uses the shared premium hero on Nutrition, Workout, and Sleep", () => {
+  it("retains Nutrition and Sleep premium heroes while upgrading gym to a scoped studio", () => {
     expect(nutritionSource).toContain('tone="nutrition"');
-    expect(workoutSource).toContain('tone="workout"');
+    expect(workoutSource).toContain('WorkoutStudioHeader');
+    expect(workoutSource).toContain('WorkoutStudioStyles');
     expect(sleepSource).toContain('tone="sleep"');
     expect(nutritionSource).toContain("todayHKString()");
     expect(workoutSource).toContain("selectedDaySessions");
@@ -86,8 +87,10 @@ describe("v3.14 focused training scope", () => {
     expect(nutritionSource).toContain("SMART FOOD FLOW");
     expect(nutritionSource).toContain("拍照分析");
     expect(nutritionSource).toContain("常用食物");
-    expect(workoutSource).toContain("下一組 · 一鍵預填");
-    expect(workoutSource).toContain("休息計時器");
+    expect(workoutSource).toContain("studio-set-row");
+    expect(workoutSource).toContain("reps:");
+    expect(workoutSource).toContain("weight:");
+    expect(workoutSource).toContain("WorkoutStudioRestBar");
     expect(workoutSource).not.toContain("exerciseLibMode === 'physio'");
   });
 

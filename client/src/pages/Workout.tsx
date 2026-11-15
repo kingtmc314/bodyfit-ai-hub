@@ -23,19 +23,34 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import PremiumFeatureHero from "@/components/PremiumFeatureHero";
+import WorkoutMuscleAnalytics from "@/components/WorkoutMuscleAnalytics";
+import GymDirectoryPanel from "@/components/GymDirectoryPanel";
+import {
+  WorkoutStudioStyles,
+  WorkoutStudioHeader,
+  WorkoutStudioExerciseHeading,
+  WorkoutStudioRestBar,
+  studioMuscleLabel,
+  useStudioLanguage,
+} from "@/components/WorkoutStudio";
+import { EXERCISE_GUIDES, getExerciseGuide } from "@shared/exerciseGuides";
+import { getExerciseMuscles } from "@shared/exerciseMuscles";
 import GymLocationInput, {
   normalizeGymLocation,
 } from "@/components/GymLocationInput";
 import { APP_VERSION } from "@/lib/appMeta";
-import { getExerciseDemo } from "@shared/exerciseDemoCatalog";
+import { getGymworkReference } from "@shared/gymworkReferences";
 import {
   MAX_WORKOUT_MINUTES,
   estimateWorkoutCalories,
   calorieEstimateSummary,
   type WorkoutCalorieEstimate,
 } from "@shared/workoutCalories";
-import { getWorkoutTimeDetails, reviewedWorkoutDurationInput, isActualWorkoutMinutes } from "@shared/workoutTiming";
+import {
+  getWorkoutTimeDetails,
+  reviewedWorkoutDurationInput,
+  isActualWorkoutMinutes,
+} from "@shared/workoutTiming";
 export type { WorkoutCalorieEstimate } from "@shared/workoutCalories";
 import {
   prepareReportPhoto,
@@ -948,6 +963,7 @@ export function WorkoutEnergyPanel({
 }: {
   estimate?: WorkoutCalorieEstimate | null;
 }) {
+  const isZh = useStudioLanguage();
   return (
     <section
       aria-label="活動熱量估算"
@@ -960,15 +976,17 @@ export function WorkoutEnergyPanel({
           </span>
           <div>
             <h3 className="text-sm font-bold text-foreground">
-              {estimate?.source === "manual" ? "保留原始／手動熱量 · 口徑未核實" : "估計活動熱量 · ACTIVE"}
+              {estimate?.source === "manual"
+                ? "保留原始／手動熱量 · 口徑未核實"
+                : "估計活動熱量 · ACTIVE"}
             </h3>
             <p className="text-[11px] text-muted-foreground">
               {estimate?.source === "manual"
                 ? "保留原始／手動值，不能確認其来源或活動／總熱量口徑；不是模型估算。"
                 : estimate?.source === "machine_reported" ||
-              estimate?.source === "mixed"
-                ? "器材回報可能包含靜息熱量，無法確認為純活動消耗。"
-                : "活動估算扣除靜息代謝，不是量測值。"}{" "}
+                    estimate?.source === "mixed"
+                  ? "器材回報可能包含靜息熱量，無法確認為純活動消耗。"
+                  : "活動估算扣除靜息代謝，不是量測值。"}{" "}
               勿視為可精確抵銷的飲食額度。
             </p>
           </div>
@@ -1021,9 +1039,59 @@ export function WorkoutEnergyPanel({
                   estimate.intensity ||
                   "未提供"}
               </dd>
-              <p className="mt-1 text-[11px] text-muted-foreground">模型時間可由組數推估，不代表實際課程時長。</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                模型時間可由組數推估，不代表實際課程時長。
+              </p>
             </div>
           </dl>
+          {estimate.volume && (
+            <dl className="mt-3 grid grid-cols-2 gap-3 rounded-xl border border-blue-100 bg-blue-50/50 p-3 text-xs sm:grid-cols-4">
+              <div>
+                <dt className="text-[10px] text-muted-foreground">
+                  {isZh ? "力量訓練量" : "Strength volume"}
+                </dt>
+                <dd className="mt-1 font-bold text-blue-700">
+                  {Math.round(
+                    estimate.volume.totalVolumeKgReps
+                  ).toLocaleString()}{" "}
+                  kg·{isZh ? "次" : "reps"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[10px] text-muted-foreground">
+                  {isZh ? "已記錄力量組／次數" : "Logged strength sets / reps"}
+                </dt>
+                <dd className="mt-1 font-semibold">
+                  {estimate.volume.completedSets} / {estimate.volume.totalReps}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[10px] text-muted-foreground">
+                  {isZh ? "模型工作／恢復分鐘" : "Model work / recovery min"}
+                </dt>
+                <dd className="mt-1 font-semibold">
+                  {estimate.volume.workMinutes.toFixed(1)} /{" "}
+                  {estimate.volume.recoveryMinutes.toFixed(1)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[10px] text-muted-foreground">
+                  {isZh
+                    ? "缺漏／器材負重需核對"
+                    : "Missing / ambiguous load sets"}
+                </dt>
+                <dd className="mt-1 font-semibold">
+                  {estimate.volume.missingLoadSets} /{" "}
+                  {estimate.volume.equipmentAmbiguousSets}
+                </dd>
+              </div>
+              <p className="col-span-2 text-[10px] leading-5 text-muted-foreground sm:col-span-4">
+                {isZh
+                  ? "訓練量是記錄 kg × 次數，不代表肌肉活化或熱量。有效工作／恢復時間及能量為未驗證模型假設，不是實際課程時長；器材、單邊與總負重仍須核對。"
+                  : "Volume is logged kg × reps, not activation or calories. Work/recovery time and energy are unverified model assumptions, not actual session duration. Machine, one-side and total-load conventions need review."}
+              </p>
+            </dl>
+          )}
           {estimate.warnings?.length > 0 && (
             <ul
               aria-label="估算限制"
@@ -1116,6 +1184,7 @@ function LibraryFilters({
 export default function Workout() {
   const { t } = useTranslation();
   const isOwner = useIsOwner();
+  const isZh = useStudioLanguage();
   const [selectedDate, setSelectedDate] = useState(() => todayHKString());
   const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1157,7 +1226,7 @@ export default function Workout() {
   >("date_desc");
   const [sessionSearch, setSessionSearch] = useState("");
   const [activeTab, setActiveTab] = useState<
-    "session" | "exercises" | "history" | "pr"
+    "session" | "exercises" | "history" | "pr" | "muscles" | "gyms"
   >("session");
   const [prSearch, setPrSearch] = useState("");
   const [prSortBy, setPrSortBy] = useState<"weight" | "name" | "date">(
@@ -1207,6 +1276,28 @@ export default function Workout() {
     { sessionId: activeSession?.id ?? 0 },
     { enabled: !!activeSession?.id }
   );
+  const previousSession = useMemo(() => {
+    if (!activeSession?.startTime) return null;
+    const anchor = new Date(activeSession.startTime).getTime();
+    return (
+      [...sessions]
+        .filter(
+          session =>
+            session.id !== activeSession.id &&
+            session.endTime &&
+            new Date(session.startTime).getTime() < anchor
+        )
+        .sort(
+          (a, b) =>
+            new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+        )[0] ?? null
+    );
+  }, [sessions, activeSession?.id, activeSession?.startTime]);
+  const { data: previousSessionDetail, isLoading: previousSetsLoading } =
+    trpc.workout.getSessionWithSets.useQuery(
+      { sessionId: previousSession?.id ?? 0 },
+      { enabled: !!previousSession?.id && activeTab === "session" }
+    );
   const savedLocations = useMemo(
     () =>
       sessions
@@ -1230,24 +1321,53 @@ export default function Workout() {
     const timer = window.setInterval(() => setWorkoutClock(Date.now()), 15000);
     return () => window.clearInterval(timer);
   }, [currentSession?.id]);
-  const timeDetails = currentSession ? getWorkoutTimeDetails(currentSession, new Date(workoutClock)) : null;
+  const timeDetails = currentSession
+    ? getWorkoutTimeDetails(currentSession, new Date(workoutClock))
+    : null;
   const finishPreview = useMemo(() => {
     if (!showFinishDialog || !finishForm.duration.trim()) return null;
     const minutes = Number(finishForm.duration);
-    const weight = finishForm.bodyWeightKg.trim() ? Number(finishForm.bodyWeightKg) : calorieEstimate?.bodyWeightKg;
-    if (!isActualWorkoutMinutes(minutes) || minutes <= 0 || (weight != null && (!Number.isFinite(weight) || weight < 20 || weight > 350))) return null;
+    const weight = finishForm.bodyWeightKg.trim()
+      ? Number(finishForm.bodyWeightKg)
+      : calorieEstimate?.bodyWeightKg;
+    if (
+      !isActualWorkoutMinutes(minutes) ||
+      minutes <= 0 ||
+      (weight != null &&
+        (!Number.isFinite(weight) || weight < 20 || weight > 350))
+    )
+      return null;
     if (sessionDetail?.session?.id !== currentSession?.id) return null;
     try {
-      return calorieEstimateSummary(estimateWorkoutCalories({
-        sets: sessionDetail?.sets ?? [], verifiedDurationMinutes: minutes,
-        intensity: finishForm.intensity, bodyWeightKg: weight,
-        weightSource: finishForm.bodyWeightKg.trim() ? "session_override" : calorieEstimate?.weightSource,
-        manualCalories: currentSession?.calorieDetails?.manualCalories
-          ?? (calorieEstimate?.source === "manual" ? currentSession?.caloriesBurned : null),
-        tolerateInvalid: true,
-      }));
-    } catch { return null; }
-  }, [showFinishDialog, finishForm, sessionDetail, currentSession?.id, currentSession?.calorieDetails, currentSession?.caloriesBurned, calorieEstimate]);
+      return calorieEstimateSummary(
+        estimateWorkoutCalories({
+          sets: sessionDetail?.sets ?? [],
+          verifiedDurationMinutes: minutes,
+          intensity: finishForm.intensity,
+          bodyWeightKg: weight,
+          weightSource: finishForm.bodyWeightKg.trim()
+            ? "session_override"
+            : calorieEstimate?.weightSource,
+          manualCalories:
+            currentSession?.calorieDetails?.manualCalories ??
+            (calorieEstimate?.source === "manual"
+              ? currentSession?.caloriesBurned
+              : null),
+          tolerateInvalid: true,
+        })
+      );
+    } catch {
+      return null;
+    }
+  }, [
+    showFinishDialog,
+    finishForm,
+    sessionDetail,
+    currentSession?.id,
+    currentSession?.calorieDetails,
+    currentSession?.caloriesBurned,
+    calorieEstimate,
+  ]);
   const historicalSession = Boolean(
     currentSession &&
       getSessionHKDate(currentSession) &&
@@ -1268,6 +1388,7 @@ export default function Workout() {
   const createSession = trpc.workout.createSession.useMutation({
     onSuccess: data => {
       utils.workout.getSessions.invalidate();
+      utils.workout.getMuscleAnalysis.invalidate();
       const template = WORKOUT_TEMPLATES.find(
         item => item.key === selectedTemplateKey
       );
@@ -1310,6 +1431,7 @@ export default function Workout() {
   const deleteSession = trpc.workout.deleteSession.useMutation({
     onSuccess: () => {
       utils.workout.getSessions.invalidate();
+      utils.workout.getMuscleAnalysis.invalidate();
       setActiveSession(null);
       toast.success("Session deleted");
     },
@@ -1318,6 +1440,7 @@ export default function Workout() {
     onSuccess: () => {
       utils.workout.getSessionWithSets.invalidate();
       utils.workout.getSessions.invalidate();
+      utils.workout.getMuscleAnalysis.invalidate();
       setShowAddSetDialog(false);
       toast.success("Set logged!");
     },
@@ -1342,6 +1465,7 @@ export default function Workout() {
     onSuccess: () => {
       utils.workout.getSessionWithSets.invalidate();
       utils.workout.getSessions.invalidate();
+      utils.workout.getMuscleAnalysis.invalidate();
       setEditSet(null);
       setShowAddSetDialog(false);
       toast.success("Updated!");
@@ -1352,6 +1476,7 @@ export default function Workout() {
     onSuccess: () => {
       utils.workout.getSessionWithSets.invalidate();
       utils.workout.getSessions.invalidate();
+      utils.workout.getMuscleAnalysis.invalidate();
       toast.success("Set deleted");
     },
   });
@@ -1372,25 +1497,48 @@ export default function Workout() {
     notes: "",
   });
   const editDurationPreview = useMemo(() => {
-    if (!showEditSessionDialog || !editSessionForm.duration.trim() || sessionDetail?.session?.id !== currentSession?.id) return null;
+    if (
+      !showEditSessionDialog ||
+      !editSessionForm.duration.trim() ||
+      sessionDetail?.session?.id !== currentSession?.id
+    )
+      return null;
     const minutes = Number(editSessionForm.duration);
     if (!isActualWorkoutMinutes(minutes) || minutes <= 0) return null;
     try {
-      return calorieEstimateSummary(estimateWorkoutCalories({
-        sets: sessionDetail?.sets ?? [], verifiedDurationMinutes: minutes,
-        bodyWeightKg: calorieEstimate?.bodyWeightKg, weightSource: calorieEstimate?.weightSource,
-        intensity: calorieEstimate?.intensity,
-        manualCalories: currentSession?.calorieDetails?.manualCalories
-          ?? (calorieEstimate?.source === "manual" ? currentSession?.caloriesBurned : null),
-        tolerateInvalid: true,
-      }));
-    } catch { return null; }
-  }, [showEditSessionDialog, editSessionForm.duration, sessionDetail, currentSession?.id, currentSession?.calorieDetails, currentSession?.caloriesBurned, calorieEstimate]);
+      return calorieEstimateSummary(
+        estimateWorkoutCalories({
+          sets: sessionDetail?.sets ?? [],
+          verifiedDurationMinutes: minutes,
+          bodyWeightKg: calorieEstimate?.bodyWeightKg,
+          weightSource: calorieEstimate?.weightSource,
+          intensity: calorieEstimate?.intensity,
+          manualCalories:
+            currentSession?.calorieDetails?.manualCalories ??
+            (calorieEstimate?.source === "manual"
+              ? currentSession?.caloriesBurned
+              : null),
+          tolerateInvalid: true,
+        })
+      );
+    } catch {
+      return null;
+    }
+  }, [
+    showEditSessionDialog,
+    editSessionForm.duration,
+    sessionDetail,
+    currentSession?.id,
+    currentSession?.calorieDetails,
+    currentSession?.caloriesBurned,
+    calorieEstimate,
+  ]);
   const initialEditSessionForm = useRef<typeof editSessionForm | null>(null);
   const updateSession = trpc.workout.updateSession.useMutation({
     onSuccess: () => {
       utils.workout.getSessions.invalidate();
       utils.workout.getSessionWithSets.invalidate();
+      utils.workout.getMuscleAnalysis.invalidate();
       setShowEditSessionDialog(false);
       toast.success("訓練記錄已更新！");
     },
@@ -1516,6 +1664,7 @@ export default function Workout() {
   const finishSession = trpc.workout.finishSession.useMutation({
     onSuccess: data => {
       utils.workout.getSessions.invalidate();
+      utils.workout.getMuscleAnalysis.invalidate();
       setFinishLoading(false);
       setShowFinishDialog(false);
       utils.workout.getSessionWithSets.invalidate();
@@ -1615,7 +1764,21 @@ export default function Workout() {
       ...c,
       isCustom: true,
     }));
-    return [...BUILT_IN_EXERCISES, ...custom];
+    const originalMachines = EXERCISE_GUIDES.filter(
+      motion =>
+        !BUILT_IN_EXERCISES.some(
+          exercise =>
+            getExerciseGuide(exercise.name, exercise.equipment)?.id ===
+            motion.id
+        )
+    ).map(motion => ({
+      name: motion.name,
+      nameZh: motion.nameZh,
+      muscleGroup: motion.primary[0] || "",
+      equipment: "Machine",
+      instructions: motion.movement.join(" "),
+    }));
+    return [...BUILT_IN_EXERCISES, ...originalMachines, ...custom];
   }, [customExercisesData]);
 
   const plannedExercises = useMemo(() => {
@@ -2030,7 +2193,13 @@ export default function Workout() {
 
   const lastLoggedSet = useMemo(() => {
     const sets = sessionDetail?.sets ?? [];
-    return sets.length > 0 ? sets[sets.length - 1] : null;
+    return sets.length > 0
+      ? [...sets].sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() ||
+            b.id - a.id
+        )[0]
+      : null;
   }, [sessionDetail]);
 
   const openNextSet = () => {
@@ -2059,7 +2228,10 @@ export default function Workout() {
           }
         : {
             reps: lastLoggedSet.reps || 10,
-            weight: lastLoggedSet.weight || 0,
+            weight:
+              weightUnit === "lbs"
+                ? Number(((lastLoggedSet.weight || 0) * 2.20462).toFixed(2))
+                : lastLoggedSet.weight || 0,
             duration: 0,
             distance: 0,
             avgHr: 0,
@@ -2145,7 +2317,8 @@ export default function Workout() {
       historicalSession
     )
       return;
-    if (!finishForm.duration.trim()) return toast.error("實際課程時長尚未核對，請輸入分鐘後再確認儲存。");
+    if (!finishForm.duration.trim())
+      return toast.error("實際課程時長尚未核對，請輸入分鐘後再確認儲存。");
     const duration = Number(finishForm.duration);
     const bodyWeightKg = finishForm.bodyWeightKg.trim()
       ? Number(finishForm.bodyWeightKg)
@@ -2187,31 +2360,93 @@ export default function Workout() {
   };
 
   return (
-    <div className="min-w-0 p-4 sm:p-6 space-y-5 max-w-7xl mx-auto">
-      <PremiumFeatureHero
-        tone="workout"
-        icon={Dumbbell}
-        eyebrow={
+    <div className="workout-studio min-w-0 p-3 sm:p-6 space-y-5 max-w-7xl mx-auto">
+      <WorkoutStudioStyles />
+      <WorkoutStudioHeader
+        title={`${t("workout.title")} · v${APP_VERSION}`}
+        subtitle={
+          isZh
+            ? "清楚記錄每一組，讓訓練有跡可循。"
+            : "A clear space to log every set and follow your progress."
+        }
+        status={
           currentSession
             ? currentSession.endTime
-              ? "已完成訓練"
+              ? isZh
+                ? "已完成訓練"
+                : "Completed workout"
               : historicalSession
-                ? "歷史補錄課程"
-                : "訓練進行中"
-            : selectedDate === todayHKString()
-              ? "今日訓練節奏"
-              : "歷史訓練記錄"
+                ? isZh
+                  ? "歷史補錄課程"
+                  : "Historical session"
+                : isZh
+                  ? "訓練進行中"
+                  : "Workout in progress"
+            : isZh
+              ? "準備開始"
+              : "Ready to train"
         }
-        title={`${t("workout.title")} · v${APP_VERSION}`}
-        subtitle={t("workout.subtitle")}
+        workoutTime={
+          timeDetails?.actualMinutes != null
+            ? `${timeDetails.actualMinutes} ${isZh ? "分鐘" : "min"}`
+            : timeDetails?.elapsedMinutes != null
+              ? `${Math.floor(timeDetails.elapsedMinutes)} ${isZh ? "分鐘" : "min"}`
+              : "—"
+        }
+        timeNote={
+          !currentSession
+            ? isZh
+              ? "尚未開始訓練 · 準備好就記錄第一組。"
+              : "No workout started yet · log your first set when ready."
+            : timeDetails?.actualMinutes != null
+              ? isZh
+                ? "實際課程時長 · 請保留核對原始時間"
+                : "Actual session duration · review original time"
+              : timeDetails?.elapsedMinutes != null
+                ? isZh
+                  ? "經過時間，可能含閒置；結束前須核對實際時長。"
+                  : "Elapsed time may include idle time; review before finishing."
+                : isZh
+                  ? "實際課程時長未知，需核對；不以模型時間代替。"
+                  : "Actual duration unknown; model time is not session time."
+        }
+        volume={Math.round(
+          currentSession
+            ? (sessionDetail?.sets ?? []).reduce(
+                (sum, set) => sum + (set.weight || 0) * (set.reps || 0),
+                0
+              )
+            : selectedDayVolume
+        ).toLocaleString()}
+        energy={
+          currentSession
+            ? formatActiveEnergyRange(calorieEstimate)
+            : selectedDayCalories > 0
+              ? `≈ ${Math.round(selectedDayCalories)}`
+              : "—"
+        }
+        sets={
+          currentSession && sessionDetail?.session?.id === currentSession.id
+            ? (sessionDetail?.sets.length ?? null)
+            : null
+        }
+        onFinish={
+          isOwner &&
+          currentSession &&
+          !currentSession.endTime &&
+          !historicalSession
+            ? openFinishSession
+            : undefined
+        }
+        finishing={finishLoading}
         actions={
-          <div className="flex items-center gap-2 flex-wrap">
+          <>
             <Input
               aria-label="選擇訓練日期（香港時間）"
               type="date"
               value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              className="h-9 w-[8.6rem] border-white/20 bg-white/10 text-center text-xs text-white [color-scheme:dark] placeholder:text-white/60"
+              onChange={event => setSelectedDate(event.target.value)}
+              className="h-11 w-36 border-border bg-white text-xs text-slate-700"
             />
             {!activeSession ? (
               <Button
@@ -2221,28 +2456,15 @@ export default function Workout() {
                   );
                   setShowSessionDialog(true);
                 }}
-                size="sm"
-                className="h-9 gap-1.5 rounded-xl bg-white text-primary hover:bg-white/90"
+                className="h-11 gap-1.5 rounded-xl"
               >
-                <Plus className="w-3.5 h-3.5" /> {t("workout.start_workout")}
+                <Plus className="h-4 w-4" />
+                {t("workout.start_workout")}
               </Button>
-            ) : (
-              <Badge
-                variant="outline"
-                className="h-9 gap-2 rounded-xl bg-white/12 px-3 text-white border-white/30"
-              >
-                {currentSession?.endTime ? (
-                  <Check className="h-3 w-3" />
-                ) : (
-                  <div className="w-2 h-2 rounded-full bg-white" />
-                )}
-                <span className="max-w-28 truncate">{activeSession.name}</span>
-              </Badge>
-            )}
-            {activeSession && isOwner && (
+            ) : isOwner ? (
               <Button
-                size="sm"
-                className="h-9 rounded-xl bg-white/15 text-white hover:bg-white/25"
+                variant="outline"
+                className="h-11 gap-1 rounded-xl text-xs"
                 onClick={() => {
                   setSessionEntryMode(
                     selectedDate === todayHKString() ? "live" : "manual"
@@ -2250,43 +2472,12 @@ export default function Workout() {
                   setShowSessionDialog(true);
                 }}
               >
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                新增課程
+                <Plus className="h-4 w-4" />
+                {isZh ? "新增課程" : "New session"}
               </Button>
-            )}
-          </div>
+            ) : null}
+          </>
         }
-        metrics={[
-          {
-            label: "訓練次數",
-            value: selectedDaySessions.length,
-            unit: "次",
-            detail:
-              selectedDate === todayHKString() ? "今日完成" : selectedDate,
-          },
-          {
-            label: "總訓練量",
-            value: Math.round(selectedDayVolume).toLocaleString(),
-            unit: "kg",
-            detail: "選定日期累計",
-          },
-          {
-            label: "估計活動熱量",
-            value:
-              currentSession &&
-              getSessionHKDate(currentSession) === selectedDate
-                ? formatActiveEnergyRange(calorieEstimate)
-                : selectedDayCalories > 0
-                  ? `約 ${Math.round(selectedDayCalories)}`
-                  : "—",
-            unit: "kcal",
-            detail:
-              currentSession &&
-              getSessionHKDate(currentSession) === selectedDate
-                ? "ACTIVE · 後端統一估算範圍"
-                : "選定日期記錄估算合計",
-          },
-        ]}
       />
 
       {isLoading && (
@@ -2315,7 +2506,7 @@ export default function Workout() {
       )}
 
       <Tabs value={activeTab} onValueChange={v => setActiveTab(v as any)}>
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl bg-muted/50 p-1 sm:flex sm:w-fit [&>button]:min-h-10">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl border border-border bg-white p-1 sm:flex sm:w-full [&>button]:min-h-11 [&>button]:whitespace-normal [&>button]:text-xs">
           <TabsTrigger value="session">
             {t("workout.active_session")}
             {activeSession && (
@@ -2328,15 +2519,23 @@ export default function Workout() {
           <TabsTrigger value="history">{t("workout.history")}</TabsTrigger>
           <TabsTrigger value="pr" className="gap-1.5">
             <Trophy className="w-3.5 h-3.5 text-amber-500" />
-            個人最佳
+            {isZh ? "個人最佳" : "Personal records"}
+          </TabsTrigger>
+          <TabsTrigger value="muscles" className="col-span-2 gap-1.5">
+            <Activity className="h-3.5 w-3.5" />
+            {isZh ? "肌群分析" : "Muscle analytics"}
+          </TabsTrigger>
+          <TabsTrigger value="gyms" className="col-span-2 gap-1.5">
+            <MapPin className="h-3.5 w-3.5" />
+            {isZh ? "健身室與器械" : "Gyms & equipment"}
           </TabsTrigger>
         </TabsList>
 
         {/* Active Session Tab */}
         <TabsContent value="session" className="mt-4">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="studio-session-layout">
             {/* Muscle Map */}
-            <div className="bg-card border border-border rounded-2xl p-5">
+            <div className="studio-muscle-aside bg-card border border-border rounded-2xl p-5">
               <h3 className="font-semibold text-foreground mb-3 text-sm">
                 {t("workout.muscle_groups")}
               </h3>
@@ -2355,7 +2554,7 @@ export default function Workout() {
                       variant="secondary"
                       className="text-xs capitalize"
                     >
-                      {m}
+                      {studioMuscleLabel(m, isZh)}
                     </Badge>
                   ))}
                 </div>
@@ -2363,7 +2562,7 @@ export default function Workout() {
             </div>
 
             {/* Session Log */}
-            <div className="lg:col-span-2 space-y-3">
+            <div className="studio-session-log space-y-3">
               {!activeSession ? (
                 <div className="bg-card border border-border rounded-2xl p-8 text-center">
                   <Dumbbell className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
@@ -2469,21 +2668,6 @@ export default function Workout() {
                               <Edit2 className="w-3.5 h-3.5" /> 地點／時長
                             </Button>
                           )}
-                          {isOwner && (
-                            <Button
-                              size="sm"
-                              className="gap-2 bg-green-500 hover:bg-green-600 text-white"
-                              disabled={finishLoading}
-                              onClick={openFinishSession}
-                            >
-                              {finishLoading ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Check className="w-3.5 h-3.5" />
-                              )}
-                              結束訓練
-                            </Button>
-                          )}
                         </>
                       )}
                       {isOwner && (
@@ -2506,123 +2690,37 @@ export default function Workout() {
                     </div>
                   </div>
 
-                  <section aria-label="實際課程時間" className="rounded-xl border border-border bg-card p-3 text-xs leading-5">
-                    <p>實際課程時長：{timeDetails?.actualMinutes == null ? "未知，需核對" : `${timeDetails.actualMinutes} 分鐘`}
-                      {timeDetails?.source === "reviewed" ? " · 已手動核對" : timeDetails?.source === "original" ? " · 原始值，未核對" : ""}</p>
-                    {timeDetails?.elapsedMinutes != null && <p>本次即時課程已經過 {Math.floor(timeDetails.elapsedMinutes)} 分鐘（牆鐘時間，可能包含閒置；不會自動計入熱量）。</p>}
-                    <p className="text-muted-foreground">課程時長與下方熱量模型有效分鐘不同。舊紀錄時間可能只是日期標記，不代表真實開始／結束時間。</p>
+                  <section
+                    aria-label="實際課程時間"
+                    className="rounded-xl border border-border bg-card p-3 text-xs leading-5"
+                  >
+                    <p>
+                      實際課程時長：
+                      {timeDetails?.actualMinutes == null
+                        ? "未知，需核對"
+                        : `${timeDetails.actualMinutes} 分鐘`}
+                      {timeDetails?.source === "reviewed"
+                        ? " · 已手動核對"
+                        : timeDetails?.source === "original"
+                          ? " · 原始值，未核對"
+                          : ""}
+                    </p>
+                    {timeDetails?.elapsedMinutes != null && (
+                      <p>
+                        本次即時課程已經過{" "}
+                        {Math.floor(timeDetails.elapsedMinutes)}{" "}
+                        分鐘（牆鐘時間，可能包含閒置；不會自動計入熱量）。
+                      </p>
+                    )}
+                    <p className="text-muted-foreground">
+                      課程時長與下方熱量模型有效分鐘不同。舊紀錄時間可能只是日期標記，不代表真實開始／結束時間。
+                    </p>
                   </section>
                   <WorkoutEnergyPanel estimate={calorieEstimate} />
                   {historicalSession && !currentSession.endTime && (
                     <p className="rounded-xl bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
                       這是未有結束時間的歷史課程。請用「修改」補充實際時間及有效時長，不會以現在時間強制結束。
                     </p>
-                  )}
-
-                  {isOwner && !currentSession.endTime && !historicalSession && (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-                      {lastLoggedSet ? (
-                        <button
-                          type="button"
-                          onClick={openNextSet}
-                          className="group rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-card to-purple-500/10 p-4 text-left transition-all hover:border-primary/45 hover:shadow-md"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-                              <Dumbbell className="h-4 w-4" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-[11px] font-bold uppercase tracking-wider text-primary">
-                                下一組 · 一鍵預填
-                              </p>
-                              <p className="mt-0.5 truncate text-sm font-bold text-foreground">
-                                {lastLoggedSet.exerciseName}
-                              </p>
-                              <p className="mt-0.5 text-xs text-muted-foreground">
-                                沿用上一組：{lastLoggedSet.reps || "—"} reps ×{" "}
-                                {lastLoggedSet.weight || 0} kg
-                              </p>
-                            </div>
-                            <ChevronRight className="h-5 w-5 text-primary transition-transform group-hover:translate-x-0.5" />
-                          </div>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSearchQuery("");
-                            setExerciseLibMode("strength");
-                            setShowExerciseDialog(true);
-                          }}
-                          className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-4 text-left transition-colors hover:bg-primary/10"
-                        >
-                          <p className="text-sm font-bold text-foreground">
-                            開始你的第一個動作
-                          </p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            從器材與肌群動作庫選擇，立即記錄第一組。
-                          </p>
-                        </button>
-                      )}
-                      <div
-                        className={`rounded-2xl border p-3.5 ${restSeconds > 0 ? "border-amber-400/40 bg-amber-400/10" : "border-border bg-card"}`}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className={`flex h-8 w-8 items-center justify-center rounded-lg ${restSeconds > 0 ? "bg-amber-400 text-amber-950" : "bg-muted text-muted-foreground"}`}
-                            >
-                              <Timer className="h-4 w-4" />
-                            </div>
-                            <div>
-                              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                                休息計時器
-                              </p>
-                              <p className="text-sm font-bold text-foreground">
-                                {restSeconds > 0
-                                  ? `${Math.floor(restSeconds / 60)}:${String(restSeconds % 60).padStart(2, "0")}`
-                                  : "準備就緒"}
-                              </p>
-                            </div>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 text-xs"
-                            onClick={() => setRestIsActive(value => !value)}
-                            disabled={restSeconds === 0}
-                          >
-                            {restIsActive ? "暫停" : "繼續"}
-                          </Button>
-                        </div>
-                        <div className="mt-2.5 flex gap-1.5">
-                          {[45, 60, 90, 120].map(seconds => (
-                            <button
-                              key={seconds}
-                              type="button"
-                              onClick={() => {
-                                setRestPreset(seconds);
-                                setRestSeconds(seconds);
-                                setRestIsActive(true);
-                              }}
-                              className={`rounded-md px-2 py-1 text-[10px] font-semibold transition-colors ${restPreset === seconds ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"}`}
-                            >
-                              {seconds}s
-                            </button>
-                          ))}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setRestSeconds(0);
-                              setRestIsActive(false);
-                            }}
-                            className="ml-auto text-[10px] font-semibold text-muted-foreground hover:text-foreground"
-                          >
-                            重設
-                          </button>
-                        </div>
-                      </div>
-                    </div>
                   )}
 
                   {plannedExercises.length > 0 && (
@@ -2718,114 +2816,172 @@ export default function Workout() {
                             key={exerciseName}
                             className="bg-card border border-border rounded-2xl overflow-hidden"
                           >
-                            <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <p className="font-semibold text-foreground text-sm">
-                                    {exerciseName}
-                                  </p>
-                                  {totalVol > 0 && (
-                                    <span className="text-xs font-medium text-orange-500 bg-orange-50 dark:bg-orange-950/30 px-2 py-0.5 rounded-full">
-                                      {totalVol.toLocaleString()} kg
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  {ex && (
-                                    <Badge
-                                      variant="secondary"
-                                      className="text-xs capitalize"
+                            <div className="flex flex-col gap-3 border-b border-border px-3 py-4 sm:px-5">
+                              <WorkoutStudioExerciseHeading
+                                exercise={
+                                  ex || {
+                                    name: exerciseName,
+                                    muscleGroup: "",
+                                    equipment: "",
+                                  }
+                                }
+                                active={
+                                  lastLoggedSet?.exerciseName === exerciseName
+                                }
+                                onOpen={() => {
+                                  setDetailExercise(
+                                    ex || {
+                                      name: exerciseName,
+                                      muscleGroup: "",
+                                      equipment: "",
+                                    }
+                                  );
+                                  setShowExerciseDetail(true);
+                                }}
+                              />
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-xs text-muted-foreground">
+                                  {isZh ? "本次訓練量" : "Session volume"}:{" "}
+                                  <strong className="text-blue-600">
+                                    {totalVol.toLocaleString()} kg
+                                  </strong>
+                                </p>
+                                <div className="flex gap-1">
+                                  {isOwner && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="gap-1 text-xs"
+                                      onClick={() => {
+                                        const isCardio =
+                                          (ex?.muscleGroup || "") === "cardio";
+                                        setSelectedExercise(
+                                          ex || { name: exerciseName }
+                                        );
+                                        setSetForm(
+                                          isCardio
+                                            ? {
+                                                reps: 0,
+                                                weight: 0,
+                                                duration:
+                                                  sets[sets.length - 1]
+                                                    ?.duration || 0,
+                                                distance:
+                                                  sets[sets.length - 1]
+                                                    ?.distance || 0,
+                                                avgHr:
+                                                  sets[sets.length - 1]
+                                                    ?.avgHr || 0,
+                                                calories:
+                                                  sets[sets.length - 1]
+                                                    ?.calories || 0,
+                                                notes: "",
+                                              }
+                                            : {
+                                                reps: 10,
+                                                weight:
+                                                  weightUnit === "lbs"
+                                                    ? Number(
+                                                        (
+                                                          (sets[sets.length - 1]
+                                                            ?.weight || 0) *
+                                                          2.20462
+                                                        ).toFixed(2)
+                                                      )
+                                                    : sets[sets.length - 1]
+                                                        ?.weight || 0,
+                                                duration: 0,
+                                                distance: 0,
+                                                avgHr: 0,
+                                                calories: 0,
+                                                notes: "",
+                                              }
+                                        );
+                                        setEditSet(null);
+                                        setShowAddSetDialog(true);
+                                      }}
                                     >
-                                      {ex.muscleGroup}
-                                    </Badge>
+                                      <Plus className="w-3.5 h-3.5" /> Set
+                                    </Button>
                                   )}
-                                  {ex?.equipment && (
-                                    <Badge
-                                      variant="outline"
-                                      className="text-xs"
-                                    >
-                                      {ex.equipment}
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex gap-1">
-                                {isOwner && (
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    className="gap-1 text-xs"
+                                    className="gap-1 text-xs text-purple-500 hover:text-purple-600"
                                     onClick={() => {
-                                      const isCardio =
-                                        (ex?.muscleGroup || "") === "cardio";
-                                      setSelectedExercise(
-                                        ex || { name: exerciseName }
-                                      );
-                                      setSetForm(
-                                        isCardio
-                                          ? {
-                                              reps: 0,
-                                              weight: 0,
-                                              duration:
-                                                sets[sets.length - 1]
-                                                  ?.duration || 0,
-                                              distance:
-                                                sets[sets.length - 1]
-                                                  ?.distance || 0,
-                                              avgHr:
-                                                sets[sets.length - 1]?.avgHr ||
-                                                0,
-                                              calories:
-                                                sets[sets.length - 1]
-                                                  ?.calories || 0,
-                                              notes: "",
-                                            }
-                                          : {
-                                              reps: 10,
-                                              weight:
-                                                sets[sets.length - 1]?.weight ||
-                                                0,
-                                              duration: 0,
-                                              distance: 0,
-                                              avgHr: 0,
-                                              calories: 0,
-                                              notes: "",
-                                            }
-                                      );
-                                      setEditSet(null);
-                                      setShowAddSetDialog(true);
+                                      setAiAnalysisExercise(exerciseName);
+                                      setAiAnalysisResult(null);
+                                      setShowAiAnalysis(true);
+                                      setAiAnalysisLoading(true);
+                                      analyzeExercise.mutate({ exerciseName });
                                     }}
                                   >
-                                    <Plus className="w-3.5 h-3.5" /> Set
+                                    <Sparkles className="w-3.5 h-3.5" /> AI
                                   </Button>
-                                )}
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="gap-1 text-xs text-purple-500 hover:text-purple-600"
-                                  onClick={() => {
-                                    setAiAnalysisExercise(exerciseName);
-                                    setAiAnalysisResult(null);
-                                    setShowAiAnalysis(true);
-                                    setAiAnalysisLoading(true);
-                                    analyzeExercise.mutate({ exerciseName });
-                                  }}
-                                >
-                                  <Sparkles className="w-3.5 h-3.5" /> AI
-                                </Button>
+                                </div>
                               </div>
+                              <p className="text-[11px] text-muted-foreground">
+                                {isZh ? "上次課程" : "Previous workout"}:{" "}
+                                {previousSetsLoading
+                                  ? isZh
+                                    ? "載入中…"
+                                    : "Loading…"
+                                  : (() => {
+                                      const prior =
+                                        previousSessionDetail?.session?.id ===
+                                        previousSession?.id
+                                          ? previousSessionDetail?.sets
+                                              .filter(
+                                                set =>
+                                                  set.exerciseName ===
+                                                  exerciseName
+                                              )
+                                              .at(-1)
+                                          : null;
+                                      if (!prior)
+                                        return isZh
+                                          ? "上次課程未有此動作記錄；不以 PR 或建議代替。"
+                                          : "No record for this movement in the prior workout; not a PR or recommendation.";
+                                      if (ex?.muscleGroup === "cardio")
+                                        return `${prior.duration ?? "—"} min · ${prior.distance ?? "—"} km`;
+                                      return `${prior.weight ?? "—"} kg × ${prior.reps ?? "—"} ${isZh ? "次" : "reps"} · ${previousSession ? getSessionHKDate(previousSession) : ""}`;
+                                    })()}
+                              </p>
+                            </div>
+                            <div className="studio-set-head">
+                              <span>{isZh ? "組" : "Set"}</span>
+                              <span>
+                                {ex?.muscleGroup === "cardio"
+                                  ? isZh
+                                    ? "有氧記錄"
+                                    : "Cardio record"
+                                  : historyUnit}
+                              </span>
+                              <span>
+                                {ex?.muscleGroup === "cardio"
+                                  ? ""
+                                  : isZh
+                                    ? "次數"
+                                    : "Reps"}
+                              </span>
+                              <span className="text-center">
+                                {isZh ? "完成" : "Done"}
+                              </span>
+                              <span className="hidden md:block">
+                                {isZh ? "修改記錄" : "Edit log"}
+                              </span>
                             </div>
                             <div className="divide-y divide-border">
                               {sets.map((s, i) => (
                                 <div
-                                  key={s.id}
-                                  className="flex items-center gap-3 px-5 py-2.5 hover:bg-muted/20"
+                                  key={s.id ?? `legacy-set-${i}`}
+                                  className="studio-set-row hover:bg-muted/20"
                                 >
-                                  <span className="text-xs text-muted-foreground w-8">
-                                    Set {i + 1}
+                                  <span className="text-xs font-semibold text-muted-foreground">
+                                    {i + 1}
                                   </span>
                                   {ex?.muscleGroup === "cardio" ? (
-                                    <span className="text-sm font-semibold text-foreground flex-1">
+                                    <span className="col-span-2 min-w-0 text-xs font-semibold leading-5 text-foreground">
                                       {s.duration ? `${s.duration} min` : ""}
                                       {s.distance ? ` · ${s.distance} km` : ""}
                                       {(s as any).avgHr
@@ -2836,12 +2992,13 @@ export default function Workout() {
                                         : ""}
                                     </span>
                                   ) : (
-                                    <span className="text-sm font-semibold text-foreground flex-1 flex items-center gap-1.5">
-                                      {s.reps} reps ×{" "}
+                                    <span className="min-w-0 text-sm font-semibold text-foreground">
                                       {historyUnit === "lbs"
                                         ? Math.round((s.weight || 0) * 2.20462)
-                                        : s.weight}{" "}
-                                      {historyUnit}
+                                        : (s.weight ?? "—")}{" "}
+                                      <span className="text-[10px] font-normal text-muted-foreground">
+                                        {historyUnit}
+                                      </span>
                                       {s.weight &&
                                         exercisePRs[exerciseName] &&
                                         s.weight >=
@@ -2856,25 +3013,27 @@ export default function Workout() {
                                     </span>
                                   )}
                                   {ex?.muscleGroup !== "cardio" && (
-                                    <span className="text-xs text-muted-foreground">
-                                      {historyUnit === "lbs"
-                                        ? Math.round(
-                                            (s.reps || 0) *
-                                              (s.weight || 0) *
-                                              2.20462
-                                          )
-                                        : Math.round(
-                                            (s.reps || 0) * (s.weight || 0)
-                                          )}{" "}
-                                      {historyUnit} vol
+                                    <span className="text-sm font-semibold text-foreground">
+                                      {s.reps ?? "—"}
                                     </span>
                                   )}
+                                  <span
+                                    aria-label={
+                                      isZh
+                                        ? "已記錄完成組"
+                                        : "Logged completed set"
+                                    }
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white"
+                                  >
+                                    <Check className="h-4 w-4" />
+                                  </span>
                                   {isOwner && (
-                                    <div className="flex gap-1">
+                                    <div className="studio-set-actions">
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="w-6 h-6 text-blue-500 hover:text-blue-600"
+                                        className="studio-icon-action text-blue-500 hover:text-blue-600"
+                                        aria-label={`複製第 ${i + 1} 組 ${exerciseName}`}
                                         title="複製此組"
                                         onClick={() => {
                                           const isCardio =
@@ -2897,7 +3056,15 @@ export default function Workout() {
                                                 }
                                               : {
                                                   reps: s.reps || 10,
-                                                  weight: s.weight || 0,
+                                                  weight:
+                                                    weightUnit === "lbs"
+                                                      ? Number(
+                                                          (
+                                                            (s.weight || 0) *
+                                                            2.20462
+                                                          ).toFixed(2)
+                                                        )
+                                                      : s.weight || 0,
                                                   duration: 0,
                                                   distance: 0,
                                                   avgHr: 0,
@@ -2914,7 +3081,8 @@ export default function Workout() {
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="w-6 h-6"
+                                        className="studio-icon-action"
+                                        aria-label={`修改第 ${i + 1} 組 ${exerciseName}`}
                                         onClick={() => {
                                           const isCardio =
                                             (ex?.muscleGroup || "") ===
@@ -2937,7 +3105,15 @@ export default function Workout() {
                                                 }
                                               : {
                                                   reps: s.reps || 10,
-                                                  weight: s.weight || 0,
+                                                  weight:
+                                                    weightUnit === "lbs"
+                                                      ? Number(
+                                                          (
+                                                            (s.weight || 0) *
+                                                            2.20462
+                                                          ).toFixed(2)
+                                                        )
+                                                      : s.weight || 0,
                                                   duration: 0,
                                                   distance: 0,
                                                   avgHr: 0,
@@ -2953,7 +3129,8 @@ export default function Workout() {
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="w-6 h-6 text-destructive"
+                                        className="studio-icon-action text-destructive"
+                                        aria-label={`刪除第 ${i + 1} 組 ${exerciseName}`}
                                         onClick={() =>
                                           deleteSet.mutate({ id: s.id })
                                         }
@@ -3015,6 +3192,35 @@ export default function Workout() {
                       </ResponsiveContainer>
                     </div>
                   )}
+                  {isOwner && !currentSession.endTime && !historicalSession && (
+                    <WorkoutStudioRestBar
+                      seconds={restSeconds}
+                      preset={restPreset}
+                      running={restIsActive}
+                      onPreset={seconds => {
+                        setRestPreset(seconds);
+                        setRestSeconds(seconds);
+                        setRestIsActive(true);
+                      }}
+                      onAdjust={delta =>
+                        setRestSeconds(seconds =>
+                          Math.max(0, Math.min(600, seconds + delta))
+                        )
+                      }
+                      onToggle={() => setRestIsActive(value => !value)}
+                      onReset={() => {
+                        setRestSeconds(0);
+                        setRestIsActive(false);
+                      }}
+                      onAddExercise={() => {
+                        setSearchQuery("");
+                        setExerciseLibMode("strength");
+                        setShowExerciseDialog(true);
+                      }}
+                      onAddSet={lastLoggedSet ? openNextSet : undefined}
+                      exerciseName={lastLoggedSet?.exerciseName || undefined}
+                    />
+                  )}
                 </>
               )}
             </div>
@@ -3033,7 +3239,8 @@ export default function Workout() {
                   器材 × 肌群動作庫
                 </h2>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  先找器材，再選肌群。有已核對影片的動作標示「動態示範」；未有影片可查看「肌群與步驟」。卡片圖示不是動作動畫。
+                  先找器材，再選肌群。已核對的 Gymwork
+                  原作只於官網開啟；此頁不複製、嵌入或以其他動畫代替。卡片圖示不是動作動畫；每個動作保留肌群與步驟。
                 </p>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <Button
@@ -3131,10 +3338,10 @@ export default function Workout() {
                 {filteredExercises.length} 個動作 ·{" "}
                 {
                   filteredExercises.filter(exercise =>
-                    getExerciseDemo(exercise.name, exercise.equipment)
+                    getGymworkReference(exercise.name, exercise.equipment)
                   ).length
                 }{" "}
-                個可看動態示範 ·{" "}
+                個有 Gymwork 原作連結 ·{" "}
                 {selectedEquipment === "all" ? "所有器材" : selectedEquipment}
                 {selectedMuscle && exerciseLibMode !== "cardio"
                   ? ` · ${MUSCLE_GROUPS.find(muscle => muscle.id === selectedMuscle)?.label || selectedMuscle}`
@@ -3182,16 +3389,20 @@ export default function Workout() {
                     className="group flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-primary/35"
                   >
                     <div className="flex items-center justify-between gap-2 bg-gradient-to-br from-primary/10 via-muted/40 to-violet-500/5 p-4">
-                      <span
-                        aria-hidden="true"
-                        className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/10 bg-card/80 text-primary"
+                      <button
+                        type="button"
+                        aria-label={`開啟動作詳情 ${exercise.name}`}
+                        onClick={() => {
+                          setDetailExercise(exercise);
+                          setShowExerciseDetail(true);
+                        }}
+                        className="flex min-h-16 min-w-24 flex-col items-center justify-center rounded-xl border border-blue-100 bg-white text-blue-600"
                       >
-                        {exercise.muscleGroup === "cardio" ? (
-                          <Activity className="h-6 w-6" />
-                        ) : (
-                          <Dumbbell className="h-6 w-6" />
-                        )}
-                      </span>
+                        <Activity className="h-5 w-5" />
+                        <span className="mt-1 text-[10px] font-semibold">
+                          {isZh ? "肌群與步驟" : "Muscles & steps"}
+                        </span>
+                      </button>
                       <span className="max-w-[70%] rounded-full border border-border bg-card/70 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
                         {exercise.equipment}
                       </span>
@@ -3254,6 +3465,23 @@ export default function Workout() {
                           </Badge>
                         )}
                       </div>
+                      <p className="mt-2 text-[11px] leading-5 text-blue-600">
+                        {isZh ? "主力" : "Primary"}:{" "}
+                        {getExerciseMuscles(exercise)
+                          .primary.map(id => studioMuscleLabel(id, isZh))
+                          .join(" / ") ||
+                          (isZh
+                            ? "未有阻力肌群分類"
+                            : "No resistance-muscle mapping")}
+                      </p>
+                      {getExerciseMuscles(exercise).secondary.length > 0 && (
+                        <p className="text-[10px] leading-5 text-muted-foreground">
+                          {isZh ? "輔助" : "Secondary"}:{" "}
+                          {getExerciseMuscles(exercise)
+                            .secondary.map(id => studioMuscleLabel(id, isZh))
+                            .join(" / ")}
+                        </p>
+                      )}
                       <p className="mt-2 line-clamp-2 text-[11px] leading-5 text-muted-foreground">
                         {exercise.instructions ||
                           "查看動作詳情，了解姿勢、訓練肌群及安全要點。"}
@@ -3262,17 +3490,37 @@ export default function Workout() {
                         <Button
                           variant="outline"
                           className="h-11 flex-1 gap-1.5 rounded-xl text-xs"
-                          aria-label={`${getExerciseDemo(exercise.name, exercise.equipment) ? "動態示範" : "肌群與步驟"} ${exercise.name}`}
+                          aria-label={`肌群與步驟 ${exercise.name}`}
                           onClick={() => {
                             setDetailExercise(exercise);
                             setShowExerciseDetail(true);
                           }}
                         >
-                          <Play aria-hidden="true" className="h-3.5 w-3.5" />
-                          {getExerciseDemo(exercise.name, exercise.equipment)
-                            ? "動態示範"
-                            : "肌群與步驟"}
+                          <Activity
+                            aria-hidden="true"
+                            className="h-3.5 w-3.5"
+                          />
+                          {isZh ? "肌群與步驟" : "Muscles & steps"}
                         </Button>
+                        {getGymworkReference(
+                          exercise.name,
+                          exercise.equipment
+                        ) && (
+                          <a
+                            href={
+                              getGymworkReference(
+                                exercise.name,
+                                exercise.equipment
+                              )!.url
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={`Gymwork 原作 ${exercise.name}`}
+                            className="flex min-h-11 flex-1 items-center justify-center rounded-xl border border-blue-200 px-2 text-xs font-semibold text-blue-600"
+                          >
+                            Gymwork {isZh ? "原作 ↗" : "original ↗"}
+                          </a>
+                        )}
                         {isOwner && activeSession && (
                           <Button
                             size="icon"
@@ -3830,11 +4078,29 @@ export default function Workout() {
             )}
           </div>
         </TabsContent>
+        <TabsContent value="muscles" className="mt-4">
+          <WorkoutMuscleAnalytics />
+        </TabsContent>
+        <TabsContent value="gyms" className="mt-4">
+          <GymDirectoryPanel
+            onSelectLocation={location => {
+              setSessionLocation(location);
+              setSessionEntryMode(
+                selectedDate === todayHKString() ? "live" : "manual"
+              );
+              setShowSessionDialog(true);
+            }}
+            onOpenExercise={exercise => {
+              setDetailExercise(exercise);
+              setShowExerciseDetail(true);
+            }}
+          />
+        </TabsContent>
       </Tabs>
 
       {/* Start Session Dialog */}
       <Dialog open={showSessionDialog} onOpenChange={setShowSessionDialog}>
-        <DialogContent className="max-w-md max-h-[90dvh] overflow-y-auto">
+        <DialogContent className="workout-studio-dialog max-w-md max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>建立訓練課程</DialogTitle>
           </DialogHeader>
@@ -3989,7 +4255,7 @@ export default function Workout() {
 
       {/* Select Exercise Dialog */}
       <Dialog open={showExerciseDialog} onOpenChange={setShowExerciseDialog}>
-        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+        <DialogContent className="workout-studio-dialog max-w-lg max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>選擇動作</DialogTitle>
           </DialogHeader>
@@ -4129,7 +4395,7 @@ export default function Workout() {
         open={showCreateExerciseDialog}
         onOpenChange={setShowCreateExerciseDialog}
       >
-        <DialogContent className="max-w-md max-h-[90dvh] overflow-y-auto">
+        <DialogContent className="workout-studio-dialog max-w-md max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>新增自訂動作</DialogTitle>
           </DialogHeader>
@@ -4356,7 +4622,7 @@ export default function Workout() {
 
       {/* Add/Edit Set Dialog */}
       <Dialog open={showAddSetDialog} onOpenChange={setShowAddSetDialog}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="workout-studio-dialog max-w-sm">
           <DialogHeader>
             <DialogTitle>
               {editSet ? "Edit Set" : `Log Set — ${selectedExercise?.name}`}
@@ -4668,7 +4934,7 @@ export default function Workout() {
         open={showEditSessionDialog}
         onOpenChange={setShowEditSessionDialog}
       >
-        <DialogContent className="max-w-md max-h-[90dvh] overflow-y-auto">
+        <DialogContent className="workout-studio-dialog max-w-md max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>修改訓練記錄</DialogTitle>
           </DialogHeader>
@@ -4836,13 +5102,21 @@ export default function Workout() {
               />
             </label>
             <p className="text-[11px] leading-5 text-muted-foreground">
-              {timeDetails?.source === "original" ? `原始未核對時長：${timeDetails.actualMinutes} 分鐘。` : timeDetails?.needsReview ? "實際時長未知或無效，需核對。" : ""}
+              {timeDetails?.source === "original"
+                ? `原始未核對時長：${timeDetails.actualMinutes} 分鐘。`
+                : timeDetails?.needsReview
+                  ? "實際時長未知或無效，需核對。"
+                  : ""}
               只自動填入已核對時長；不會填入熱量模型的組數推估時間。修改分鐘不會改寫舊開始／結束時間；未結束歷史課程不會以現在時間自動結束。舊時間欄位可能只是日期標記，除非你自行修改，否則保留原值。
             </p>
-            {editDurationPreview && <section aria-label="未儲存時長修正預覽">
-              <p className="mb-2 text-xs font-semibold">未儲存預覽 · 儲存後才套用時長修正</p>
-              <WorkoutEnergyPanel estimate={editDurationPreview} />
-            </section>}
+            {editDurationPreview && (
+              <section aria-label="未儲存時長修正預覽">
+                <p className="mb-2 text-xs font-semibold">
+                  未儲存預覽 · 儲存後才套用時長修正
+                </p>
+                <WorkoutEnergyPanel estimate={editDurationPreview} />
+              </section>
+            )}
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">
                 備註（選填）
@@ -4882,26 +5156,66 @@ export default function Workout() {
           if (!finishLoading) setShowFinishDialog(open);
         }}
       >
-        <DialogContent className="max-w-md max-h-[90dvh] overflow-y-auto">
+        <DialogContent className="workout-studio-dialog max-w-md max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>結束訓練前核對</DialogTitle>
           </DialogHeader>
           <p className="text-xs leading-5 text-muted-foreground">
             請核對實際課程分鐘（排除長時間離開／閒置）。組數推估的熱量有效分鐘不是實際課程時長，不能自動代填。只有下方確認才會儲存。
           </p>
-          {timeDetails?.source === "original" && <p className="text-xs text-amber-700 dark:text-amber-300">原始值 {timeDetails.actualMinutes} 分鐘尚未核對，請自行輸入實際時間。</p>}
+          {timeDetails?.source === "original" && (
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              原始值 {timeDetails.actualMinutes}{" "}
+              分鐘尚未核對，請自行輸入實際時間。
+            </p>
+          )}
           {timeDetails?.elapsedMinutes != null && (
             <div className="text-xs leading-5">
-              <p>本次即時課程經過 {Math.floor(timeDetails.elapsedMinutes)} 分鐘；包含閒置，請先核對。</p>
-              <Button type="button" variant="outline" className="mt-1" disabled={timeDetails.elapsedMinutes < 1 || timeDetails.elapsedMinutes > MAX_WORKOUT_MINUTES}
-                onClick={() => setFinishForm(form => ({ ...form, duration: String(Math.round(timeDetails.elapsedMinutes!)) }))}>
+              <p>
+                本次即時課程經過 {Math.floor(timeDetails.elapsedMinutes)}{" "}
+                分鐘；包含閒置，請先核對。
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-1"
+                disabled={
+                  timeDetails.elapsedMinutes < 1 ||
+                  timeDetails.elapsedMinutes > MAX_WORKOUT_MINUTES
+                }
+                onClick={() =>
+                  setFinishForm(form => ({
+                    ...form,
+                    duration: String(Math.round(timeDetails.elapsedMinutes!)),
+                  }))
+                }
+              >
                 使用經過時間（仍需確認儲存）
               </Button>
             </div>
           )}
           <section aria-label="未儲存熱量預覽">
-            <p className="mb-2 text-xs font-semibold">未儲存預覽 · 使用目前組數及你輸入的分鐘／強度／體重</p>
-            {finishPreview ? <WorkoutEnergyPanel estimate={finishPreview} /> : <p className="text-xs text-muted-foreground">請填寫有效分鐘以顯示預覽；尚未儲存任何變更。</p>}
+            <p className="mb-2 text-xs font-semibold">
+              未儲存預覽 · 使用目前組數及你輸入的分鐘／強度／體重
+            </p>
+            {finishForm.duration.trim() && (
+              <p className="mb-2 text-xs text-muted-foreground">
+                {isZh
+                  ? "你核對的實際課程時長"
+                  : "Reviewed actual session duration"}
+                : {finishForm.duration} {isZh ? "分鐘" : "min"} ·{" "}
+                {isZh
+                  ? "模型有效分鐘不等於課程時長"
+                  : "Model time is not session time"}
+              </p>
+            )}
+            {finishPreview ? (
+              <WorkoutEnergyPanel estimate={finishPreview} />
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                請填寫有效分鐘以顯示預覽；尚未儲存任何變更。
+              </p>
+            )}
           </section>
           <label className="block text-xs font-medium text-muted-foreground">
             實際課程時長（分鐘）
@@ -4990,7 +5304,7 @@ export default function Workout() {
 
       {/* AI Exercise Analysis Dialog */}
       <Dialog open={showAiAnalysis} onOpenChange={setShowAiAnalysis}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="workout-studio-dialog max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-purple-500" />

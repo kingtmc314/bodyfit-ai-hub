@@ -3,10 +3,11 @@ import { bodyComposition, userProfile, workoutSessions, workoutSets } from "../d
 import type { getDb } from "./db";
 import { getWorkoutTimeDetails, isActualWorkoutMinutes } from "../shared/workoutTiming";
 import {
-  WORKOUT_CALORIE_VERSION, estimateWorkoutCalories, calorieEstimateSummary,
-  validateWorkoutMinutes, validateBodyWeight, type CalorieWorkoutSet,
+  WORKOUT_CALORIE_VERSION, isSupportedWorkoutCalorieVersion, isCardioSet, estimateWorkoutCalories, calorieEstimateSummary,
+  validateWorkoutMinutes, validateBodyWeight, type CalorieWorkoutSet, type StoredWorkoutCalorieDetails,
   type WorkoutCalorieDetails, type WorkoutIntensity, type WorkoutWeightSource,
 } from "../shared/workoutCalories";
+import { validWorkoutLoad, validWorkoutReps } from "../shared/workoutVolumeEnergy";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 export interface CalorieSession {
@@ -44,14 +45,15 @@ export function parseWorkoutTimestamp(value: string): Date {
   if (!Number.isFinite(date.getTime())) throw new Error("開始／結束時間無效。");
   return date;
 }
-function detailsOf(session: CalorieSession): WorkoutCalorieDetails | null {
-  const details = session.calorieDetails as WorkoutCalorieDetails | null;
-  return details?.version === WORKOUT_CALORIE_VERSION && details.timing ? details : null;
+function detailsOf(session: CalorieSession): StoredWorkoutCalorieDetails | null {
+  const details = session.calorieDetails as StoredWorkoutCalorieDetails | null;
+  return isSupportedWorkoutCalorieVersion(details?.version) && details?.timing && typeof details.timing === "object" ? details : null;
 }
+/** A DB row is one completed set; setNumber is its position, not a multiplier. */
 export function workoutVolume(sets: readonly CalorieWorkoutSet[]): number {
   return sets.reduce((sum, set) => {
-    const reps = set.reps ?? 0, weight = set.weight ?? 0;
-    return Number.isFinite(reps) && Number.isFinite(weight) && reps > 0 && weight >= 0 ? sum + reps * weight : sum;
+    if (isCardioSet(set)) return sum;
+    return validWorkoutReps(set.reps) && validWorkoutLoad(set.weight) ? sum + set.reps * set.weight : sum;
   }, 0);
 }
 export function selectWorkoutWeight(sessionDate: string, weights: readonly WeightRecord[], profileWeight?: number | null) {
@@ -100,8 +102,13 @@ export function buildWorkoutCalorieReadModel<T extends CalorieSession>(
       : "舊紀錄缺少熱量來源，未能確認是估算或手動值；原始熱量保留，請確認來源。");
     if ((session.duration ?? 0) > 180) details.warnings.push("舊紀錄包含多小時／跨日時間，已忽略牆鐘時長，只使用已記錄活動。");
   }
-  const calorieReadModel = manual != null ? "manual_preserved" as const : !stored || stored.origin === "legacy" ? "corrected_legacy" as const : "current" as const;
-  const timeDetails = getWorkoutTimeDetails(session);
+  if (stored && stored.version !== WORKOUT_CALORIE_VERSION) details.warnings.push("已保留 workout-active-v1 的來源、手動值及核對時間；新訓練量模型只在讀取時計算，未自動重寫歷史紀錄。");
+  if (stored && stored.timing.verifiedDurationMinutes != null && !isActualWorkoutMinutes(stored.timing.verifiedDurationMinutes)) details.warnings.push("舊版核對分鐘無效，已排除而非轉為已核對 0 分鐘；請核對實際課程時間。");
+  const calorieReadModel = details.manualCalories != null ? "manual_preserved" as const : !stored || stored.origin === "legacy" ? "corrected_legacy" as const : "current" as const;
+  // Project only the version for the timing helper; retain ORIGINAL verified evidence.
+  // Do not pass derived effectiveMinutes or a sanitized invalid-to-zero duration.
+  const timeDetails = getWorkoutTimeDetails(stored
+    ? { ...session, calorieDetails: { ...stored, version: WORKOUT_CALORIE_VERSION } } : session);
   if (timeDetails.needsReview) details.warnings.push(timeDetails.source === "original"
     ? "課程時長為原始未核對數值；熱量模型有效分鐘不是實際課程時長，請手動確認。"
     : "實際課程時長未知或無效，請填寫實際分鐘；不會以組數推算值替代。");
@@ -155,12 +162,14 @@ export async function validateWorkoutSetChange(db: Db, session: CalorieSession, 
   estimateWorkoutCalories({ sets: proposed, bodyWeightKg: stored.bodyWeightKg, intensity: stored.intensity,
     verifiedDurationMinutes: stored.timing.verifiedDurationMinutes, manualCalories: stored.manualCalories });
 }
-/** Refresh only versioned new sessions. Legacy estimates stay read-only; volume is maintained for every session. */
+/** Called by an explicit single-session/set mutation, never a migration or read.
+ * Only v2 new sessions auto-refresh kcal; historical v1/legacy kcal and metadata remain intact.
+ */
 export async function refreshWorkoutSessionCalories(db: Db, id: number, userId: number) {
   const session = await requireWorkoutSession(db, id, userId);
   const [model] = await getWorkoutCalorieReadModels(db, [session], userId);
   const update: Record<string, unknown> = { totalVolume: model.totalVolume, updatedAt: new Date() };
-  if (detailsOf(session)?.origin === "new") {
+  if (detailsOf(session)?.origin === "new" && detailsOf(session)?.version === WORKOUT_CALORIE_VERSION) {
     update.caloriesBurned = model.caloriesBurned;
     update.calorieDetails = model.calorieDetails;
     if (model.timeDetails.source === "reviewed") update.duration = Math.round(model.timeDetails.actualMinutes!);
@@ -250,7 +259,7 @@ export async function finishWorkoutSession(db: Db, id: number, userId: number, i
     verifiedDurationMinutes: plan.verifiedDurationMinutes, availableMinutes: plan.availableMinutes,
     manualCalories: model.calorieDetails.manualCalories });
   const update: Record<string, unknown> = { startTime: plan.startTime, endTime: plan.endTime, totalVolume: model.totalVolume, updatedAt: now };
-  if (prior?.origin === "new") {
+  if (prior?.origin === "new" && prior.version === WORKOUT_CALORIE_VERSION) {
     if (model.timeDetails.source === "reviewed") update.duration = Math.round(model.timeDetails.actualMinutes!);
     update.caloriesBurned = model.caloriesBurned; update.calorieDetails = model.calorieDetails;
   }
@@ -306,7 +315,7 @@ export async function updateWorkoutSession(db: Db, id: number, userId: number, i
   if (input.startTime) update.startTime = startTime;
   if (input.endTime) update.endTime = endTime;
   const explicitCorrection = input.duration != null || input.startTime != null || input.endTime != null || input.caloriesBurned != null || input.clearManualCalories || input.intensity != null || input.bodyWeightKg != null;
-  if (prior?.origin === "new" || explicitCorrection) {
+  if ((prior?.origin === "new" && prior.version === WORKOUT_CALORIE_VERSION) || explicitCorrection) {
     // Explicit user correction is not an automatic migration/backfill. Preserve original evidence in metadata.
     if (model.timeDetails.source === "reviewed" && (input.duration != null || input.startTime != null || input.endTime != null)) {
       update.duration = Math.round(model.timeDetails.actualMinutes!);

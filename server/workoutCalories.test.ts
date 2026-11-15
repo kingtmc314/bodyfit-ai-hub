@@ -11,22 +11,26 @@ const cardio = { exerciseName: "Stationary Bike", duration: 20, calories: 130 };
 const session = { id: 1, startTime: new Date("2026-11-11T18:00:00+08:00"), duration: 60, caloriesBurned: 350, totalVolume: 0 };
 
 describe("versioned conservative workout active energy", () => {
-  it("uses active, not gross MET energy and no workload bonus", () => {
+  it("uses volume-dependent active work without adding a whole-session MET estimate", () => {
     const lightLoad = estimateWorkoutCalories({ sets: resistance.map(s => ({ ...s, weight: 1 })), bodyWeightKg: 80, verifiedDurationMinutes: 60 });
     const heavyLoad = estimateWorkoutCalories({ sets: resistance.map(s => ({ ...s, weight: 200 })), bodyWeightKg: 80, verifiedDurationMinutes: 60 });
-    expect(lightLoad.activeKcal).toBe(200); // (3.5-1)*80*1h
-    expect(heavyLoad.activeKcal).toBe(lightLoad.activeKcal);
-    expect(lightLoad.resistanceMet).toBe(3.5);
+    expect(lightLoad.activeKcal).toBeGreaterThan(0);
+    expect(heavyLoad.activeKcal).toBeGreaterThan(lightLoad.activeKcal);
+    expect(lightLoad.resistanceMinutes).toBe(19.75);
+    expect(lightLoad.volume.totalVolumeKgReps).toBe(120);
+    expect(heavyLoad.volume.totalVolumeKgReps).toBe(24000);
+    expect(lightLoad.activeKcal).toBeLessThan(200); // Never adds the old (3.5−1)*80*1h.
     expect(lightLoad.version).toBe(WORKOUT_CALORIE_VERSION);
     expect(lightLoad.lowKcal).toBeLessThan(lightLoad.activeKcal);
     expect(lightLoad.highKcal).toBeGreaterThan(lightLoad.activeKcal);
-    expect(estimateWorkoutCalories({ sets: resistance, bodyWeightKg: 80, verifiedDurationMinutes: 60, intensity: "vigorous" }).activeKcal).toBe(400);
+    expect(estimateWorkoutCalories({ sets: resistance, bodyWeightKg: 80, verifiedDurationMinutes: 60, intensity: "vigorous" }).activeKcal)
+      .toBeGreaterThan(estimateWorkoutCalories({ sets: resistance, bodyWeightKg: 80 }).activeKcal);
   });
-  it("subtracts cardio minutes from verified mixed duration and counts machine kcal once", () => {
+  it("limits work to recorded sets, reserves cardio minutes, and counts machine kcal once", () => {
     const result = estimateWorkoutCalories({ sets: [...resistance, cardio], bodyWeightKg: 80, verifiedDurationMinutes: 60 });
-    expect(result.resistanceMinutes).toBe(40);
+    expect(result.resistanceMinutes).toBe(19.75);
     expect(result.cardioMinutes).toBe(20);
-    expect(result.activeKcal).toBe(263);
+    expect(result.activeKcal).toBe(174);
     expect(result.cardioKcal).toBe(130);
     expect(result.source).toBe("mixed");
     expect(result.energyBasis).toBe("mixed");
@@ -40,7 +44,7 @@ describe("versioned conservative workout active energy", () => {
       const result = estimateWorkoutCalories({ sets: [set], bodyWeightKg: 60 });
       expect(result.cardioMinutes).toBe(0);
       expect(result.resistanceMinutes).toBe(2);
-      expect(result.activeKcal).toBe(5);
+      expect(result.activeKcal).toBeGreaterThan(0);
     }
   });
   it("cardio-only never accrues whole-duration strength, minutes are not seconds", () => {

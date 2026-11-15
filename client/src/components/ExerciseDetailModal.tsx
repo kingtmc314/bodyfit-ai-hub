@@ -1,37 +1,317 @@
-import { lazy, Suspense } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Plus, BookOpen, Lightbulb, AlertTriangle, Dumbbell, Loader2 } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { EXERCISE_DESCRIPTIONS } from '@/data/exerciseDescriptions';
-import ExerciseDemoPlayer from './ExerciseDemoPlayer';
-import { getExerciseDemo } from '../../../shared/exerciseDemoCatalog';
-import { getExerciseMuscles } from '../../../shared/exerciseMuscles';
-const MuscleModel3D=lazy(()=>import('./MuscleModel3D'));
-interface Exercise {name:string;nameZh?:string;muscleGroup:string;equipment:string;instructions?:string;}
-interface Props {exercise:Exercise|null;open:boolean;onClose:()=>void;onAddToSession?:()=>void;hasActiveSession?:boolean;}
-const descriptionAliases:Record<string,string>={'Dumbbell Fly':'Dumbbell Flyes','Push-up':'Push-Up','Pec Deck':'Pec Deck Machine'};
-function description(name:string) {
-  const exact=descriptionAliases[name]??name;
-  return EXERCISE_DESCRIPTIONS[exact]??Object.entries(EXERCISE_DESCRIPTIONS).find(([key])=>key.toLowerCase()===exact.toLowerCase())?.[1];
+import { lazy, Suspense, useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Plus,
+  BookOpen,
+  Lightbulb,
+  AlertTriangle,
+  ExternalLink,
+  Boxes,
+} from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { EXERCISE_DESCRIPTIONS } from "@/data/exerciseDescriptions";
+import MuscleAreaMap from "./MuscleAreaMap";
+import GymworkOriginalGuide from "./GymworkOriginalGuide";
+import { getGymworkReference } from "@shared/gymworkReferences";
+import { getExerciseGuide, EXERCISE_GUIDES } from "@shared/exerciseGuides";
+import { getExerciseMuscles } from "@shared/exerciseMuscles";
+const MuscleModel3D = lazy(() => import("./MuscleModel3D"));
+interface Exercise {
+  name: string;
+  nameZh?: string;
+  muscleGroup: string;
+  equipment: string;
+  instructions?: string;
 }
-export default function ExerciseDetailModal({exercise,open,onClose,onAddToSession,hasActiveSession}:Props) {
-  const {i18n}=useTranslation();const isZh=i18n.language.startsWith('zh');
-  if(!exercise)return null;
-  const desc=description(exercise.name);const anatomy=getExerciseMuscles(exercise);const demo=getExerciseDemo(exercise.name,exercise.equipment);
-  return <Dialog open={open} onOpenChange={next=>{if(!next)onClose();}}><DialogContent className="max-w-2xl max-h-[90dvh] overflow-y-auto" style={{overscrollBehavior:'contain',WebkitOverflowScrolling:'touch'}}>
-    <DialogHeader><DialogTitle className="flex items-center gap-2"><Dumbbell className="h-5 w-5 text-primary"/><span>{isZh?(exercise.nameZh||exercise.name):exercise.name}</span></DialogTitle><DialogDescription>{exercise.name} · {exercise.equipment} · 動態示範與肌群工作室</DialogDescription></DialogHeader>
-    {open&&<div className="space-y-4" key={`${exercise.name}:${exercise.equipment}`}>
-      <div className="flex flex-wrap gap-2"><Badge variant="secondary">{exercise.equipment}</Badge>{desc&&<Badge variant="outline">{({Beginner:'初級',Intermediate:'中級',Advanced:'高級'} as Record<string,string>)[desc.difficulty]??desc.difficulty}</Badge>}<Badge variant="outline">{anatomy.basis==='exercise'?'逐動作肌群':'分類肌群，需核對'}</Badge></div>
-      <ExerciseDemoPlayer demo={demo} exerciseName={exercise.name}/>
-      <Suspense fallback={<div className="flex h-40 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin"/>正在載入肌群模型…</div>}><MuscleModel3D primary={anatomy.primary} secondary={anatomy.secondary}/></Suspense>
-      {desc?<>{[
-        {title:isZh?'動作步驟':'How to do it',items:isZh?desc.stepsZh:desc.steps,Icon:BookOpen},
-        {title:isZh?'訓練提示':'Training tips',items:isZh?desc.tipsZh:desc.tips,Icon:Lightbulb},
-        {title:isZh?'常見錯誤':'Common mistakes',items:isZh?desc.mistakesZh:desc.mistakes,Icon:AlertTriangle},
-      ].map(({title,items,Icon})=><section key={title} className="rounded-2xl border border-border/50 p-4"><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><Icon className="h-4 w-4 text-primary"/>{title}</h3><ol className="space-y-2">{items.map((item,i)=><li key={i} className="flex gap-3 text-sm leading-relaxed"><span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary">{i+1}</span>{item}</li>)}</ol></section>)}</>:exercise.instructions?<section className="rounded-xl bg-muted/40 p-4 text-sm leading-relaxed">{exercise.instructions}</section>:null}
-      <div className="flex gap-2 pt-2">{hasActiveSession&&onAddToSession&&<Button className="flex-1" onClick={()=>{onAddToSession();onClose();}}><Plus className="mr-2 h-4 w-4"/>{isZh?'加入訓練':'Add to session'}</Button>}<Button className="flex-1" variant="outline" onClick={onClose}>{isZh?'關閉':'Close'}</Button></div>
-    </div>}
-  </DialogContent></Dialog>;
+interface Props {
+  exercise: Exercise | null;
+  open: boolean;
+  onClose: () => void;
+  onAddToSession?: () => void;
+  hasActiveSession?: boolean;
+}
+const descriptionAliases: Record<string, string> = {
+  "Dumbbell Fly": "Dumbbell Flyes",
+  "Push-up": "Push-Up",
+  "Pec Deck": "Pec Deck Machine",
+};
+function description(name: string) {
+  const exact = descriptionAliases[name] ?? name;
+  return (
+    EXERCISE_DESCRIPTIONS[exact] ??
+    Object.entries(EXERCISE_DESCRIPTIONS).find(
+      ([key]) => key.toLowerCase() === exact.toLowerCase()
+    )?.[1]
+  );
+}
+export default function ExerciseDetailModal({
+  exercise,
+  open,
+  onClose,
+  onAddToSession,
+  hasActiveSession,
+}: Props) {
+  const { i18n } = useTranslation();
+  const zh = i18n.language.startsWith("zh");
+  const [show3D, setShow3D] = useState(false);
+  if (!exercise) return null;
+  const desc = description(exercise.name),
+    anatomy = getExerciseMuscles(exercise),
+    guide = getExerciseGuide(exercise.name, exercise.equipment);
+  const related = EXERCISE_GUIDES.filter(
+    m =>
+      m.id !== guide?.id && m.primary.some(id => anatomy.primary.includes(id))
+  ).slice(0, 3);
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={next => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent
+        className="max-w-3xl max-h-[92dvh] overflow-y-auto rounded-3xl border-border/50 p-0"
+        style={{
+          overscrollBehavior: "contain",
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        <DialogHeader className="px-5 pb-2 pt-6 text-left sm:px-7">
+          <DialogTitle className="pr-7 text-2xl font-bold tracking-tight">
+            {zh ? exercise.nameZh || exercise.name : exercise.name}
+          </DialogTitle>
+          <DialogDescription className="flex flex-wrap items-center gap-2 text-xs">
+            <span>{exercise.name}</span>
+            <span>·</span>
+            <span>{exercise.equipment}</span>
+            <Badge variant="outline" className="text-[10px]">
+              {zh ? "肌群與動作教學" : "Muscles & technique"}
+            </Badge>
+          </DialogDescription>
+        </DialogHeader>
+        {open && (
+          <div
+            className="space-y-6 px-4 pb-5 sm:px-7"
+            key={`${exercise.name}:${exercise.equipment}`}
+          >
+            <GymworkOriginalGuide
+              name={exercise.name}
+              equipment={exercise.equipment}
+            />
+            <section>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-lg font-semibold">
+                  {zh ? "肌肉分布" : "Muscle area"}
+                </h3>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShow3D(!show3D)}
+                >
+                  <Boxes className="mr-1.5 h-4 w-4" />
+                  {show3D
+                    ? zh
+                      ? "返回前後面"
+                      : "Front & back"
+                    : zh
+                      ? "3D 肌群檢視"
+                      : "Inspect 3D muscles"}
+                </Button>
+              </div>
+              <MuscleAreaMap
+                primary={anatomy.primary}
+                secondary={anatomy.secondary}
+              />
+              {show3D && (
+                <div className="mt-3">
+                  <Suspense
+                    fallback={
+                      <p className="p-8 text-center text-xs text-muted-foreground">
+                        {zh ? "正在載入 3D 肌群…" : "Loading 3D muscles…"}
+                      </p>
+                    }
+                  >
+                    <MuscleModel3D
+                      primary={anatomy.primary}
+                      secondary={anatomy.secondary}
+                    />
+                  </Suspense>
+                </div>
+              )}
+              {anatomy.basis === "category" && (
+                <p className="mt-2 text-[10px] text-amber-700">
+                  {zh
+                    ? "此自訂動作只按原有分類顯示，未核對逐動作肌群。"
+                    : "This custom exercise uses its recorded category, not verified exercise-specific muscles."}
+                </p>
+              )}
+            </section>
+            {guide ? (
+              <section>
+                <h3 className="mb-3 text-lg font-semibold">
+                  {zh ? "動作說明" : "Exercise description"}
+                </h3>
+                <div className="space-y-5 rounded-2xl bg-muted/35 p-5">
+                  {[
+                    {
+                      title: zh ? "起始位置" : "Starting position",
+                      items: guide.setup,
+                    },
+                    {
+                      title: zh ? "動作過程" : "During the exercise",
+                      items: guide.movement,
+                    },
+                  ].map(({ title, items }) => (
+                    <div key={title}>
+                      <h4 className="mb-2 font-semibold">{title}</h4>
+                      <ol className="space-y-2 text-sm leading-7">
+                        {items.map((text, i) => (
+                          <li key={text}>
+                            {i + 1}. {text}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  ))}
+                  <div>
+                    <h4 className="mb-2 font-semibold">
+                      {zh ? "呼吸提示" : "Breathing tips"}
+                    </h4>
+                    <p className="text-sm leading-7">{guide.breathing}</p>
+                  </div>
+                </div>
+                <p className="mt-3 flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  {guide.safety}
+                </p>
+              </section>
+            ) : desc ? (
+              <>
+                {[
+                  {
+                    title: zh ? "動作步驟" : "How to do it",
+                    items: zh ? desc.stepsZh : desc.steps,
+                    Icon: BookOpen,
+                  },
+                  {
+                    title: zh ? "訓練提示" : "Training tips",
+                    items: zh ? desc.tipsZh : desc.tips,
+                    Icon: Lightbulb,
+                  },
+                  {
+                    title: zh ? "常見錯誤" : "Common mistakes",
+                    items: zh ? desc.mistakesZh : desc.mistakes,
+                    Icon: AlertTriangle,
+                  },
+                ].map(({ title, items, Icon }) => (
+                  <section key={title} className="rounded-2xl bg-muted/30 p-5">
+                    <h3 className="mb-3 flex items-center gap-2 font-semibold">
+                      <Icon className="h-4 w-4 text-blue-600" />
+                      {title}
+                    </h3>
+                    <ol className="space-y-3 text-sm leading-relaxed">
+                      {items.map((text, i) => (
+                        <li key={text}>
+                          {i + 1}. {text}
+                        </li>
+                      ))}
+                    </ol>
+                  </section>
+                ))}
+              </>
+            ) : exercise.instructions ? (
+              <section className="rounded-2xl bg-muted/30 p-5 text-sm leading-relaxed">
+                {exercise.instructions}
+              </section>
+            ) : null}
+            {guide && (
+              <div className="flex flex-wrap gap-3 text-[10px] text-muted-foreground">
+                {guide.sources.map((url, i) => (
+                  <a
+                    key={url}
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex min-h-8 items-center gap-1 underline"
+                  >
+                    {zh ? "操作參考" : "Technique reference"} {i + 1}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                ))}
+              </div>
+            )}
+            {!!related.length && (
+              <section>
+                <h3 className="mb-3 text-lg font-semibold">
+                  {zh ? "相關器械動作" : "Related machine movements"}
+                </h3>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {related.map(r => {
+                    const reference = getGymworkReference(
+                      r.name,
+                      r.equipment[0]
+                    );
+                    return (
+                      <div
+                        key={r.id}
+                        className="rounded-2xl border border-border/40 bg-card p-4"
+                      >
+                        <p className="text-xs font-semibold">
+                          {zh ? r.nameZh : r.name}
+                        </p>
+                        <p className="mt-1 text-[10px] text-muted-foreground">
+                          {r.name}
+                        </p>
+                        {reference && (
+                          <a
+                            href={reference.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-3 inline-flex min-h-8 items-center gap-1 text-xs text-blue-600"
+                          >
+                            Gymwork {zh ? "原作" : "original"}
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+            <div className="sticky bottom-0 -mx-4 flex gap-2 border-t border-border/40 bg-background/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:-mx-7 sm:px-7">
+              {hasActiveSession && onAddToSession && (
+                <Button
+                  className="min-h-11 flex-1 bg-blue-600 text-white hover:bg-blue-700"
+                  onClick={() => {
+                    onAddToSession();
+                    onClose();
+                  }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  {zh ? "加入訓練" : "Add to session"}
+                </Button>
+              )}
+              <Button
+                className="min-h-11 flex-1"
+                variant="outline"
+                onClick={onClose}
+              >
+                {zh ? "關閉" : "Close"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 }

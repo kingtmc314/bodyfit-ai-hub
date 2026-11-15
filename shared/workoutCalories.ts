@@ -1,9 +1,15 @@
-/** Conservative active-energy estimates, not a metabolic measurement or a confidence interval.
- * Compendium 2024: https://pacompendium.com/conditioning-exercise/ (02054=3.5, 02050=6).
- * https://pacompendium.com/ defines 1 MET = 1 kcal/kg/hour; active energy excludes 1 resting MET.
- * Rep cadence, recovery and uncertainty ranges below are explicit application heuristics.
+import { estimateWorkoutVolumeEnergy, validWorkoutLoad, validWorkoutReps, type WorkoutVolumeEnergy } from "./workoutVolumeEnergy";
+
+/** Bounded volume-dependent gym energy heuristic, NOT a metabolic measurement.
+ * See references/workout-energy-model.md for evidence, assumptions and limitations.
+ * Resistance replaces whole-session MET with work + body/support + bounded recovery.
+ * Gym cardio retains its disclosed active-MET proxy or device value exactly once.
  */
-export const WORKOUT_CALORIE_VERSION = "workout-active-v1" as const;
+export const WORKOUT_CALORIE_VERSION = "workout-volume-v2" as const;
+export const PREVIOUS_WORKOUT_CALORIE_VERSION = "workout-active-v1" as const;
+export function isSupportedWorkoutCalorieVersion(version: unknown): boolean {
+  return version === WORKOUT_CALORIE_VERSION || version === PREVIOUS_WORKOUT_CALORIE_VERSION;
+}
 export const MAX_WORKOUT_MINUTES = 180;
 export const CARDIO_EXERCISE_NAMES = [
   "Stationary Bike", "Treadmill", "Stair Climber", "Elliptical Trainer",
@@ -15,6 +21,8 @@ export type WorkoutCalorieSource = "resistance_estimate" | "cardio_estimate" | "
 export interface CalorieWorkoutSet {
   id?: number; sessionId?: number; exerciseId?: number | null; exerciseName?: string | null;
   category?: string | null; isCardio?: boolean; reps?: number | null; weight?: number | null;
+  /** Position only: a stored row represents one completed set, never a set multiplier. */
+  setNumber?: number | null;
   /** Minutes for cardio AND explicitly timed resistance work. Never seconds. */
   duration?: number | null; calories?: number | null; distance?: number | null;
 }
@@ -22,14 +30,21 @@ export interface WorkoutCalorieEstimate {
   activeKcal: number; lowKcal: number; highKcal: number; bodyWeightKg: number;
   weightSource: WorkoutWeightSource; effectiveMinutes: number; intensity: WorkoutIntensity;
   source: WorkoutCalorieSource; warnings: string[];
+  /** Optional for clients rendering older stored summaries; always returned by v2. */
+  volume?: WorkoutVolumeEnergy;
+  /** Convenience alias of volume.totalVolumeKgReps; always returned by v2. */
+  totalVolumeKgReps?: number;
+  modelVersion?: typeof WORKOUT_CALORIE_VERSION;
 }
 export interface WorkoutCalorieDetails extends WorkoutCalorieEstimate {
   version: typeof WORKOUT_CALORIE_VERSION;
+  volume: WorkoutVolumeEnergy;
   energyBasis: "active" | "reported_unknown" | "mixed";
   sessionDate: string;
   weightDate: string | null;
   resistanceMinutes: number; cardioMinutes: number;
   resistanceKcal: number; cardioKcal: number;
+  /** Descriptive gross-MET equivalent of the result, NOT an input or Compendium code. */
   resistanceMet: number;
   durationSource: "logged_sets" | "verified_duration";
   timing: {
@@ -45,6 +60,11 @@ export interface WorkoutCalorieDetails extends WorkoutCalorieEstimate {
   rangeMeaning: "heuristic_not_confidence_interval";
   components: Array<{ kind: "resistance" | "cardio"; exerciseName?: string; minutes: number; kcal: number; source: string }>;
 }
+/** v1 provenance remains readable without pretending it already has volume metrics. */
+export type StoredWorkoutCalorieDetails = Omit<WorkoutCalorieDetails, "version" | "volume"> & {
+  version: typeof WORKOUT_CALORIE_VERSION | typeof PREVIOUS_WORKOUT_CALORIE_VERSION;
+  volume?: WorkoutVolumeEnergy;
+};
 export interface WorkoutCalorieInput {
   sets: readonly CalorieWorkoutSet[]; sessionDate?: string;
   bodyWeightKg?: number | null; weightSource?: WorkoutWeightSource; weightDate?: string | null;
@@ -58,7 +78,9 @@ export interface WorkoutCalorieInput {
 }
 export function isCardioSet(set: CalorieWorkoutSet): boolean {
   if (set.isCardio === false || ["strength", "resistance"].includes(set.category?.toLowerCase() ?? "")) return false;
-  if (/\b(plank|wall sit|dead hang|isometric)\b/i.test(set.exerciseName ?? "")) return false;
+  if (/\b(plank|wall[ -]?sit|dead[ -]?hang|isometric|hold)\b|平板|靜態|靠牆/i.test(set.exerciseName ?? "")) return false;
+  if (set.isCardio !== true && set.category?.toLowerCase() !== "cardio"
+    && /squat|deadlift|hip thrust|good morning|press|adduction|abduction|adductor|abductor|curl|extension|raise|fly|row(?!ing machine)|pulldown|pull[ -]?up|chin[ -]?up|push[ -]?up|\bdips?\b|lunge|step[ -]?up|crunch|sit[ -]?up|ab wheel|深蹲|胸推|肩推|腿推|蹬腿|髖|髋|硬拉|臀推|引體|掌上壓|俯臥撐|雙槓|捲腹|卷腹|仰臥起坐/i.test(set.exerciseName ?? "")) return false;
   return set.isCardio === true || set.category?.toLowerCase() === "cardio"
     || CARDIO_EXERCISE_NAMES.some(name => name.toLowerCase() === set.exerciseName?.trim().toLowerCase())
     // Custom machine entries commonly have duration/kcal but no resistance reps.
@@ -76,7 +98,8 @@ export function validateBodyWeight(value: number): number {
 }
 export function calorieEstimateSummary(details: WorkoutCalorieDetails): WorkoutCalorieEstimate {
   const { activeKcal, lowKcal, highKcal, bodyWeightKg, weightSource, effectiveMinutes, intensity, source, warnings } = details;
-  return { activeKcal, lowKcal, highKcal, bodyWeightKg, weightSource, effectiveMinutes, intensity, source, warnings };
+  return { activeKcal, lowKcal, highKcal, bodyWeightKg, weightSource, effectiveMinutes, intensity, source, warnings,
+    volume: details.volume, totalVolumeKgReps: details.volume.totalVolumeKgReps, modelVersion: WORKOUT_CALORIE_VERSION };
 }
 export function estimateWorkoutCalories(input: WorkoutCalorieInput): WorkoutCalorieDetails {
   const warnings: string[] = [];
@@ -93,9 +116,6 @@ export function estimateWorkoutCalories(input: WorkoutCalorieInput): WorkoutCalo
   }
   if (weightSource === "assumed_70kg") warn("沒有當日或之前的有效體重，暫假設 70 kg；請補充體重以改善估算。");
   const intensity = input.intensity ?? "moderate";
-  // Light uses bodyweight-general 02056 as a disclosed conservative proxy, not a load-derived MET.
-  const resistanceMet = intensity === "vigorous" ? 6 : intensity === "light" ? 3 : 3.5;
-  if (intensity === "light") warn("輕度強度採用一般自重訓練 3 MET 代理值，並非由舉重重量推算。");
   let verified: number | null = null;
   if (input.verifiedDurationMinutes != null) verified = validMinutes(input.verifiedDurationMinutes, "已確認訓練時間");
   let available: number | null = null;
@@ -112,7 +132,11 @@ export function estimateWorkoutCalories(input: WorkoutCalorieInput): WorkoutCalo
       if (set.calories != null && (!Number.isFinite(set.calories) || set.calories < 0 || set.calories > 3000)) throw new Error("器械熱量必須為 0–3000 kcal，請核對器械顯示。");
     }
     if (!isCardioSet(set)) {
-      if ((set.reps ?? 0) > 0 || (set.duration ?? 0) > 0) resistance.push(set);
+      const clean = { ...set };
+      if (set.reps != null && !validWorkoutReps(set.reps)) { warn("無效力量組次數已排除；原始紀錄保留。"); clean.reps = null; }
+      if (set.weight != null && !validWorkoutLoad(set.weight)) { warn("無效力量負重已排除；原始紀錄保留，請核對 kg 單位。"); clean.weight = null; }
+      if (set.duration != null) clean.duration = validMinutes(set.duration, "力量組工作時間");
+      if ((clean.reps ?? 0) > 0 || (clean.duration ?? 0) > 0) resistance.push(clean);
       continue;
     }
     const minutes = set.duration == null ? 0 : validMinutes(set.duration, "有氧時間");
@@ -150,51 +174,45 @@ export function estimateWorkoutCalories(input: WorkoutCalorieInput): WorkoutCalo
     if (!input.tolerateInvalid) throw new Error("有氧分鐘超過已確認的訓練總時間，請修正時間後再完成。");
     warn("有氧分鐘超過訓練總時間；未把整段時間再當作力量訓練。");
   }
-  let workMinutes = 0;
-  for (const set of resistance) {
-    if ((set.duration ?? 0) > 0) workMinutes += validMinutes(set.duration!, "力量組工作時間");
-    else {
-      const reps = set.reps ?? 0;
-      if (!Number.isFinite(reps) || reps < 0 || reps > 200) {
-        if (!input.tolerateInvalid) throw new Error("力量組次數必須為 0–200，請核對紀錄。");
-        warn("無效力量組次數已排除。"); continue;
-      }
-      // 3 seconds/rep; 15–90 seconds work per completed set. No tonnage/calorie multiplier.
-      workMinutes += Math.min(1.5, Math.max(0.25, reps * 3 / 60));
-    }
-  }
-  let resistanceMinutes = resistance.length ? workMinutes + Math.max(0, resistance.length - 1) * 1.25 : 0;
-  if (verified != null) resistanceMinutes = resistance.length ? Math.max(0, verified - cardioMinutes) : 0;
-  else {
-    if (resistance.length) warn("力量時間由已記錄組數、每次約 3 秒及組間約 75 秒恢復估算；閒置時間不累加。");
-    if (available != null) resistanceMinutes = Math.min(resistanceMinutes, Math.max(0, available - cardioMinutes));
-  }
+  const minuteCaps = [verified, available].filter((value): value is number => value != null);
+  const allowedResistanceMinutes = minuteCaps.length ? Math.max(0, Math.min(...minuteCaps) - cardioMinutes) : null;
+  let volume = estimateWorkoutVolumeEnergy(resistance, bodyWeightKg, intensity, allowedResistanceMinutes, warn);
+  let resistanceMinutes = volume.workMinutes + volume.recoveryMinutes;
+  if (resistance.length) warn("力量有效時間由已記錄組數、每次約 3 秒及組間最多約 75 秒恢復估算；課程分鐘只作上限，閒置時間不累加。");
   if (resistanceMinutes + cardioMinutes > MAX_WORKOUT_MINUTES) {
     if (!input.tolerateInvalid) throw new Error("有效訓練時間超過 180 分鐘，請核對組數與時間。");
-    warn("力量時間超過安全範圍，已排除；請確認實際運動時間。"); resistanceMinutes = 0;
+    warn("力量時間超過安全範圍，已排除；請確認實際運動時間。");
+    volume = estimateWorkoutVolumeEnergy(resistance, bodyWeightKg, intensity, 0, warn); resistanceMinutes = 0;
   }
   if (!resistance.length && !components.length) warn("尚無已完成組數；不會僅因開啟訓練計時器而增加熱量。");
   if (verified != null && !resistance.length && !components.length) warn("只有時間而没有活動紀錄，未假設整段時間都是力量訓練。");
-  const resistanceKcal = (resistanceMet - 1) * bodyWeightKg * resistanceMinutes / 60;
-  if (resistance.length) components.unshift({ kind: "resistance", minutes: resistanceMinutes, kcal: Math.round(resistanceKcal), source: "compendium_2024_active" });
+  const resistanceKcal = volume.resistanceKcal;
+  const resistanceMet = resistanceMinutes > 0 ? 1 + resistanceKcal * 60 / bodyWeightKg / resistanceMinutes : 1;
+  if (resistance.length) components.unshift({ kind: "resistance", minutes: resistanceMinutes, kcal: Math.round(resistanceKcal), source: WORKOUT_CALORIE_VERSION });
   let activeKcal = Math.round(resistanceKcal + cardioKcal);
-  let lowKcal = Math.round(resistanceKcal * 0.75 + cardioLow);
-  let highKcal = Math.round(resistanceKcal * 1.3 + cardioHigh);
+  // Broad sensitivity band: app policy, not experimentally established error bounds.
+  let lowKcal = Math.round(resistanceKcal * 0.5 + cardioLow);
+  let highKcal = Math.round(resistanceKcal * 1.75 + cardioHigh);
   let source: WorkoutCalorieSource = resistance.length && components.some(c => c.kind === "cardio") ? "mixed"
     : resistance.length ? "resistance_estimate" : reported ? "machine_reported" : estimatedCardio ? "cardio_estimate" : "none";
   let energyBasis: WorkoutCalorieDetails["energyBasis"] = reported ? (resistanceKcal > 0 || estimatedCardio ? "mixed" : "reported_unknown") : "active";
-  if (input.manualCalories != null) {
-    if (!Number.isFinite(input.manualCalories) || input.manualCalories < 0 || input.manualCalories > 10000) throw new Error("手動熱量必須為 0–10000 kcal，請核對單位。");
-    activeKcal = lowKcal = highKcal = input.manualCalories; source = "manual"; energyBasis = "reported_unknown";
+  let manualCalories = input.manualCalories ?? null;
+  if (manualCalories != null && (!Number.isFinite(manualCalories) || manualCalories < 0 || manualCalories > 10000)) {
+    if (!input.tolerateInvalid) throw new Error("手動熱量必須為 0–10000 kcal，請核對單位。");
+    warn("舊手動／未知來源熱量無效，未用作活動熱量；原始數值保留，請核對單位及來源。"); manualCalories = null;
+  }
+  if (manualCalories != null) {
+    activeKcal = lowKcal = highKcal = manualCalories; source = "manual"; energyBasis = "reported_unknown";
     warn("已保留手動輸入熱量，未以估算覆寫；活動／總熱量基準未確認。");
   }
   return {
-    version: WORKOUT_CALORIE_VERSION, activeKcal, lowKcal, highKcal, bodyWeightKg, weightSource,
+    version: WORKOUT_CALORIE_VERSION, modelVersion: WORKOUT_CALORIE_VERSION, volume, activeKcal, lowKcal, highKcal, bodyWeightKg, weightSource,
+    totalVolumeKgReps: volume.totalVolumeKgReps,
     effectiveMinutes: Math.round((resistanceMinutes + cardioMinutes) * 100) / 100,
     intensity, source, warnings, energyBasis, sessionDate: input.sessionDate ?? "", weightDate: input.weightDate ?? null,
     resistanceMinutes, cardioMinutes, resistanceKcal: Math.round(resistanceKcal), cardioKcal: Math.round(cardioKcal), resistanceMet,
     durationSource: verified != null ? "verified_duration" : "logged_sets",
     timing: { mode: input.mode ?? "live", verifiedDurationMinutes: verified, availableMinutes: available },
-    manualCalories: input.manualCalories ?? null, rangeMeaning: "heuristic_not_confidence_interval", components,
+    manualCalories, rangeMeaning: "heuristic_not_confidence_interval", components,
   };
 }

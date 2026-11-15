@@ -16,6 +16,9 @@ export const MUSCLE_GROUPS = [
   { id: "calves", label: "Calves", labelZh: "小腿", color: "#16a085" },
   { id: "traps", label: "Traps", labelZh: "斜方肌", color: "#2980b9" },
   { id: "lats", label: "Lats", labelZh: "背闊肌", color: "#1a5276" },
+  { id: "adductors", label: "Adductors", labelZh: "內收肌", color: "#527ae8" },
+  { id: "glute_medius", label: "Glute medius", labelZh: "臀中肌", color: "#7c6ee4" },
+  { id: "lower_back", label: "Lower back", labelZh: "下背", color: "#4877a8" },
 ];
 
 interface MuscleMapProps {

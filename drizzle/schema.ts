@@ -542,3 +542,56 @@ export const foodAnalysisHistory = pgTable("food_analysis_history", {
 });
 export type FoodAnalysisHistory = typeof foodAnalysisHistory.$inferSelect;
 export type InsertFoodAnalysisHistory = typeof foodAnalysisHistory.$inferInsert;
+
+// ─── Gym directory (additive; existing session.location remains untouched) ────
+import { unique, index, foreignKey, check } from "drizzle-orm/pg-core";
+import { sql as gymSchemaSql } from "drizzle-orm";
+
+export const gymLocations = pgTable("gym_locations", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  address: text("address").notNull(),
+  country: varchar("country", { length: 100 }),
+  brand: varchar("brand", { length: 100 }),
+  source: varchar("source", { length: 30 }).notNull().default("owner_saved"),
+  sourceUrl: text("source_url"),
+  placeId: varchar("place_id", { length: 255 }),
+  identityKey: varchar("identity_key", { length: 64 }).notNull(),
+  latitude: real("latitude"),
+  longitude: real("longitude"),
+  sourceCheckedAt: timestamp("source_checked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  unique("gym_locations_owner_id_unique").on(table.userId, table.id),
+  unique("gym_locations_owner_identity_unique").on(table.userId, table.identityKey),
+  unique("gym_locations_owner_place_unique").on(table.userId, table.placeId),
+  index("gym_locations_owner_name_idx").on(table.userId, table.name, table.id),
+  check("gym_locations_source_check", gymSchemaSql`${table.source} IN ('owner_saved', 'official_seed', 'google_places')`),
+  check("gym_locations_coordinates_check", gymSchemaSql`(${table.latitude} IS NULL AND ${table.longitude} IS NULL) OR (${table.latitude} IS NOT NULL AND ${table.longitude} IS NOT NULL AND ${table.latitude} BETWEEN -90 AND 90 AND ${table.longitude} BETWEEN -180 AND 180)`),
+]);
+export const gymEquipment = pgTable("gym_equipment", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  gymId: integer("gym_id").notNull(),
+  machineKey: varchar("machine_key", { length: 150 }).notNull(),
+  displayName: varchar("display_name", { length: 255 }).notNull(),
+  equipment: varchar("equipment", { length: 30 }).notNull(),
+  source: varchar("source", { length: 30 }).notNull(),
+  notes: text("notes"),
+  sourceUrl: text("source_url"),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  foreignKey({ name: "gym_equipment_owner_gym_fk", columns: [table.userId, table.gymId], foreignColumns: [gymLocations.userId, gymLocations.id] }).onDelete("cascade"),
+  unique("gym_equipment_owner_machine_unique").on(table.userId, table.gymId, table.machineKey),
+  index("gym_equipment_owner_gym_idx").on(table.userId, table.gymId, table.id),
+  check("gym_equipment_source_check", gymSchemaSql`${table.source} IN ('owner_confirmed', 'photo_confirmed')`),
+  check("gym_equipment_equipment_check", gymSchemaSql`${table.equipment} IN ('Machine','Cable','Barbell','Dumbbell','Bodyweight','Kettlebell','Band','Cardio','Other')`),
+]);
+export type SavedGymLocation = typeof gymLocations.$inferSelect;
+export type InsertGymLocation = typeof gymLocations.$inferInsert;
+export type SavedGymEquipment = typeof gymEquipment.$inferSelect;
+export type InsertGymEquipment = typeof gymEquipment.$inferInsert;
