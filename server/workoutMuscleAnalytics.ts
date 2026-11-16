@@ -124,6 +124,7 @@ function resolveSet(
     const result = getExerciseMuscles({
       name: name.trim().replace(/\s+/g, " "),
       muscleGroup,
+      equipment: metadata?.equipment ?? undefined,
     });
     if (result.basis === "exercise") {
       muscles = result;
@@ -137,6 +138,7 @@ function resolveSet(
     muscles = getExerciseMuscles({
       name: metadata?.name ?? set.exerciseName ?? "",
       muscleGroup,
+      equipment: metadata?.equipment ?? undefined,
     });
   }
   const primary = Array.from(new Set(muscles.primary.filter(Boolean)));
@@ -237,7 +239,7 @@ export function buildWorkoutMuscleAnalysis(
       primarySets:
         "primarySetCount counts each saved strength set for every named primary muscle and can overlap. allocatedPrimarySetCount divides each set equally among primaries; primarySetSharePct divides allocated sets by ALL strength sets.",
       secondaryParticipation:
-        "secondarySetCount records involvement only, excluding primary muscles. secondaryParticipationPct divides by ALL strength sets; percentages overlap and must not be summed or merged into direct volume.",
+        "secondarySetCount records involvement only, excluding primary muscles. Per-muscle combined participation is primarySetCount + secondarySetCount, divided by ALL strength sets for its percentage. Primary and secondary duplicates are removed per set. Counts and percentages overlap across muscles and must not be summed as unique overall sets or merged into direct volume; setCount and totalVolumeKg count each saved set once.",
       coverage:
         "Mapped-set coverage is mapped strength sets / all strength sets; mapped-volume coverage is allocated strength volume / all logged valid volume. Explicit zero load counts as zero external load, not a measurement of body mass moved. Null load is missing, not assumed bodyweight. Timed strength duration is saved minutes only.",
       completedSessions:

@@ -267,13 +267,22 @@ describe("bounded workout AI routes", () => {
     expect(getDb).not.toHaveBeenCalled();
   });
   it("exercise analysis uses dated session history and explicitly limits workload/activation claims", async () => {
-    const mock = fakeDb(); vi.mocked(getDb).mockResolvedValue(mock.db);
+    const mock = fakeDb({ ...baseSession }, [{ ...sets[0] }]);
+    mock.db.execute = vi.fn().mockResolvedValue([{ totalSets: 1, sessionCount: 1,
+      firstDateHK: "2026-11-11", lastDateHK: "2026-11-11", maxWeightKg: 40, totalVolumeKg: 400,
+      trend: [{ dateHK: "2026-11-11", sessionCount: 1, setCount: 1, totalReps: 10, totalVolumeKg: 400,
+        maxWeightKg: 40, averageWeightKg: 40, missingLoadSetCount: 0 }],
+      sessions: [{ id: 1, dateHK: "2026-11-11", name: "synthetic", location: null,
+        startTime: "2026-11-11T10:00:00Z", sets: [{ id: 1, setNumber: 1, reps: 10, weight: 40, duration: null, distance: null }] }],
+    }]);
+    vi.mocked(getDb).mockResolvedValue(mock.db);
     vi.mocked(invokeLLM).mockResolvedValue({ choices: [{ message: { content: '{"analysis":"估計建議","recommendations":[]}' } }] } as any);
     await caller.workout.analyzeExercise({ exerciseName: "Bench Press" });
     const call = vi.mocked(invokeLLM).mock.calls[0][0];
     expect(call).toMatchObject({ model: "gpt-6.1-sol", maxTokens: 2000, timeoutMs: 45000, reasoning: { effort: "low" } });
     expect(JSON.stringify(call.messages)).toMatch(/2026-11-11/);
     expect(JSON.stringify(call.messages)).toMatch(/not calories or measured muscle activation/);
+    expect(JSON.stringify(call.messages)).toMatch(/Do not add external URLs, paper identifiers or citations/);
     expect(mock.writes).toEqual([]);
   });
 });

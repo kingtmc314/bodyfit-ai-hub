@@ -22,6 +22,7 @@ export interface MuscleAnalysisRow {
   primarySetCount: number;
   /** 1 / primary-muscle count per set; conserves mapped strength set count. */
   allocatedPrimarySetCount: number;
+  /** Actual saved strength sets naming this muscle as secondary, excluding primary duplicates. */
   secondarySetCount: number;
   /** Equally allocated timed strength minutes; no conversion to kg volume. */
   directTimedMinutes: number;
@@ -109,6 +110,31 @@ export interface WorkoutMuscleAnalysis {
     completedSessions: string;
     scope: string;
   };
+}
+export interface MuscleParticipationRow extends MuscleAnalysisRow {
+  /** Primary + secondary saved-set participation for this muscle; overlaps across muscles. */
+  participationSetCount: number;
+  /** Participation / ALL strength sets, not an additive distribution across muscles. */
+  participationPct: number;
+}
+/** A presentation view, not extra work: never sum participation rows as unique sets or kg volume. */
+export function getMuscleParticipationRows(
+  data: Pick<WorkoutMuscleAnalysis, "muscles" | "strengthSetCount">
+): MuscleParticipationRow[] {
+  return data.muscles
+    .map(row => {
+      const participationSetCount = row.primarySetCount + row.secondarySetCount;
+      return {
+        ...row,
+        participationSetCount,
+        participationPct: data.strengthSetCount > 0
+          ? (participationSetCount / data.strengthSetCount) * 100
+          : 0,
+      };
+    })
+    .filter(row => row.participationSetCount > 0)
+    .sort((a, b) => b.participationSetCount - a.participationSetCount ||
+      b.primarySetCount - a.primarySetCount || a.muscle.localeCompare(b.muscle));
 }
 const HK_OFFSET_MS = 8 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;

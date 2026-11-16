@@ -347,10 +347,11 @@ describe("workout studio DOM contracts", () => {
     const actions = [
       ...document.querySelectorAll('button[aria-label^="肌群與步驟 "]'),
     ];
-    expect(actions).toHaveLength(2);
+    expect(actions).toHaveLength(1);
     expect(actions[0].getAttribute("aria-label")).toBe(
       "肌群與步驟 Dumbbell Fly"
     );
+    expect(document.querySelector('button[aria-label="查看訓練紀錄 Dumbbell Fly"]')).not.toBeNull();
     await act(async () => (actions[0] as HTMLButtonElement).click());
     expect(
       document.querySelector('[data-testid="exercise-detail"]')?.textContent

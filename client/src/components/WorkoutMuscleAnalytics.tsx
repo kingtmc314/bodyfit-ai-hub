@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { todayHKString } from "@/lib/hkTime";
+import { getMuscleParticipationRows } from "@shared/workoutMuscleAnalytics";
 import type {
   MuscleAnalysisPeriod,
   WorkoutMuscleAnalysis,
@@ -66,6 +67,7 @@ export function WorkoutMuscleAnalyticsView({
 }) {
   const isZh = useStudioLanguage();
   const rows = data.muscles;
+  const participationRows = getMuscleParticipationRows(data);
   const primary = rows
     .filter(row => row.primarySetCount > 0)
     .map(row => row.muscle);
@@ -120,6 +122,11 @@ export function WorkoutMuscleAnalyticsView({
           </div>
         ))}
       </dl>
+      <p className="text-[11px] leading-5 text-muted-foreground">
+        {isZh
+          ? `共 ${formatNumber(data.setCount)} 組已儲存記錄、${formatNumber(data.totalReps)} 次；每組及重量訓練量只計一次，不因涉及多個肌群而增加。`
+          : `${formatNumber(data.setCount)} saved sets, ${formatNumber(data.totalReps)} reps. Each set and its load volume count once, even when multiple muscles participate.`}
+      </p>
       {data.setCount === 0 ? (
         <div
           role="status"
@@ -279,6 +286,74 @@ export function WorkoutMuscleAnalyticsView({
           )}
         </section>
       </div>
+      {hasMapped && (
+        <section
+          className="min-w-0 rounded-2xl border border-border bg-white p-4 sm:p-5"
+          aria-label={isZh ? "肌群合計參與圖表" : "Combined muscle participation chart"}
+          data-muscle-participation-chart
+        >
+          <h3 className="flex items-center gap-2 text-sm font-bold">
+            <BarChart2 className="h-4 w-4 text-blue-600" />
+            {isZh ? "每個肌群都有計：主力＋輔助參與" : "Every mapped muscle counts: primary + secondary"}
+          </h3>
+          <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+            {isZh
+              ? "合計參與＝主力組數＋輔助組數，比例以所有阻力組數為分母。同一肌群在同一組只計一次；同一組可計入多個肌群，各行不能相加作總組數。輔助參與即使直接訓練量為 0 kg 仍會顯示，不額外分配 kg 或卡路里。"
+              : "Combined participation = primary sets + secondary sets, divided by all strength sets. A muscle counts once per saved set; a set can involve several muscles, so rows must not be added as total sets. Secondary participation remains visible at 0 kg direct volume, with no extra kg or calories assigned."}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-4 text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded bg-blue-600" />{isZh ? "主力參與" : "Primary participation"}</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded bg-blue-300" />{isZh ? "輔助參與" : "Secondary participation"}</span>
+          </div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[460px] text-xs">
+              <caption className="sr-only">{isZh ? "每肌群參與組數；跨肌群重疊，不是額外訓練量" : "Per-muscle saved-set participation; overlaps across muscles, not additional workload"}</caption>
+              <thead className="border-b border-border text-[10px] text-muted-foreground">
+                <tr>
+                  <th scope="col" className="py-2 pr-3 text-left">{isZh ? "肌群／參與比例" : "Muscle / participation"}</th>
+                  <th scope="col" className="px-2 py-2 text-right">{isZh ? "主力組數" : "Primary sets"}</th>
+                  <th scope="col" className="px-2 py-2 text-right">{isZh ? "輔助組數" : "Secondary sets"}</th>
+                  <th scope="col" className="py-2 pl-2 text-right">{isZh ? "合計參與" : "Combined sets"}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {participationRows.map(row => {
+                  const primaryPct = data.strengthSetCount > 0
+                    ? row.primarySetCount / data.strengthSetCount * 100 : 0;
+                  const secondaryPct = data.strengthSetCount > 0
+                    ? row.secondarySetCount / data.strengthSetCount * 100 : 0;
+                  const label = studioMuscleLabel(row.muscle, isZh);
+                  return (
+                    <tr key={row.muscle} data-participation-muscle={row.muscle} className="border-b border-slate-100 last:border-0">
+                      <th scope="row" className="py-3 pr-3 text-left font-semibold">
+                        {label}
+                        <div
+                          role="img"
+                          aria-label={isZh
+                            ? `${label}：主力 ${row.primarySetCount} 組、輔助 ${row.secondarySetCount} 組，合計 ${row.participationSetCount} / ${data.strengthSetCount} 組 (${percentage(row.participationPct)})`
+                            : `${label}: ${row.primarySetCount} primary + ${row.secondarySetCount} secondary = ${row.participationSetCount} / ${data.strengthSetCount} sets (${percentage(row.participationPct)})`}
+                          className="mt-1.5 flex h-2 overflow-hidden rounded-full bg-slate-100"
+                        >
+                          <span data-participation-primary style={{ width: barWidth(primaryPct) }} className="h-full shrink-0 bg-blue-600" />
+                          <span data-participation-secondary style={{ width: barWidth(secondaryPct) }} className="h-full shrink-0 bg-blue-300" />
+                        </div>
+                      </th>
+                      <td data-primary-sets className="studio-stat px-2 py-3 text-right text-blue-700">{formatNumber(row.primarySetCount)}</td>
+                      <td data-secondary-sets className="studio-stat px-2 py-3 text-right text-slate-600">{formatNumber(row.secondarySetCount)}</td>
+                      <td data-combined-sets className="studio-stat py-3 pl-2 text-right font-semibold">{formatNumber(row.participationSetCount)} <span className="text-[10px] font-normal text-muted-foreground">· {percentage(row.participationPct)}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-[10px] leading-5 text-muted-foreground">
+            {isZh
+              ? "例：胸推一組會計胸肌主力一次，同時計三頭肌及肩部輔助各一次；腿推的股四頭肌和臀肌各計主力一組，但 kg 訓練量及分配組數由主力肌群平均攤分。這是解剖分類參與，不是實測啟動程度。"
+              : "Example: one chest-press set counts once for the chest as primary, and once each for triceps and shoulders as secondary. Leg-press quads and glutes each receive one primary participation, while kg volume and allocated sets are shared equally between primaries. This is anatomical participation, not measured activation."}
+          </p>
+        </section>
+      )}
       <section
         className="rounded-2xl border border-border bg-white p-4 sm:p-5"
         aria-label={isZh ? "輔助肌群參與" : "Secondary muscle participation"}

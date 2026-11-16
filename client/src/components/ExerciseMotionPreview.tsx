@@ -11,6 +11,19 @@ import {
   type Point3,
 } from "@shared/exerciseMotion";
 import { cn } from "@/lib/utils";
+import {
+  getExerciseAnatomy,
+  getMotionMuscleShapes,
+  motionLimbContour,
+  motionTorsoContour,
+  projectMotionPoint,
+  ANATOMICAL_MUSCLES,
+} from "@shared/exerciseMotionMuscles";
+import {
+  ExerciseMuscleLegend,
+  MUSCLE_ROLE_COLORS,
+  MUSCLE_ROLE_STROKES,
+} from "@/components/ExerciseMuscleAnatomy";
 
 export interface ExerciseMotionPreviewProps {
   exercise: { name: string; muscleGroup?: string; equipment?: string };
@@ -18,10 +31,7 @@ export interface ExerciseMotionPreviewProps {
   autoplay?: boolean;
   className?: string;
 }
-const projected = (p: Point3): [number, number] => [
-  185 + p[0] * 108 + p[2] * 78,
-  247 - p[1] * 102 - p[2] * 12,
-];
+const projected = projectMotionPoint;
 const reducedMotion = () =>
   typeof window !== "undefined" &&
   !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -38,6 +48,52 @@ function MotionSvg({
   zh: boolean;
 }) {
   const segments = getMotionApparatus(spec.id, pose).segments;
+  const muscles = getMotionMuscleShapes(spec, pose);
+  const contour = (a: Point3, b: Point3, width: number, end: number) => (
+    <path
+      d={motionLimbContour(a, b, width, end)}
+      fill="#d8cfc4"
+      stroke="#9b9187"
+      strokeWidth="0.8"
+    />
+  );
+  const muscle = (shape: (typeof muscles)[number], index: number) => (
+    <g
+      key={`${shape.id}-${shape.side}-${index}`}
+      data-motion-muscle-id={shape.id}
+      data-muscle-role={shape.role}
+      data-muscle-side={shape.side}
+      data-muscle-anchors={JSON.stringify(shape.anchors)}
+    >
+      <title>{`${ANATOMICAL_MUSCLES[shape.id].zh} / ${ANATOMICAL_MUSCLES[shape.id].en} — ${shape.role === "primary" ? (zh ? "主要肌群" : "Primary muscle") : zh ? "輔助肌群" : "Secondary muscle"}`}</title>
+      <path
+        data-motion-muscle-belly
+        d={shape.path}
+        fill={MUSCLE_ROLE_COLORS[shape.role]}
+        stroke={MUSCLE_ROLE_STROKES[shape.role]}
+        strokeWidth={shape.role === "primary" ? 1 : 0.85}
+        strokeDasharray={shape.role === "secondary" ? "2 1.3" : undefined}
+      />
+      <path
+        d={shape.fibers}
+        fill="none"
+        stroke={MUSCLE_ROLE_STROKES[shape.role]}
+        strokeWidth=".55"
+        opacity=".45"
+      />
+    </g>
+  );
+  const torsoIds = new Set([
+    "chest",
+    "lats",
+    "back",
+    "traps",
+    "lower_back",
+    "abs",
+    "obliques",
+    "glutes",
+    "glute_medius",
+  ]);
   const line = (a: Point3, b: Point3, color: string, width: number) => (
     <line
       x1={projected(a)[0]}
@@ -90,6 +146,11 @@ function MotionSvg({
           ? `${spec.nameZh}：通用人體與器械示意`
           : `${spec.name}: generic human and machine schematic`}
       </title>
+      <desc>
+        {zh
+          ? "肌肉形狀依原有關節位置移動。琥珀色實線為主要肌群，青綠色虛線為輔助肌群；背側與深層肌肉為示意透視，並非肌肉活化測量。"
+          : "Muscle shapes follow the original joint positions. Amber solid outlines mark primary muscles; teal dashed outlines mark secondary muscles. Posterior and deep regions are schematic cutaways, not activation measurements."}
+      </desc>
       <rect x="45" y="0" width="320" height="265" fill="#f6f8fc" />
       <path d="M60 250H350" stroke="#cbd5e1" strokeWidth="2" />
       <g data-motion-apparatus={spec.id}>
@@ -106,9 +167,25 @@ function MotionSvg({
       </g>
       <g data-motion-human="true">
         {[0, 1].map(i => (
-          <g key={`leg-${i}`} opacity={i === 0 ? 0.7 : 1}>
-            {line(pose.hips[i], pose.knees[i], "#4c83db", 14)}
-            {line(pose.knees[i], pose.feet[i], "#73a0e6", 10)}
+          <g key={`leg-${i}`}>
+            {contour(pose.hips[i], pose.knees[i], 11, 6)}
+            {contour(pose.knees[i], pose.feet[i], 7.5, 3.5)}
+            {muscles
+              .filter(
+                m =>
+                  m.side === i &&
+                  ["quads", "hamstrings", "adductors", "calves"].includes(m.id)
+              )
+              .map(muscle)}
+            <ellipse
+              cx={projected(pose.knees[i])[0]}
+              cy={projected(pose.knees[i])[1]}
+              rx="4"
+              ry="4.5"
+              fill="#eee7df"
+              stroke="#b5a89a"
+              strokeWidth=".7"
+            />
             {line(
               pose.feet[i],
               [
@@ -121,12 +198,39 @@ function MotionSvg({
             )}
           </g>
         ))}
-        {line(pose.hip, pose.neck, "#4c83db", 28)}
-        {line(pose.shoulders[0], pose.shoulders[1], "#4c83db", 14)}
+        <path
+          data-motion-body-contour
+          d={motionTorsoContour(pose)}
+          fill="#ded6cc"
+          stroke="#9b9187"
+          strokeWidth=".9"
+        />
+        <path
+          d={`M${projected(pose.neck)[0]} ${projected(pose.neck)[1] + 5} L${projected(pose.hip)[0]} ${projected(pose.hip)[1] - 2}`}
+          stroke="#b8ada0"
+          strokeWidth=".65"
+          fill="none"
+        />
+        {muscles.filter(m => torsoIds.has(m.id)).map(muscle)}
         {[0, 1].map(i => (
-          <g key={`arm-${i}`} opacity={i === 0 ? 0.7 : 1}>
-            {line(pose.shoulders[i], pose.elbows[i], "#4c83db", 10)}
-            {line(pose.elbows[i], pose.hands[i], "#73a0e6", 7)}
+          <g key={`arm-${i}`}>
+            {contour(pose.shoulders[i], pose.elbows[i], 7.5, 3.8)}
+            {contour(pose.elbows[i], pose.hands[i], 5, 2.7)}
+            {muscles
+              .filter(
+                m =>
+                  m.side === i &&
+                  ["shoulders", "biceps", "triceps", "forearms"].includes(m.id)
+              )
+              .map(muscle)}
+            <circle
+              cx={projected(pose.elbows[i])[0]}
+              cy={projected(pose.elbows[i])[1]}
+              r="2.8"
+              fill="#eee7df"
+              stroke="#b5a89a"
+              strokeWidth=".6"
+            />
             <circle
               cx={projected(pose.hands[i])[0]}
               cy={projected(pose.hands[i])[1]}
@@ -135,8 +239,22 @@ function MotionSvg({
             />
           </g>
         ))}
-        {line(pose.neck, pose.head, "#93afe0", 10)}
-        <ellipse cx={head[0]} cy={head[1]} rx="10" ry="14" fill="#93afe0" />
+        {line(pose.neck, pose.head, "#d8cfc4", 10)}
+        <ellipse
+          cx={head[0]}
+          cy={head[1]}
+          rx="10"
+          ry="14"
+          fill="#ded6cc"
+          stroke="#9b9187"
+          strokeWidth=".8"
+        />
+        <path
+          d={`M${head[0] + 4} ${head[1] - 5} Q${head[0] + 7} ${head[1] + 1} ${head[0] + 4} ${head[1] + 5}`}
+          stroke="#b5a89a"
+          strokeWidth=".8"
+          fill="none"
+        />
       </g>
       <g data-motion-contacts="true">
         {segments
@@ -248,6 +366,10 @@ function MotionPlayer({
     setPhase(next);
   };
   const label = zh ? "簡化動作示意" : "Simplified motion";
+  const anatomy = getExerciseAnatomy({
+    name: spec.name,
+    equipment: spec.equipment[0],
+  });
   if (compact) {
     return (
       <div
@@ -265,7 +387,7 @@ function MotionPlayer({
           zh={zh}
         />
         <span className="absolute bottom-1 right-1 rounded bg-white/90 px-2 py-1 text-[10px] text-slate-600">
-          {label}
+          {label} · {zh ? "琥珀＝主要" : "Amber = primary"}
         </span>
       </div>
     );
@@ -297,6 +419,14 @@ function MotionPlayer({
         />
       </div>
       <div className="space-y-3 p-3 sm:p-4">
+        <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
+          <ExerciseMuscleLegend anatomy={anatomy} compact />
+          <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+            {zh
+              ? "實線＝主要；虛線＝輔助。肌肉輪廓隨關節移動；背側／深層位置為示意透視，非精確解剖邊界。主要與輔助肌群在受控回程亦有參與，顏色不代表出力多少。"
+              : "Solid outline = primary; dashed outline = secondary. Muscle contours follow the joints; posterior/deep regions are schematic cutaways, not exact anatomical boundaries. Both roles also participate during the controlled return; colors do not quantify effort."}
+          </p>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"

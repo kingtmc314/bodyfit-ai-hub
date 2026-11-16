@@ -11,9 +11,14 @@ import {
   Plus,
   RotateCcw,
   Timer,
+  History,
+  Star,
+  Trash2,
+  ExternalLink,
 } from "lucide-react";
 import { getExerciseMuscles } from "@shared/exerciseMuscles";
 import { getExerciseGuide } from "@shared/exerciseGuides";
+import { getGymworkReference } from "@shared/gymworkReferences";
 import ExerciseMotionPreview from "./ExerciseMotionPreview";
 
 export const STUDIO_MUSCLE_LABELS: Record<string, [string, string]> = {
@@ -50,33 +55,45 @@ export function useStudioLanguage() {
   return !i18n?.language || i18n.language.startsWith("zh");
 }
 
-/** Light studio tokens are deliberately local, including portal-based workout dialogs. */
+/** Scoped studio tokens include portal dialogs without changing the surrounding app. */
 export function WorkoutStudioStyles() {
   return (
     <style>{`
-    .workout-studio,.workout-studio-dialog{--background:#f6f8fb;--foreground:#111827;--card:#fff;--card-foreground:#111827;--popover:#fff;--popover-foreground:#111827;--primary:#2563eb;--primary-foreground:#fff;--secondary:#eff4fb;--secondary-foreground:#334155;--muted:#eef2f7;--muted-foreground:#596579;--accent:#eaf1ff;--accent-foreground:#1e40af;--border:#dde4ed;--input:#d8e0ec;--ring:#2563eb;--destructive:#c53030;color:#111827;color-scheme:light}
-    .workout-studio{background:#f6f8fb;border-radius:24px;isolation:isolate;min-width:0;overflow-wrap:anywhere;padding-bottom:calc(24px + env(safe-area-inset-bottom))}
+    .workout-studio,.workout-studio-dialog{--background:#f7f7f4;--foreground:#172b3b;--card:#fff;--card-foreground:#172b3b;--popover:#fff;--popover-foreground:#172b3b;--primary:#126b64;--primary-foreground:#fff;--secondary:#eef3f1;--secondary-foreground:#334b53;--muted:#eff2f0;--muted-foreground:#64717a;--accent:#e7f2ee;--accent-foreground:#126b64;--border:#e1e6e3;--input:#d7ded9;--ring:#126b64;--destructive:#b43b3b;color:var(--foreground);color-scheme:light}
+    .dark .workout-studio,.dark .workout-studio-dialog{--background:#101b24;--foreground:#e2ebed;--card:#16242e;--card-foreground:#e2ebed;--popover:#16242e;--popover-foreground:#e2ebed;--primary:#278d80;--primary-foreground:#fff;--secondary:#20333c;--secondary-foreground:#c5d6da;--muted:#203039;--muted-foreground:#a4b5bc;--accent:#203b3c;--accent-foreground:#8bd0bf;--border:#2a3b43;--input:#32444c;--ring:#72c6b3;color-scheme:dark}
+    .workout-studio{background:var(--background);border-radius:24px;isolation:isolate;min-width:0;overflow-wrap:anywhere;padding-bottom:calc(24px + env(safe-area-inset-bottom))}
     .workout-studio *,.workout-studio-dialog *{box-sizing:border-box}
     .workout-studio button,.workout-studio [role=combobox],.workout-studio input,.workout-studio select,.workout-studio-dialog button,.workout-studio-dialog input,.workout-studio-dialog select{min-height:44px}
     .workout-studio button,.workout-studio-dialog button{cursor:pointer;touch-action:manipulation}
     .workout-studio button:disabled,.workout-studio-dialog button:disabled{cursor:not-allowed}
-    .workout-studio button:focus-visible,.workout-studio-dialog button:focus-visible{outline:2px solid #2563eb;outline-offset:3px}
+    .workout-studio button:focus-visible,.workout-studio-dialog button:focus-visible{outline:2px solid var(--ring);outline-offset:3px}
     .workout-studio .studio-icon-action{min-width:44px;width:44px;height:44px;padding:0;flex-shrink:0}
-    .workout-studio .studio-session-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
+    .workout-studio .studio-session-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:24px}
     .workout-studio .studio-session-log{min-width:0;order:0}
     .workout-studio .studio-muscle-aside{min-width:0;order:1;align-self:start}
     .workout-studio .studio-set-head,.workout-studio .studio-set-row{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(0,1fr) 44px;gap:8px;align-items:center;padding:8px 12px}
-    .workout-studio .studio-set-head{background:#f8fafc;color:#64748b;font-size:11px;font-weight:600}
-    .workout-studio .studio-set-row{border-bottom:1px solid #edf1f6;min-width:0}
+    .workout-studio .studio-set-head{background:var(--muted);color:var(--muted-foreground);font-size:12px;font-weight:500}
+    .workout-studio .studio-set-row{border-bottom:1px solid var(--border);min-width:0}
     .workout-studio .studio-set-actions{grid-column:2 / -1;display:flex;justify-content:flex-end;gap:4px;align-items:center}
-    .workout-studio .studio-rest-dock{position:sticky;bottom:calc(92px + env(safe-area-inset-bottom));z-index:20;box-shadow:0 8px 32px #1529471c}
-    .workout-studio [data-muscle-area-map]{background:#f8fafc!important;color:#334155!important}
-    .workout-studio [data-muscle-area-map] p{color:#64748b!important}
+    .workout-studio .studio-rest-dock{position:sticky;bottom:calc(92px + env(safe-area-inset-bottom));z-index:20;box-shadow:0 8px 32px #15294712}
+    .workout-studio [data-muscle-area-map]{background:var(--muted)!important;color:var(--foreground)!important}
+    .workout-studio [data-muscle-area-map] p{color:var(--muted-foreground)!important}
     .workout-studio .studio-stat{font-variant-numeric:tabular-nums}
-    .workout-studio-dialog{max-width:calc(100vw - 24px);padding-bottom:calc(24px + env(safe-area-inset-bottom));background:#fff}
+    .workout-studio-dialog{max-width:calc(100vw - 24px);padding-bottom:calc(24px + env(safe-area-inset-bottom));background:var(--card)}
+    .workout-exercise-detail{padding-bottom:0;width:min(768px,calc(100vw - 24px));gap:0}
+    .workout-studio .studio-nav{display:flex;height:auto;max-width:100%;overflow-x:auto;justify-content:flex-start;border-radius:0;border:0;border-bottom:1px solid var(--border);background:transparent;padding:0;gap:20px;scrollbar-width:none}
+    .workout-studio .studio-nav>button{flex:none;white-space:nowrap;border-radius:0;border-bottom:2px solid transparent;background:transparent;padding:12px 2px;font-size:13px;box-shadow:none;color:var(--muted-foreground)}
+    .workout-studio .studio-nav>button[data-state=active]{border-bottom-color:var(--primary);color:var(--foreground);font-weight:600}
+    .workout-studio .studio-exercise-card{box-shadow:0 2px 8px #172b3b04}
+    .workout-studio .studio-session-log{gap:20px}
+    .workout-studio .text-blue-600,.workout-studio .text-purple-500,.workout-studio-dialog .text-blue-600{color:var(--primary)}
+    .workout-studio .bg-blue-600{background:var(--primary)}
+    .dark .workout-studio .bg-white,.dark .workout-studio-dialog .bg-white{background:var(--card)}
+    .dark .workout-studio .bg-slate-50,.dark .workout-studio .bg-slate-100{background:var(--muted)}
+    .dark .workout-studio .text-slate-600,.dark .workout-studio .text-slate-700{color:var(--muted-foreground)}
     @media(min-width:768px){.workout-studio .studio-set-head,.workout-studio .studio-set-row{grid-template-columns:44px minmax(0,1fr) minmax(0,1fr) 44px 144px;padding:8px 20px}.workout-studio .studio-set-actions{grid-column:auto}}
     @media(min-width:1024px){.workout-studio .studio-session-layout{grid-template-columns:minmax(0,1fr) 300px}.workout-studio .studio-muscle-aside{order:1}.workout-studio .studio-session-log{order:0}.workout-studio .studio-rest-dock{bottom:12px}}
-    @media(prefers-reduced-motion:no-preference){.workout-studio button{transition:background-color 160ms ease-out,transform 160ms ease-out}.workout-studio button:active{transform:scale(.98)}}
+    @media(prefers-reduced-motion:no-preference){.workout-studio button,.workout-studio-dialog button{transition:background-color 160ms ease-out,transform 160ms ease-out}.workout-studio button:active,.workout-studio-dialog button:active{transform:scale(.98)}}
   `}</style>
   );
 }
@@ -108,34 +125,38 @@ export function WorkoutStudioHeader({
 }) {
   const isZh = useStudioLanguage();
   return (
-    <header className="overflow-hidden rounded-3xl border border-border bg-white">
-      <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
+    <header className="overflow-hidden rounded-3xl border border-border/70 bg-card text-card-foreground shadow-[0_4px_24px_rgba(23,43,59,0.035)]">
+      <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-7">
         <div className="min-w-0">
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-[.2em] text-blue-600">
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[.18em] text-primary">
             BODYFIT / WORKOUT STUDIO
           </p>
-          <h1 className="text-xl font-extrabold tracking-tight sm:text-2xl">
+          <h1 className="text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
             {title}
           </h1>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {subtitle}
           </p>
-          <p className="mt-2 inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+          <p className="mt-3 flex items-center gap-2 text-xs font-medium text-primary">
+            <span
+              aria-hidden="true"
+              className="h-1.5 w-1.5 rounded-full bg-primary"
+            />
             {status}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">{actions}</div>
       </div>
-      <div className="flex items-center justify-between gap-3 border-y border-border bg-slate-50 px-5 py-4 sm:px-6">
+      <div className="flex items-center justify-between gap-4 border-y border-border/60 bg-muted/25 px-5 py-5 sm:px-7">
         <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+          <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <Timer className="h-3.5 w-3.5" />
             {isZh ? "訓練時間" : "Workout time"}
           </p>
-          <p className="studio-stat mt-1 text-3xl font-bold tracking-tight">
+          <p className="studio-stat mt-1 text-3xl font-semibold tracking-tight">
             {workoutTime}
           </p>
-          <p className="mt-1 max-w-64 text-[10px] leading-4 text-muted-foreground">
+          <p className="mt-2 max-w-md text-xs leading-5 text-muted-foreground">
             {timeNote}
           </p>
         </div>
@@ -144,14 +165,14 @@ export function WorkoutStudioHeader({
             type="button"
             onClick={onFinish}
             disabled={finishing}
-            className="flex min-w-28 shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700"
+            className="flex min-w-24 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:opacity-90"
           >
             {finishing ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Check className="h-4 w-4" />
             )}
-            {isZh ? "結束訓練 · Finish" : "Finish"}
+            {isZh ? "結束訓練" : "Finish"}
           </button>
         )}
       </div>
@@ -166,12 +187,12 @@ export function WorkoutStudioHeader({
           ],
         ].map(([label, value, unit]) => (
           <div key={label} className="min-w-0 px-2 sm:px-4">
-            <dt className="text-[10px] font-medium text-muted-foreground sm:text-xs">
+            <dt className="text-xs font-medium leading-5 text-muted-foreground">
               {label}
             </dt>
-            <dd className="studio-stat mt-1 break-words text-xl font-extrabold sm:text-2xl">
+            <dd className="studio-stat mt-2 break-words text-xl font-semibold sm:text-2xl">
               {value}
-              <span className="ml-1 text-[10px] font-medium text-muted-foreground">
+              <span className="ml-1 text-xs font-normal text-muted-foreground">
                 {unit}
               </span>
             </dd>
@@ -188,6 +209,8 @@ type StudioExercise = {
   muscleGroup: string;
   equipment: string;
   instructions?: string;
+  identityNotice?: string;
+  variantLabel?: string;
 };
 export function WorkoutStudioExerciseHeading({
   exercise,
@@ -209,13 +232,13 @@ export function WorkoutStudioExerciseHeading({
       ? "肌群與步驟"
       : "Muscles & steps";
   return (
-    <div className="flex min-w-0 items-start gap-3">
+    <div className="flex min-w-0 items-start gap-4">
       <button
         type="button"
         onClick={onOpen}
         aria-label={`${demoLabel} ${exercise.name}`}
         title={`${demoLabel} ${exercise.name}`}
-        className="flex w-28 shrink-0 flex-col items-center justify-center overflow-hidden rounded-xl border border-blue-100 bg-blue-50 p-1 text-blue-600"
+        className="flex w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/60 bg-muted/30 p-1 text-primary sm:w-24"
       >
         {guide ? (
           <ExerciseMotionPreview
@@ -225,41 +248,53 @@ export function WorkoutStudioExerciseHeading({
             className="w-full"
           />
         ) : (
-          <ActivityIcon aria-hidden="true" className="my-3 h-5 w-5" />
+          <span className="flex flex-col items-center gap-1 py-2">
+            <ActivityIcon aria-hidden="true" className="h-5 w-5" />
+            <span className="text-[10px] leading-4">
+              {isZh ? "肌群與步驟" : "Muscles & steps"}
+            </span>
+          </span>
         )}
-        <span className="mt-1 text-[10px] font-semibold">
-          {guide
-            ? isZh
-              ? "簡化動畫"
-              : "Simplified animation"
-            : isZh
-              ? "肌群與步驟"
-              : "Muscles & steps"}
-        </span>
       </button>
       <div className="min-w-0 flex-1">
         <button
           type="button"
           onClick={onOpen}
-          className="text-left text-sm font-bold leading-5"
+          aria-label={`${isZh ? "查看訓練紀錄" : "View history"} ${exercise.name}`}
+          className="min-h-11 text-left text-base font-semibold leading-6 hover:text-primary"
         >
           {isZh ? exercise.nameZh || exercise.name : exercise.name}
         </button>
-        {isZh && exercise.nameZh && (
-          <p className="text-[11px] text-muted-foreground">{exercise.name}</p>
+        {exercise.variantLabel && (
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            {exercise.variantLabel}
+          </p>
         )}
-        <p className="mt-1 text-[11px] font-medium text-blue-600">
+        {isZh && exercise.nameZh && (
+          <p className="text-xs text-muted-foreground">{exercise.name}</p>
+        )}
+        <p className="mt-2 text-xs font-medium leading-5 text-primary">
           {anatomy.primary.length
             ? anatomy.primary.map(id => studioMuscleLabel(id, isZh)).join(" · ")
             : studioMuscleLabel(exercise.muscleGroup, isZh)}
         </p>
-        <p className="mt-1 text-[10px] text-muted-foreground">
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
           {exercise.equipment ||
             (isZh ? "器材未記錄" : "Equipment not recorded")}
-          {anatomy.secondary.length
-            ? ` · ${isZh ? "輔助" : "Secondary"}: ${anatomy.secondary.map(id => studioMuscleLabel(id, isZh)).join(" / ")}`
-            : ""}
         </p>
+        {anatomy.secondary.length > 0 && (
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {isZh ? "輔助" : "Secondary"}:{" "}
+            {anatomy.secondary
+              .map(id => studioMuscleLabel(id, isZh))
+              .join(" · ")}
+          </p>
+        )}
+        {exercise.identityNotice && exercise.variantLabel && (
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">
+            {exercise.identityNotice}
+          </p>
+        )}
         {anatomy.basis === "category" && exercise.muscleGroup !== "cardio" && (
           <p className="mt-1 text-[10px] text-muted-foreground">
             {isZh ? "分類肌群，需核對" : "Category mapping — verify"}
@@ -410,5 +445,148 @@ export function WorkoutStudioRestBar({
         </p>
       )}
     </section>
+  );
+}
+
+export function WorkoutStudioLibraryCard({
+  exercise,
+  onOpen,
+  onAdd,
+  onFavourite,
+  favourite,
+  onDelete,
+}: {
+  exercise: StudioExercise & { id?: number; isCustom?: boolean };
+  onOpen: () => void;
+  onAdd?: () => void;
+  onFavourite?: () => void;
+  favourite?: boolean;
+  onDelete?: () => void;
+}) {
+  const isZh = useStudioLanguage();
+  const anatomy = getExerciseMuscles(exercise);
+  const guide = getExerciseGuide(exercise.name, exercise.equipment);
+  const reference = getGymworkReference(exercise.name, exercise.equipment);
+  const label = guide
+    ? isZh
+      ? "動作示範"
+      : "Movement demonstration"
+    : isZh
+      ? "肌群與步驟"
+      : "Muscles & steps";
+  return (
+    <article
+      data-exercise-name={exercise.name}
+      className="studio-exercise-card group flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card text-card-foreground transition-colors hover:border-primary/40"
+    >
+      <div className="flex min-h-36 items-center justify-center border-b border-border/40 bg-muted/25 px-5 py-4">
+        {guide ? (
+          <ExerciseMotionPreview
+            exercise={exercise}
+            compact
+            autoplay={false}
+            className="w-full max-w-48"
+          />
+        ) : (
+          <div className="flex h-24 w-full items-center justify-center rounded-xl text-muted-foreground">
+            <ActivityIcon aria-hidden="true" className="h-8 w-8 stroke-[1.3]" />
+          </div>
+        )}
+      </div>
+      <div className="flex flex-1 flex-col p-5">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <h3>
+              <button
+                type="button"
+                onClick={onOpen}
+                aria-label={`${isZh ? "查看訓練紀錄" : "View history"} ${exercise.name}`}
+                className="min-h-11 text-left text-base font-semibold leading-6 hover:text-primary"
+              >
+                {isZh ? exercise.nameZh || exercise.name : exercise.name}
+              </button>
+            </h3>
+            {isZh && exercise.nameZh && (
+              <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                {exercise.name}
+              </p>
+            )}
+            {exercise.variantLabel && (
+              <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-400">
+                {exercise.variantLabel}
+              </p>
+            )}
+          </div>
+          {(onFavourite || onDelete) && (
+            <button
+              type="button"
+              onClick={onDelete || onFavourite}
+              aria-label={
+                onDelete
+                  ? `刪除自訂動作 ${exercise.name}`
+                  : `切換收藏 ${exercise.name}`
+              }
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${favourite ? "text-amber-600" : "text-muted-foreground hover:bg-muted"}`}
+            >
+              {onDelete ? (
+                <Trash2 className="h-4 w-4" />
+              ) : (
+                <Star
+                  className={`h-4 w-4 ${favourite ? "fill-current" : ""}`}
+                />
+              )}
+            </button>
+          )}
+        </div>
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">
+          {exercise.equipment}
+          {exercise.isCustom ? (isZh ? " · 自訂" : " · Custom") : ""}
+        </p>
+        <p className="mt-1 text-sm leading-6 text-primary">
+          {anatomy.primary.length
+            ? anatomy.primary.map(id => studioMuscleLabel(id, isZh)).join(" · ")
+            : studioMuscleLabel(exercise.muscleGroup, isZh)}
+        </p>
+        {exercise.variantLabel && exercise.identityNotice && (
+          <p className="mt-3 text-xs leading-5 text-muted-foreground">
+            {exercise.identityNotice}
+          </p>
+        )}
+        <div className="mt-auto flex gap-2 pt-5">
+          <button
+            type="button"
+            onClick={onOpen}
+            aria-label={`${label} ${exercise.name}`}
+            className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-border text-sm font-medium hover:bg-muted/40"
+          >
+            <History className="h-4 w-4" />
+            {isZh ? "紀錄與詳情" : "History & details"}
+          </button>
+          {onAdd && (
+            <button
+              type="button"
+              onClick={onAdd}
+              aria-label={`新增 ${exercise.name} 至課程`}
+              className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90"
+            >
+              <Plus className="h-4 w-4" />
+              {isZh ? "加入" : "Add"}
+            </button>
+          )}
+        </div>
+        {reference && (
+          <a
+            href={reference.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Gymwork 原作 ${exercise.name}`}
+            className="mt-2 inline-flex min-h-11 items-center gap-1.5 text-xs text-muted-foreground underline underline-offset-4"
+          >
+            Gymwork {isZh ? "外部參考" : "external reference"}
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        )}
+      </div>
+    </article>
   );
 }

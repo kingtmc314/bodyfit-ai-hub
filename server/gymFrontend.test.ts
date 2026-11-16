@@ -77,6 +77,16 @@ vi.mock("../client/src/lib/trpc", () => ({
       analyzeMusclePeriod: {
         useMutation: () => ({ isPending: false, mutateAsync: vi.fn() }),
       },
+      getExerciseHistory: {
+        useQuery: ({ exerciseName, page }: any) => ({ data: {
+          exerciseName, page, aliases: [exerciseName], pageSize: 8, totalPages: 0, hasNextPage: false,
+          summary: { totalSets: 0, sessionCount: 0, firstDateHK: null, lastDateHK: null, maxWeightKg: null, totalVolumeKg: 0 },
+          trend: [], trendMetadata: { truncated: false }, sessions: [],
+        }, error: null, isLoading: false, isFetching: false, refetch: state.refetch }),
+      },
+      analyzeExercise: {
+        useMutation: () => ({ isPending: false, mutateAsync: vi.fn() }),
+      },
     },
   },
 }));
@@ -106,7 +116,10 @@ const click = async (label: string) => {
       element.getAttribute("aria-label") === label
   );
   if (!button) throw new Error(`Missing button ${label}`);
-  await act(async () => button.click());
+  await act(async () => {
+    if (button.getAttribute("role") === "tab") button.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    else button.click();
+  });
 };
 const input = { period: "week" as const, anchorDate: "2026-11-15" };
 function fixture() {
@@ -338,7 +351,7 @@ describe("Workout studio readable movement and rest controls", () => {
     expect(host.querySelector('[data-motion-id="chest-press"]')).not.toBeNull();
     expect(host.querySelector('[data-motion-playing="true"]')).toBeNull();
     expect(host.querySelector('[data-motion-compact="true"]')).not.toBeNull();
-    expect(host.textContent).toContain("簡化動畫");
+    expect(host.querySelector('button[aria-label="查看訓練紀錄 Chest Press Machine"]')).not.toBeNull();
     expect(host.textContent).toContain("胸肌");
     expect(host.textContent).toContain("肱三頭肌");
     await click("胸推機");
@@ -382,12 +395,12 @@ describe("Workout studio readable movement and rest controls", () => {
       expect(
         host.querySelector("[data-exercise-motion],canvas,video,iframe,a")
       ).toBeNull();
-      expect(host.textContent).toContain("肌群與步驟");
+      expect(host.querySelector(`button[aria-label="肌群與步驟 ${exercise.name}"]`)).not.toBeNull();
       await click(`肌群與步驟 ${exercise.name}`);
     }
     expect(state.refetch).toHaveBeenCalledTimes(3);
   });
-  it("renders inline motion before muscle technique and preserves add-to-session and secondary source references", async () => {
+  it("opens history first and preserves inline motion, technique, muscles and add-to-session in separate tabs", async () => {
     await render(
       React.createElement(ExerciseDetailModal, {
         exercise: {
@@ -401,15 +414,13 @@ describe("Workout studio readable movement and rest controls", () => {
         hasActiveSession: true,
       })
     );
+    expect(host.textContent).toContain("尚未記錄此動作");
+    expect(host.querySelector('[data-exercise-motion="svg"]')).toBeNull();
+    await click("動作與技巧");
     const motion = host.querySelector('[data-exercise-motion="svg"]');
-    const muscles = host.querySelector("[data-muscle-area-map]");
     expect(motion).not.toBeNull();
-    expect(muscles).not.toBeNull();
     expect(motion?.getAttribute("data-motion-playing")).toBe("true");
     expect(motion?.getAttribute("data-motion-compact")).toBe("false");
-    expect(motion!.compareDocumentPosition(muscles!)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING
-    );
     expect(host.textContent).toContain("非 Gymwork 原作");
     expect(host.textContent).toContain("不保證");
     expect(host.textContent).toContain("起始位置");
@@ -419,6 +430,9 @@ describe("Workout studio readable movement and rest controls", () => {
     ).not.toBeNull();
     expect(host.querySelector("video,iframe")).toBeNull();
     expect(state.query).not.toHaveBeenCalled();
+    await click("肌群 / 3D");
+    expect(host.querySelector("[data-muscle-area-map]")).not.toBeNull();
+    expect(host.textContent).toContain("3D 肌群檢視");
     await click("加入訓練");
     expect(state.query).toHaveBeenCalledOnce();
     expect(state.refetch).toHaveBeenCalledOnce();
@@ -445,6 +459,7 @@ describe("Workout studio readable movement and rest controls", () => {
         onClose: state.refetch,
       })
     );
+    await click("動作與技巧");
     expect(host.querySelector("[data-exercise-motion]")).toBeNull();
     expect(host.textContent).toContain("肌群與步驟");
     expect(host.textContent).toContain("暫未支援簡化動畫");
@@ -470,7 +485,7 @@ describe("Workout studio readable movement and rest controls", () => {
     ];
     for (const path of paths) {
       const source = readFileSync(path, "utf8");
-      expect(source).toContain("ExerciseMotionPreview");
+      expect(source).toContain(path === paths[0] ? "WorkoutStudioExerciseHeading" : "ExerciseMotionPreview");
       expect(source).toContain(
         "getExerciseGuide(exercise.name, exercise.equipment)"
       );
@@ -504,7 +519,7 @@ describe("Workout studio readable movement and rest controls", () => {
     expect(host.textContent).toContain("1,400");
     expect(host.textContent).toContain("活動熱量估算");
     expect(state.refetch).not.toHaveBeenCalled();
-    await click("Finish");
+    await click("結束訓練");
     expect(state.refetch).toHaveBeenCalledOnce();
   });
   it("scopes light colors, touch targets, safe areas and responsive set-row constraints to gym components only", async () => {

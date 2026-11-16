@@ -29,18 +29,23 @@ import {
   WorkoutStudioStyles,
   WorkoutStudioHeader,
   WorkoutStudioExerciseHeading,
+  WorkoutStudioLibraryCard,
   WorkoutStudioRestBar,
   studioMuscleLabel,
   useStudioLanguage,
 } from "@/components/WorkoutStudio";
 import { EXERCISE_GUIDES, getExerciseGuide } from "@shared/exerciseGuides";
 import { getExerciseMuscles } from "@shared/exerciseMuscles";
+import {
+  buildUnifiedExerciseCatalog,
+  getCanonicalExerciseName,
+  getExerciseHistoryNames,
+  normalizeExerciseName,
+} from "@shared/workoutExerciseIdentity";
 import GymLocationInput, {
   normalizeGymLocation,
 } from "@/components/GymLocationInput";
 import { APP_VERSION } from "@/lib/appMeta";
-import { getGymworkReference } from "@shared/gymworkReferences";
-import ExerciseMotionPreview from "@/components/ExerciseMotionPreview";
 import {
   MAX_WORKOUT_MINUTES,
   estimateWorkoutCalories,
@@ -86,6 +91,7 @@ import {
   MapPin,
   Play,
   Activity,
+  History,
 } from "lucide-react";
 import MuscleMap, { MUSCLE_GROUPS } from "@/components/MuscleMap";
 import ExerciseDetailModal from "@/components/ExerciseDetailModal";
@@ -968,7 +974,7 @@ export function WorkoutEnergyPanel({
   return (
     <section
       aria-label="活動熱量估算"
-      className="rounded-2xl border border-orange-400/20 bg-gradient-to-br from-orange-500/5 via-card to-amber-500/5 p-4"
+      className="rounded-2xl border border-border/70 bg-card p-4 sm:p-5"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
@@ -976,7 +982,7 @@ export function WorkoutEnergyPanel({
             <Flame aria-hidden="true" className="h-4 w-4" />
           </span>
           <div>
-            <h3 className="text-sm font-bold text-foreground">
+            <h3 className="text-sm font-semibold text-foreground">
               {estimate?.source === "manual"
                 ? "保留原始／手動熱量 · 口徑未核實"
                 : "估計活動熱量 · ACTIVE"}
@@ -1001,8 +1007,11 @@ export function WorkoutEnergyPanel({
         範圍是模型假設下的參考區間，並非統計信賴區間。
       </p>
       {estimate ? (
-        <>
-          <dl className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
+        <details className="mt-3 border-t border-border/50 pt-2">
+          <summary className="flex min-h-11 cursor-pointer items-center text-xs font-medium text-primary">
+            {isZh ? "估算依據與限制" : "Estimate basis and limitations"}
+          </summary>
+          <dl className="mt-3 grid grid-cols-1 gap-3 text-xs sm:grid-cols-3">
             <div>
               <dt className="text-muted-foreground">估算來源</dt>
               <dd className="mt-0.5 break-words font-medium text-foreground">
@@ -1112,7 +1121,7 @@ export function WorkoutEnergyPanel({
               ))}
             </ul>
           )}
-        </>
+        </details>
       ) : (
         <p className="mt-3 text-xs leading-5 text-muted-foreground">
           尚未有可用估算。請補充有效時長及訓練組數；不會以開啟頁面的時間或固定
@@ -1390,6 +1399,8 @@ export default function Workout() {
     onSuccess: data => {
       utils.workout.getSessions.invalidate();
       utils.workout.getMuscleAnalysis.invalidate();
+      utils.workout.getExerciseHistory.invalidate();
+      utils.workout.getExerciseUsage.invalidate();
       const template = WORKOUT_TEMPLATES.find(
         item => item.key === selectedTemplateKey
       );
@@ -1433,6 +1444,8 @@ export default function Workout() {
     onSuccess: () => {
       utils.workout.getSessions.invalidate();
       utils.workout.getMuscleAnalysis.invalidate();
+      utils.workout.getExerciseHistory.invalidate();
+      utils.workout.getExerciseUsage.invalidate();
       setActiveSession(null);
       toast.success("Session deleted");
     },
@@ -1442,6 +1455,8 @@ export default function Workout() {
       utils.workout.getSessionWithSets.invalidate();
       utils.workout.getSessions.invalidate();
       utils.workout.getMuscleAnalysis.invalidate();
+      utils.workout.getExerciseHistory.invalidate();
+      utils.workout.getExerciseUsage.invalidate();
       setShowAddSetDialog(false);
       toast.success("Set logged!");
     },
@@ -1467,6 +1482,8 @@ export default function Workout() {
       utils.workout.getSessionWithSets.invalidate();
       utils.workout.getSessions.invalidate();
       utils.workout.getMuscleAnalysis.invalidate();
+      utils.workout.getExerciseHistory.invalidate();
+      utils.workout.getExerciseUsage.invalidate();
       setEditSet(null);
       setShowAddSetDialog(false);
       toast.success("Updated!");
@@ -1478,6 +1495,8 @@ export default function Workout() {
       utils.workout.getSessionWithSets.invalidate();
       utils.workout.getSessions.invalidate();
       utils.workout.getMuscleAnalysis.invalidate();
+      utils.workout.getExerciseHistory.invalidate();
+      utils.workout.getExerciseUsage.invalidate();
       toast.success("Set deleted");
     },
   });
@@ -1540,6 +1559,8 @@ export default function Workout() {
       utils.workout.getSessions.invalidate();
       utils.workout.getSessionWithSets.invalidate();
       utils.workout.getMuscleAnalysis.invalidate();
+      utils.workout.getExerciseHistory.invalidate();
+      utils.workout.getExerciseUsage.invalidate();
       setShowEditSessionDialog(false);
       toast.success("訓練記錄已更新！");
     },
@@ -1666,6 +1687,8 @@ export default function Workout() {
     onSuccess: data => {
       utils.workout.getSessions.invalidate();
       utils.workout.getMuscleAnalysis.invalidate();
+      utils.workout.getExerciseHistory.invalidate();
+      utils.workout.getExerciseUsage.invalidate();
       setFinishLoading(false);
       setShowFinishDialog(false);
       utils.workout.getSessionWithSets.invalidate();
@@ -1699,12 +1722,21 @@ export default function Workout() {
     recommendations: Array<{ title: string; detail: string; type: string }>;
   } | null>(null);
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
+  const aiAnalysisTarget = useRef<string | null>(null);
+  useEffect(() => {
+    aiAnalysisTarget.current = showAiAnalysis ? aiAnalysisExercise : null;
+    return () => {
+      aiAnalysisTarget.current = null;
+    };
+  }, [showAiAnalysis, aiAnalysisExercise]);
   const analyzeExercise = trpc.workout.analyzeExercise.useMutation({
-    onSuccess: data => {
+    onSuccess: (data, input) => {
+      if (aiAnalysisTarget.current !== input.exerciseName) return;
       setAiAnalysisResult(data);
       setAiAnalysisLoading(false);
     },
-    onError: e => {
+    onError: (e, input) => {
+      if (aiAnalysisTarget.current !== input.exerciseName) return;
       toast.error("AI 分析失敗: " + e.message);
       setAiAnalysisLoading(false);
     },
@@ -1726,6 +1758,7 @@ export default function Workout() {
   // Fetch custom exercises
   const { data: customExercisesData = [] } =
     trpc.workout.getCustomExercises.useQuery();
+  const { data: exerciseUsage = [] } = trpc.workout.getExerciseUsage.useQuery();
   const createCustomExercise = trpc.workout.createCustomExercise.useMutation({
     onSuccess: () => {
       utils.workout.getCustomExercises.invalidate();
@@ -1765,12 +1798,13 @@ export default function Workout() {
       ...c,
       isCustom: true,
     }));
+    // Exact builtin/guide choices already present need no second UI source.
+    // A shared guide/animation family alone is NOT evidence of equivalent apparatus.
     const originalMachines = EXERCISE_GUIDES.filter(
       motion =>
         !BUILT_IN_EXERCISES.some(
           exercise =>
-            getExerciseGuide(exercise.name, exercise.equipment)?.id ===
-            motion.id
+            exercise.name === motion.name && exercise.equipment === "Machine"
         )
     ).map(motion => ({
       name: motion.name,
@@ -1779,8 +1813,40 @@ export default function Workout() {
       equipment: "Machine",
       instructions: motion.movement.join(" "),
     }));
-    return [...BUILT_IN_EXERCISES, ...originalMachines, ...custom];
-  }, [customExercisesData]);
+    return buildUnifiedExerciseCatalog(
+      [...BUILT_IN_EXERCISES, ...originalMachines, ...custom],
+      exerciseUsage
+    );
+  }, [customExercisesData, exerciseUsage]);
+
+  const openExerciseDetails = (exercise: any) => {
+    setDetailExercise(exercise);
+    setShowExerciseDetail(true);
+  };
+
+  const existingCustomChoice = allExercises.find(exercise => {
+    const names = [
+      exercise.name,
+      ...(exercise.aliases ?? []),
+      ...getExerciseHistoryNames(exercise.name),
+    ];
+    const sameName = names.some(
+      name =>
+        normalizeExerciseName(name) === normalizeExerciseName(createExForm.name)
+    );
+    const apparatus = [
+      exercise.equipment,
+      ...(exercise.equipmentAliases ?? []),
+    ];
+    return (
+      sameName &&
+      apparatus.some(
+        value =>
+          value?.trim().toLowerCase() ===
+          createExForm.equipment.trim().toLowerCase()
+      )
+    );
+  });
 
   const plannedExercises = useMemo(() => {
     const raw = activeSession?.plannedExercises;
@@ -1833,11 +1899,13 @@ export default function Workout() {
       const isCardioEx = e.muscleGroup === "cardio";
       const matchSearch =
         !searchQuery ||
-        `${e.name} ${(e as any).nameZh || ""} ${e.equipment}`
+        `${e.name} ${(e as any).nameZh || ""} ${e.equipment} ${(e.aliases ?? []).join(" ")} ${(e.equipmentAliases ?? []).join(" ")}`
           .toLowerCase()
           .includes(searchQuery.trim().toLowerCase());
       const matchEquip =
-        selectedEquipment === "all" || e.equipment === selectedEquipment;
+        selectedEquipment === "all" ||
+        e.equipment === selectedEquipment ||
+        e.equipmentAliases?.includes(selectedEquipment);
       if (exerciseLibMode === "cardio")
         return isCardioEx && matchSearch && matchEquip;
       const matchMuscle = !selectedMuscle || e.muscleGroup === selectedMuscle;
@@ -1856,7 +1924,12 @@ export default function Workout() {
       Array.from(
         new Set([
           ...EQUIPMENT_LIST,
-          ...allExercises.map(exercise => exercise.equipment).filter(Boolean),
+          ...allExercises
+            .flatMap(exercise => [
+              exercise.equipment,
+              ...(exercise.equipmentAliases ?? []),
+            ])
+            .filter(Boolean),
         ])
       ).sort(),
     [allExercises]
@@ -2353,6 +2426,12 @@ export default function Workout() {
     if (!isOwner) return;
     if (!createExForm.name.trim()) return toast.error("請輸入動作名稱");
     if (aiIdentifyLoading) return;
+    if (existingCustomChoice) {
+      setShowCreateExerciseDialog(false);
+      openExerciseDetails(existingCustomChoice);
+      toast.success("已找到相同動作，請沿用現有選項；原有紀錄保留不變。");
+      return;
+    }
     createCustomExercise.mutate({
       ...createExForm,
       name: createExForm.name.trim(),
@@ -2361,7 +2440,7 @@ export default function Workout() {
   };
 
   return (
-    <div className="workout-studio min-w-0 p-3 sm:p-6 space-y-5 max-w-7xl mx-auto">
+    <div className="workout-studio min-w-0 p-3 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
       <WorkoutStudioStyles />
       <WorkoutStudioHeader
         title={`${t("workout.title")} · v${APP_VERSION}`}
@@ -2411,14 +2490,18 @@ export default function Workout() {
                   ? "實際課程時長未知，需核對；不以模型時間代替。"
                   : "Actual duration unknown; model time is not session time."
         }
-        volume={Math.round(
-          currentSession
-            ? (sessionDetail?.sets ?? []).reduce(
-                (sum, set) => sum + (set.weight || 0) * (set.reps || 0),
-                0
-              )
-            : selectedDayVolume
-        ).toLocaleString()}
+        volume={
+          currentSession && sessionDetail?.session?.id !== currentSession.id
+            ? "—"
+            : Math.round(
+                currentSession
+                  ? (sessionDetail?.sets ?? []).reduce(
+                      (sum, set) => sum + (set.weight ?? 0) * (set.reps ?? 0),
+                      0
+                    )
+                  : selectedDayVolume
+              ).toLocaleString()
+        }
         energy={
           currentSession
             ? formatActiveEnergyRange(calorieEstimate)
@@ -2447,7 +2530,7 @@ export default function Workout() {
               type="date"
               value={selectedDate}
               onChange={event => setSelectedDate(event.target.value)}
-              className="h-11 w-36 border-border bg-white text-xs text-slate-700"
+              className="h-11 w-36 rounded-xl border-border bg-card text-sm text-foreground"
             />
             {!activeSession ? (
               <Button
@@ -2507,7 +2590,7 @@ export default function Workout() {
       )}
 
       <Tabs value={activeTab} onValueChange={v => setActiveTab(v as any)}>
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl border border-border bg-white p-1 sm:flex sm:w-full [&>button]:min-h-11 [&>button]:whitespace-normal [&>button]:text-xs">
+        <TabsList className="studio-nav">
           <TabsTrigger value="session">
             {t("workout.active_session")}
             {activeSession && (
@@ -2691,10 +2774,13 @@ export default function Workout() {
                     </div>
                   </div>
 
-                  <section
+                  <details
                     aria-label="實際課程時間"
-                    className="rounded-xl border border-border bg-card p-3 text-xs leading-5"
+                    className="rounded-xl border border-border/60 bg-card px-4 py-2 text-xs leading-5"
                   >
+                    <summary className="flex min-h-11 cursor-pointer items-center font-medium text-muted-foreground">
+                      {isZh ? "課程時間核對" : "Review session timing"}
+                    </summary>
                     <p>
                       實際課程時長：
                       {timeDetails?.actualMinutes == null
@@ -2716,7 +2802,7 @@ export default function Workout() {
                     <p className="text-muted-foreground">
                       課程時長與下方熱量模型有效分鐘不同。舊紀錄時間可能只是日期標記，不代表真實開始／結束時間。
                     </p>
-                  </section>
+                  </details>
                   <WorkoutEnergyPanel estimate={calorieEstimate} />
                   {historicalSession && !currentSession.endTime && (
                     <p className="rounded-xl bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
@@ -2800,7 +2886,9 @@ export default function Workout() {
                           allExercises.find(
                             e =>
                               e.name === exerciseName ||
-                              (e as any).nameZh === exerciseName
+                              (e as any).nameZh === exerciseName ||
+                              getCanonicalExerciseName(e.name) ===
+                                getCanonicalExerciseName(exerciseName)
                           ) ||
                           BUILT_IN_EXERCISES.find(
                             e =>
@@ -2815,28 +2903,26 @@ export default function Workout() {
                         return (
                           <div
                             key={exerciseName}
-                            className="bg-card border border-border rounded-2xl overflow-hidden"
+                            className="studio-exercise-card bg-card border border-border/70 rounded-2xl overflow-hidden"
                           >
                             <div className="flex flex-col gap-3 border-b border-border px-3 py-4 sm:px-5">
                               <WorkoutStudioExerciseHeading
-                                exercise={
-                                  ex || {
-                                    name: exerciseName,
-                                    muscleGroup: "",
-                                    equipment: "",
-                                  }
-                                }
+                                exercise={{
+                                  ...ex,
+                                  name: exerciseName,
+                                  muscleGroup: ex?.muscleGroup ?? "",
+                                  equipment: ex?.equipment ?? "",
+                                }}
                                 active={
                                   lastLoggedSet?.exerciseName === exerciseName
                                 }
                                 onOpen={() => {
-                                  setDetailExercise(
-                                    ex || {
-                                      name: exerciseName,
-                                      muscleGroup: "",
-                                      equipment: "",
-                                    }
-                                  );
+                                  setDetailExercise({
+                                    ...ex,
+                                    name: exerciseName,
+                                    muscleGroup: ex?.muscleGroup ?? "",
+                                    equipment: ex?.equipment ?? "",
+                                  });
                                   setShowExerciseDetail(true);
                                 }}
                               />
@@ -2848,6 +2934,24 @@ export default function Workout() {
                                   </strong>
                                 </p>
                                 <div className="flex gap-1">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="gap-1.5 text-xs"
+                                    aria-label={`查看訓練紀錄 ${exerciseName}`}
+                                    onClick={() =>
+                                      openExerciseDetails({
+                                        ...ex,
+                                        name: exerciseName,
+                                        muscleGroup: ex?.muscleGroup ?? "",
+                                        equipment: ex?.equipment ?? "",
+                                      })
+                                    }
+                                  >
+                                    <History className="h-4 w-4" />
+                                    {isZh ? "紀錄" : "History"}
+                                  </Button>
                                   {isOwner && (
                                     <Button
                                       size="sm"
@@ -2932,10 +3036,12 @@ export default function Workout() {
                                         previousSessionDetail?.session?.id ===
                                         previousSession?.id
                                           ? previousSessionDetail?.sets
-                                              .filter(
-                                                set =>
-                                                  set.exerciseName ===
+                                              .filter(set =>
+                                                getExerciseHistoryNames(
                                                   exerciseName
+                                                ).includes(
+                                                  set.exerciseName ?? ""
+                                                )
                                               )
                                               .at(-1)
                                           : null;
@@ -2994,9 +3100,11 @@ export default function Workout() {
                                     </span>
                                   ) : (
                                     <span className="min-w-0 text-sm font-semibold text-foreground">
-                                      {historyUnit === "lbs"
-                                        ? Math.round((s.weight || 0) * 2.20462)
-                                        : (s.weight ?? "—")}{" "}
+                                      {s.weight == null
+                                        ? "—"
+                                        : historyUnit === "lbs"
+                                          ? Math.round(s.weight * 2.20462)
+                                          : s.weight}{" "}
                                       <span className="text-[10px] font-normal text-muted-foreground">
                                         {historyUnit}
                                       </span>
@@ -3239,11 +3347,21 @@ export default function Workout() {
                 <h2 className="mt-1 text-lg font-extrabold text-foreground">
                   器材 × 肌群動作庫
                 </h2>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
                   {isZh
-                    ? "先找器材，再選肌群。支援動作提供免費通用簡化動畫，非 Gymwork 原作，不使用付費素材；不保證符合每款品牌器械的結構或軌跡。點選靜態縮圖可在此頁查看動畫、肌群與步驟。未支援動作仍保留肌群與說明。"
-                    : "Filter by equipment and muscle. Supported movements include free generic simplified animations, not Gymwork originals or paid assets. They may not match every branded machine's structure or path. Select a static thumbnail to view the animation, muscles and steps here; unsupported movements retain their muscles and instructions."}
+                    ? "找器材、選動作，回顧每一次進步。"
+                    : "Find your equipment and follow each movement’s progress."}
                 </p>
+                <details className="mt-2 text-xs leading-5 text-muted-foreground">
+                  <summary className="flex min-h-11 cursor-pointer items-center text-primary">
+                    {isZh ? "關於動作示範" : "About movement illustrations"}
+                  </summary>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {isZh
+                      ? "先找器材，再選肌群。支援動作提供免費通用簡化動畫，非 Gymwork 原作，不使用付費素材；不保證符合每款品牌器械的結構或軌跡。點選動作可查看訓練紀錄、動畫與技巧。未支援動作仍保留肌群與說明。"
+                      : "Filter by equipment and muscle. Supported movements include free generic simplified animations, not Gymwork originals or paid assets. They may not match every branded machine's structure or path. Select a static thumbnail to view the animation, muscles and steps here; unsupported movements retain their muscles and instructions."}
+                  </p>
+                </details>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <Button
                     variant={
@@ -3385,213 +3503,61 @@ export default function Workout() {
                   </div>
                 )}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {filteredExercises.map((exercise: any) => {
-                  const guide = getExerciseGuide(
-                    exercise.name,
-                    exercise.equipment
-                  );
-                  const reference = getGymworkReference(
-                    exercise.name,
-                    exercise.equipment
-                  );
-                  const demoLabel = guide
-                    ? isZh
-                      ? "動作示範"
-                      : "Movement demonstration"
-                    : isZh
-                      ? "肌群與步驟"
-                      : "Muscles & steps";
-                  return (
-                    <article
-                      key={
-                        exercise.id ? `custom-${exercise.id}` : exercise.name
-                      }
-                      className="group flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-primary/35"
-                    >
-                      <div className="flex items-center justify-between gap-2 bg-gradient-to-br from-primary/10 via-muted/40 to-violet-500/5 p-4">
-                        <button
-                          type="button"
-                          aria-label={`${demoLabel} ${exercise.name}`}
-                          title={`${demoLabel} ${exercise.name}`}
-                          onClick={() => {
-                            setDetailExercise(exercise);
-                            setShowExerciseDetail(true);
-                          }}
-                          className="flex min-h-20 w-32 shrink-0 flex-col items-center justify-center overflow-hidden rounded-xl border border-blue-100 bg-white p-1 text-blue-600"
-                        >
-                          {guide ? (
-                            <ExerciseMotionPreview
-                              exercise={exercise}
-                              compact
-                              autoplay={false}
-                              className="w-full"
-                            />
-                          ) : (
-                            <Activity
-                              aria-hidden="true"
-                              className="my-3 h-5 w-5"
-                            />
-                          )}
-                          <span className="mt-1 text-[10px] font-semibold">
-                            {guide
-                              ? isZh
-                                ? "簡化動畫"
-                                : "Simplified animation"
-                              : isZh
-                                ? "肌群與步驟"
-                                : "Muscles & steps"}
-                          </span>
-                        </button>
-                        <span className="max-w-[70%] rounded-full border border-border bg-card/70 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
-                          {exercise.equipment}
-                        </span>
-                      </div>
-                      <div className="flex flex-1 flex-col p-4">
-                        <div className="flex items-start justify-between gap-1">
-                          <div className="min-w-0">
-                            <h3 className="text-sm font-bold leading-5 text-foreground">
-                              {exercise.nameZh || exercise.name}
-                            </h3>
-                            <p className="mt-0.5 break-words text-[11px] text-muted-foreground">
-                              {exercise.name}
-                            </p>
-                          </div>
-                          {isOwner && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={
-                                exercise.isCustom
-                                  ? `刪除自訂動作 ${exercise.name}`
-                                  : `切換收藏 ${exercise.name}`
-                              }
-                              className="h-10 w-10 shrink-0"
-                              onClick={() =>
-                                exercise.isCustom
-                                  ? window.confirm(
-                                      `刪除自訂動作「${exercise.name}」？`
-                                    ) &&
-                                    deleteCustomExercise.mutate({
-                                      id: exercise.id,
-                                    })
-                                  : toggleFavourite.mutate({
-                                      exerciseName: exercise.name,
-                                    })
-                              }
-                            >
-                              {exercise.isCustom ? (
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              ) : (
-                                <Star
-                                  className={`h-4 w-4 ${favouriteSet.has(exercise.name) ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`}
-                                />
-                              )}
-                            </Button>
-                          )}
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          <Badge variant="secondary" className="text-[10px]">
-                            {MUSCLE_GROUPS.find(
-                              muscle => muscle.id === exercise.muscleGroup
-                            )?.label ||
-                              (exercise.muscleGroup === "cardio"
-                                ? "有氧"
-                                : exercise.muscleGroup)}
-                          </Badge>
-                          {exercise.isCustom && (
-                            <Badge variant="outline" className="text-[10px]">
-                              自訂
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="mt-2 text-[11px] leading-5 text-blue-600">
-                          {isZh ? "主力" : "Primary"}:{" "}
-                          {getExerciseMuscles(exercise)
-                            .primary.map(id => studioMuscleLabel(id, isZh))
-                            .join(" / ") ||
-                            (isZh
-                              ? "未有阻力肌群分類"
-                              : "No resistance-muscle mapping")}
-                        </p>
-                        {getExerciseMuscles(exercise).secondary.length > 0 && (
-                          <p className="text-[10px] leading-5 text-muted-foreground">
-                            {isZh ? "輔助" : "Secondary"}:{" "}
-                            {getExerciseMuscles(exercise)
-                              .secondary.map(id => studioMuscleLabel(id, isZh))
-                              .join(" / ")}
-                          </p>
-                        )}
-                        <p className="mt-2 line-clamp-2 text-[11px] leading-5 text-muted-foreground">
-                          {exercise.instructions ||
-                            "查看動作詳情，了解姿勢、訓練肌群及安全要點。"}
-                        </p>
-                        <div className="mt-auto flex gap-2 pt-3">
-                          <Button
-                            variant="outline"
-                            className="h-11 flex-1 gap-1.5 rounded-xl text-xs"
-                            aria-label={`${demoLabel} ${exercise.name}`}
-                            title={`${demoLabel} ${exercise.name}`}
-                            onClick={() => {
-                              setDetailExercise(exercise);
-                              setShowExerciseDetail(true);
-                            }}
-                          >
-                            {guide ? (
-                              <Play
-                                aria-hidden="true"
-                                className="h-3.5 w-3.5"
-                              />
-                            ) : (
-                              <Activity
-                                aria-hidden="true"
-                                className="h-3.5 w-3.5"
-                              />
-                            )}
-                            {demoLabel}
-                          </Button>
-                          {isOwner && activeSession && (
-                            <Button
-                              size="icon"
-                              aria-label={`新增 ${exercise.name} 至課程`}
-                              className="h-11 w-11 rounded-xl"
-                              onClick={() => {
-                                setSelectedExercise(exercise);
-                                setSetForm({
-                                  reps:
-                                    exercise.muscleGroup === "cardio" ? 0 : 10,
-                                  weight: 0,
-                                  duration: 0,
-                                  distance: 0,
-                                  avgHr: 0,
-                                  calories: 0,
-                                  notes: "",
-                                });
-                                setEditSet(null);
-                                setShowAddSetDialog(true);
-                              }}
-                            >
-                              <Plus className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                        {reference && (
-                          <a
-                            href={reference.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label={`Gymwork 原作 ${exercise.name}`}
-                            className="mt-2 inline-flex min-h-8 items-center text-[10px] text-muted-foreground underline"
-                          >
-                            Gymwork{" "}
-                            {isZh
-                              ? "原作（外部參考）↗"
-                              : "original (external reference) ↗"}
-                          </a>
-                        )}
-                      </div>
-                    </article>
-                  );
-                })}
+                {filteredExercises.map((exercise: any, index: number) => (
+                  <WorkoutStudioLibraryCard
+                    key={
+                      exercise.id
+                        ? `custom-${exercise.id}`
+                        : `${exercise.name}:${exercise.equipment}:${exercise.variantLabel ?? index}`
+                    }
+                    exercise={exercise}
+                    onOpen={() => openExerciseDetails(exercise)}
+                    favourite={
+                      favouriteSet.has(exercise.name) ||
+                      (exercise.aliases ?? []).some((alias: string) =>
+                        favouriteSet.has(alias)
+                      )
+                    }
+                    onFavourite={
+                      isOwner && !exercise.isCustom
+                        ? () =>
+                            toggleFavourite.mutate({
+                              exerciseName: exercise.name,
+                            })
+                        : undefined
+                    }
+                    onDelete={
+                      isOwner && exercise.isCustom
+                        ? () => {
+                            if (
+                              window.confirm(
+                                `刪除自訂動作「${exercise.name}」？`
+                              )
+                            )
+                              deleteCustomExercise.mutate({ id: exercise.id });
+                          }
+                        : undefined
+                    }
+                    onAdd={
+                      isOwner && activeSession
+                        ? () => {
+                            setSelectedExercise(exercise);
+                            setSetForm({
+                              reps: exercise.muscleGroup === "cardio" ? 0 : 10,
+                              weight: 0,
+                              duration: 0,
+                              distance: 0,
+                              avgHr: 0,
+                              calories: 0,
+                              notes: "",
+                            });
+                            setEditSet(null);
+                            setShowAddSetDialog(true);
+                          }
+                        : undefined
+                    }
+                  />
+                ))}
                 {filteredExercises.length === 0 && (
                   <div className="rounded-2xl border border-dashed border-border p-6 text-center sm:col-span-2 xl:col-span-3">
                     <p className="text-sm text-muted-foreground">
@@ -4301,6 +4267,9 @@ export default function Workout() {
         <DialogContent className="workout-studio-dialog max-w-lg max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>選擇動作</DialogTitle>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              點選動作記錄組數；右側紀錄按鈕可查看日期、重量與進展。
+            </p>
           </DialogHeader>
           <div className="space-y-3 flex-1 flex flex-col min-h-0">
             <div className="flex gap-1.5">
@@ -4335,67 +4304,68 @@ export default function Workout() {
               equipmentOptions={equipmentOptions}
               cardio={exerciseLibMode === "cardio"}
             />
-            <div className="space-y-1 flex-1 overflow-y-auto">
+            <div className="space-y-2 flex-1 overflow-y-auto overscroll-contain pr-1">
               {filteredExercises.map((ex: any, i: number) => (
-                <button
-                  key={i}
-                  className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-muted/50 transition-colors"
-                  onClick={() => {
-                    const isCardioEx = ex.muscleGroup === "cardio";
-                    setSelectedExercise(ex);
-                    setSetForm(
-                      isCardioEx
-                        ? {
-                            reps: 0,
-                            weight: 0,
-                            duration: 0,
-                            distance: 0,
-                            avgHr: 0,
-                            calories: 0,
-                            notes: "",
-                          }
-                        : {
-                            reps: 10,
-                            weight: 0,
-                            duration: 0,
-                            distance: 0,
-                            avgHr: 0,
-                            calories: 0,
-                            notes: "",
-                          }
-                    );
-                    setEditSet(null);
-                    setShowExerciseDialog(false);
-                    setShowAddSetDialog(true);
-                  }}
+                <div
+                  key={
+                    ex.id
+                      ? `custom-${ex.id}`
+                      : `${ex.name}:${ex.equipment}:${ex.variantLabel ?? i}`
+                  }
+                  className="flex items-center gap-2 rounded-xl border border-border/60 bg-card px-2 py-1.5"
                 >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">
-                        {ex.name}
-                        {(ex as any).isCustom && (
-                          <Badge
-                            variant="secondary"
-                            className="ml-1.5 text-[10px] py-0"
-                          >
-                            自訂
-                          </Badge>
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {ex.nameZh}
-                      </p>
-                    </div>
-                    <div className="flex gap-1">
-                      <Badge variant="secondary" className="text-xs capitalize">
-                        {ex.muscleGroup}
-                      </Badge>
-                      <Badge variant="outline" className="text-xs">
-                        {ex.equipment}
-                      </Badge>
-                    </div>
-                  </div>
-                </button>
+                  <button
+                    type="button"
+                    aria-label={`選擇 ${ex.name} 記錄組數`}
+                    className="min-h-14 min-w-0 flex-1 rounded-lg px-2 py-2 text-left hover:bg-muted/40"
+                    onClick={() => {
+                      setSelectedExercise(ex);
+                      setSetForm({
+                        reps: ex.muscleGroup === "cardio" ? 0 : 10,
+                        weight: 0,
+                        duration: 0,
+                        distance: 0,
+                        avgHr: 0,
+                        calories: 0,
+                        notes: "",
+                      });
+                      setEditSet(null);
+                      setShowExerciseDialog(false);
+                      setShowAddSetDialog(true);
+                    }}
+                  >
+                    <span className="block text-sm font-semibold leading-6">
+                      {isZh ? ex.nameZh || ex.name : ex.name}
+                    </span>
+                    <span className="block text-xs leading-5 text-muted-foreground">
+                      {isZh && ex.nameZh ? `${ex.name} · ` : ""}
+                      {ex.equipment}
+                      {ex.isCustom ? " · 自訂" : ""}
+                    </span>
+                    {ex.variantLabel && (
+                      <span className="block text-xs leading-5 text-amber-700 dark:text-amber-400">
+                        {ex.variantLabel}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`查看訓練紀錄 ${ex.name}`}
+                    title={
+                      isZh
+                        ? "訓練紀錄與動作詳情"
+                        : "History and exercise details"
+                    }
+                    onClick={() => openExerciseDetails(ex)}
+                    className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-border text-primary hover:bg-muted/40"
+                  >
+                    <History className="h-4 w-4" />
+                  </button>
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="mr-1 h-4 w-4 shrink-0 text-muted-foreground"
+                  />
+                </div>
               ))}
               {filteredExercises.length === 0 && (
                 <div className="text-center py-6 space-y-3">
@@ -4951,6 +4921,7 @@ export default function Workout() {
       {/* Exercise Detail Modal */}
       <ExerciseDetailModal
         exercise={detailExercise}
+        weightUnit={historyUnit}
         open={showExerciseDetail}
         onClose={() => setShowExerciseDetail(false)}
         hasActiveSession={isOwner && !!activeSession}
@@ -4967,6 +4938,7 @@ export default function Workout() {
               notes: "",
             });
             setEditSet(null);
+            setShowExerciseDialog(false);
             setShowAddSetDialog(true);
           }
         }}

@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as exerciseMuscles from "../shared/exerciseMuscles";
 import {
   getMuscleAnalysisBounds,
+  getMuscleParticipationRows,
   isMuscleAnalysisDate,
   muscleAnalysisHKDate,
 } from "../shared/workoutMuscleAnalytics";
@@ -498,5 +500,139 @@ describe("strength, cardio, timed and missing-load coverage", () => {
       startDate: "2026-11-01",
       endDate: "2026-11-30",
     });
+  });
+});
+
+
+describe("multi-muscle saved work conservation regressions", () => {
+  it("counts chest press, leg press and pulldown primaries and secondaries without extra unique work", () => {
+    const sets = [saved(1, "Chest Press Machine"), saved(2, "Leg Press"), saved(3, "Lat Pulldown")];
+    const result = buildWorkoutMuscleAnalysis(input, [session], sets);
+    const rows = getMuscleParticipationRows(result);
+    expect(result.setCount).toBe(3);
+    expect(result.strengthSetCount).toBe(3);
+    expect(result.totalVolumeKg).toBe(900);
+    expect(result.totalReps).toBe(30);
+    for (const muscle of ["chest", "lats"]) {
+      expect(rows.find(row => row.muscle === muscle)).toMatchObject({ primarySetCount: 1, secondarySetCount: 0, participationSetCount: 1, directVolumeKg: 300 });
+    }
+    for (const muscle of ["quads", "glutes"]) {
+      expect(rows.find(row => row.muscle === muscle)).toMatchObject({ primarySetCount: 1, allocatedPrimarySetCount: 0.5, directVolumeKg: 150, participationSetCount: 1 });
+    }
+    for (const muscle of ["triceps", "hamstrings", "calves", "biceps"]) {
+      expect(rows.find(row => row.muscle === muscle)).toMatchObject({ primarySetCount: 0, secondarySetCount: 1, directVolumeKg: 0, participationSetCount: 1 });
+      expect(rows.find(row => row.muscle === muscle)?.participationPct).toBeCloseTo(100 / 3);
+    }
+    expect(rows.find(row => row.muscle === "shoulders")).toMatchObject({ primarySetCount: 0, secondarySetCount: 2, participationSetCount: 2, directVolumeKg: 0 });
+    expect(rows.reduce((sum, row) => sum + row.participationSetCount, 0)).toBeGreaterThan(result.setCount);
+    expect(rows.reduce((sum, row) => sum + row.directVolumeKg, 0)).toBeCloseTo(result.mappedVolumeKg, 10);
+    expect(rows.reduce((sum, row) => sum + row.allocatedPrimarySetCount, 0)).toBeCloseTo(3, 10);
+    expect(result).not.toHaveProperty("calories");
+  });
+
+  it("deduplicates repeated primaries and secondaries and excludes cross-role duplicates before allocation", () => {
+    const mapping = vi.spyOn(exerciseMuscles, "getExerciseMuscles").mockReturnValue({
+      primary: ["quads", "quads", "glutes", "glutes", ""],
+      secondary: ["glutes", "quads", "hamstrings", "hamstrings", "calves", "calves", ""],
+      basis: "exercise",
+    });
+    try {
+      const one = saved(1, "Leg Press", { reps: 7, weight: 43, duration: 3 });
+      const sets = [one, one, saved(2, "Leg Press", { reps: 1, weight: 1, duration: 1 })];
+      const result = buildWorkoutMuscleAnalysis(input, [session, session], sets);
+      const rows = getMuscleParticipationRows(result);
+      expect(result.setCount).toBe(2);
+      expect(result.totalVolumeKg).toBe(302);
+      expect(result.timedStrengthMinutes).toBe(4);
+      expect(rows).toHaveLength(4);
+      for (const muscle of ["quads", "glutes"]) {
+        expect(rows.find(row => row.muscle === muscle)).toMatchObject({ primarySetCount: 2, secondarySetCount: 0, participationSetCount: 2, participationPct: 100, allocatedPrimarySetCount: 1, directVolumeKg: 151, directTimedMinutes: 2 });
+      }
+      for (const muscle of ["hamstrings", "calves"]) {
+        expect(rows.find(row => row.muscle === muscle)).toMatchObject({ primarySetCount: 0, secondarySetCount: 2, participationSetCount: 2, participationPct: 100, directVolumeKg: 0 });
+      }
+      expect(rows.reduce((sum, row) => sum + row.directVolumeKg, 0)).toBe(302);
+      expect(rows.reduce((sum, row) => sum + row.allocatedPrimarySetCount, 0)).toBe(2);
+      expect(rows.reduce((sum, row) => sum + row.directTimedMinutes, 0)).toBe(4);
+    } finally {
+      mapping.mockRestore();
+    }
+  });
+
+  it("uses exact machine guides over saved broad/wrong labels, preserving raw custom data and warnings", () => {
+    const catalog = [
+      exercise(1, "Hip Abduction", { source: "custom_exercises", muscleGroup: "glutes", equipment: "Machine" }),
+      exercise(2, "Hip Adduction", { source: "custom_exercises", muscleGroup: "glutes", equipment: "Machine" }),
+      exercise(3, "Abdominal Crunch", { source: "custom_exercises", muscleGroup: "obliques", equipment: "Machine" }),
+      exercise(4, "Hip Abduction Machine", { muscleGroup: "User Raw 42", equipment: "Machine" }),
+    ];
+    const before = JSON.stringify(catalog);
+    const result = buildWorkoutMuscleAnalysis(input, [session], catalog.map(e => saved(e.id, e.name)), catalog);
+    expect(result.muscles.find(row => row.muscle === "glute_medius")).toMatchObject({ primarySetCount: 2, directVolumeKg: 600 });
+    expect(result.muscles.find(row => row.muscle === "glutes")).toMatchObject({ primarySetCount: 0, secondarySetCount: 2, directVolumeKg: 0 });
+    expect(result.muscles.find(row => row.muscle === "adductors")).toMatchObject({ primarySetCount: 1, directVolumeKg: 300 });
+    expect(result.muscles.find(row => row.muscle === "abs")).toMatchObject({ primarySetCount: 1, directVolumeKg: 300 });
+    expect(result.muscles.find(row => row.muscle === "obliques")).toMatchObject({ primarySetCount: 0, secondarySetCount: 1, directVolumeKg: 0 });
+    expect(result.coverage.exerciseMappedSetCount).toBe(4);
+    expect(result.warnings).toContainEqual(expect.objectContaining({ code: "unknown_muscle_category", rawCategory: "User Raw 42", setCount: 1 }));
+    expect(JSON.stringify(catalog)).toBe(before);
+  });
+
+  it("passes saved equipment to the shared resolver rather than assuming a machine variant", () => {
+    const mapping = vi.spyOn(exerciseMuscles, "getExerciseMuscles");
+    try {
+      buildWorkoutMuscleAnalysis(input, [session], [saved(1, "Abdominal Crunch")], [exercise(1, "Abdominal Crunch", { muscleGroup: "obliques", equipment: "Machine" })]);
+      expect(mapping).toHaveBeenCalledWith({ name: "Abdominal Crunch", muscleGroup: "obliques", equipment: "Machine" });
+    } finally {
+      mapping.mockRestore();
+    }
+  });
+
+  it("never infers the opposite mode or invented secondary muscles for unresolved dual-mode machines", () => {
+    const catalog = [
+      exercise(1, "Dual Bicep Curl Machine", { muscleGroup: "biceps", equipment: "Machine" }),
+      exercise(2, "Triceps Machine", { muscleGroup: "triceps", equipment: "Machine" }),
+      exercise(3, "Unknown Dual Bicep/Triceps machine", { muscleGroup: "Other", equipment: "Machine" }),
+    ];
+    const result = buildWorkoutMuscleAnalysis(input, [session], catalog.map(e => saved(e.id, e.name)), catalog);
+    expect(result.muscles.find(row => row.muscle === "biceps")).toMatchObject({ primarySetCount: 1, secondarySetCount: 0 });
+    expect(result.muscles.find(row => row.muscle === "triceps")).toMatchObject({ primarySetCount: 1, secondarySetCount: 0 });
+    expect(result.muscles.every(row => row.secondarySetCount === 0)).toBe(true);
+    expect(result.coverage.categoryMappedSetCount).toBe(2);
+    expect(result.coverage.unmappedSetCount).toBe(1);
+    expect(result.unmappedSources[0].exerciseName).toBe("Unknown Dual Bicep/Triceps machine");
+    expect(result.totalVolumeKg).toBe(900);
+    expect(result.mappedVolumeKg).toBe(600);
+  });
+
+  it.each([
+    ["week", 2], ["month", 3], ["year", 4], ["all", 6],
+  ] as const)("recomputes %s combined participation in HK scope with conserved unique sets", (period, expectedSets) => {
+    const sessions = [
+      "2025-12-31T15:59:59.999Z", // before HK year
+      "2025-12-31T16:00:00.000Z", // HK year start
+      "2026-10-31T16:00:00.000Z", // HK month start
+      "2026-11-15T16:00:00.000Z", // HK Monday start
+      "2026-11-22T15:59:59.999Z", // Sunday final millisecond
+      "2027-01-01T16:00:00.000Z", // post-anchor future retained by all
+    ].map((startTime, i) => ({ id: i + 1, startTime }));
+    const result = buildWorkoutMuscleAnalysis({ period, anchorDate: "2026-11-16" }, sessions, sessions.map(s => saved(s.id, "Chest Press Machine", { sessionId: s.id })));
+    const rows = getMuscleParticipationRows(result);
+    expect(result.setCount).toBe(expectedSets);
+    expect(result.sessionCount).toBe(expectedSets);
+    expect(result.totalVolumeKg).toBe(expectedSets * 300);
+    expect(rows.find(row => row.muscle === "chest")).toMatchObject({ primarySetCount: expectedSets, participationSetCount: expectedSets, participationPct: 100 });
+    expect(rows.find(row => row.muscle === "triceps")).toMatchObject({ secondarySetCount: expectedSets, participationSetCount: expectedSets, directVolumeKg: 0 });
+    expect(rows.reduce((sum, row) => sum + row.directVolumeKg, 0)).toBe(result.totalVolumeKg);
+    expect(rows.reduce((sum, row) => sum + row.allocatedPrimarySetCount, 0)).toBe(result.strengthSetCount);
+  });
+
+  it("builds an immutable participation view without changing direct shares or zero-load records", () => {
+    const result = buildWorkoutMuscleAnalysis(input, [session], [saved(1, "Chest Press Machine", { weight: 0 })]);
+    const before = JSON.stringify(result);
+    const rows = getMuscleParticipationRows(result);
+    expect(rows.every(row => row.participationSetCount === 1 && row.participationPct === 100 && row.directVolumeKg === 0)).toBe(true);
+    expect(JSON.stringify(result)).toBe(before);
+    expect(getMuscleParticipationRows({ muscles: result.muscles, strengthSetCount: 0 }).every(row => row.participationPct === 0)).toBe(true);
   });
 });
