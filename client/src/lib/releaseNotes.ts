@@ -36,6 +36,17 @@ export type FeatureHistory = {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "3.19.1", status: "released",
+    title: "動作小圖：只顯示器械與動作",
+    summary: "修正健身動作小圖被文字遮擋；小圖只保留器械與做動作的人像，詳細動畫及肌群說明維持不變。",
+    changes: {
+      added: [],
+      removed: ["小圖內的文字標籤、肌群色彩圖例與肌肉覆蓋層"],
+      improved: ["固定小圖比例，手機、平板及電腦清楚顯示器械與動作姿勢", "工作室、選擇器及動作庫一致使用無文字靜態圖示"],
+      revised: ["未匹配動作用無文字占位圖，不以其他器械代替；螢幕閱讀器說明保留", "詳細動畫的主力／輔助肌群、播放控制與說明完整保留；不修改健身紀錄"],
+    },
+  },
+  {
     version: "3.19.0", status: "released",
     title: "健身工作室：動作整合、完整歷史與肌肉參與",
     summary: "整理六組已核實的相同／同義動作選項，保留原有名稱與訓練資料；加入按香港日期的逐動作重量、次數、組數及訓練量時間序列，重整工作室與肌肉示意。",
@@ -805,9 +816,13 @@ export const FEATURE_HISTORY: readonly FeatureHistory[] = [
     status: "released",
     summary:
       "六組已核實動作選項整合、完整逐動作歷史與負重時間序列／AI、主力及輔助肌群參與、肌肉形狀動畫與 3D；保留 Volume 耗能、分店器械及全部原紀錄。",
-    lastRevisedVersion: "3.19.0",
-    lastRevisedDateHK: "2026年11月16日（香港）",
+    lastRevisedVersion: "3.19.1",
+    lastRevisedDateHK: "2026年11月18日（香港）",
     history: [
+      {
+        version: "3.19.1", dateHK: "2026年11月18日",
+        description: "動作小圖只保留器械與動作人像，移除文字／圖例／肌肉覆蓋，固定比例避免手機縮圖被遮擋；詳細動畫及所有健身紀錄不變。",
+      },
       {
         version: "3.19.0", dateHK: "2026年11月16日",
         description: "高質感響應式工作室、六組保守身份整合及完整每組歷史；按香港日期的訓練量／最高平均重量／次數組數時間序列與 AI，動畫解剖肌群及多肌群參與清楚顯示。不同機型／姿勢不混併，舊資料不改寫。",

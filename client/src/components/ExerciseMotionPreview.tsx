@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Pause, Play, RotateCcw } from "lucide-react";
+import { ImageOff, Pause, Play, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   getExerciseMotion,
@@ -41,14 +41,16 @@ function MotionSvg({
   pose,
   phase,
   zh,
+  showMuscles = true,
 }: {
   spec: ExerciseMotionSpec;
   pose: MotionPose;
   phase: number;
   zh: boolean;
+  showMuscles?: boolean;
 }) {
   const segments = getMotionApparatus(spec.id, pose).segments;
-  const muscles = getMotionMuscleShapes(spec, pose);
+  const muscles = showMuscles ? getMotionMuscleShapes(spec, pose) : [];
   const contour = (a: Point3, b: Point3, width: number, end: number) => (
     <path
       d={motionLimbContour(a, b, width, end)}
@@ -134,22 +136,34 @@ function MotionSvg({
   return (
     <svg
       viewBox="45 0 320 265"
+      width="320"
+      height="265"
+      preserveAspectRatio="xMidYMid meet"
       role="img"
-      aria-label={`${spec.name} — ${zh ? "簡化動作示意" : "Simplified motion"}`}
+      aria-label={`${zh ? spec.nameZh : spec.name} — ${showMuscles ? (zh ? "簡化動作示意" : "Simplified motion") : zh ? "簡化動作示意（靜態）" : "Simplified motion (static)"}`}
       data-motion-phase={phase.toFixed(4)}
       data-motion-stroke={pose.contraction.toFixed(3)}
-      className="h-full w-full"
+      className={showMuscles ? "h-full w-full" : "block h-auto w-full"}
+      style={showMuscles ? undefined : { aspectRatio: "320 / 265" }}
       xmlns="http://www.w3.org/2000/svg"
     >
       <title>
-        {zh
-          ? `${spec.nameZh}：通用人體與器械示意`
-          : `${spec.name}: generic human and machine schematic`}
+        {showMuscles
+          ? zh
+            ? `${spec.nameZh}：通用人體與器械示意`
+            : `${spec.name}: generic human and machine schematic`
+          : zh
+            ? `${spec.nameZh}：簡化動作示意，通用人體與器械靜態圖`
+            : `${spec.name}: simplified static human and machine schematic`}
       </title>
       <desc>
-        {zh
-          ? "肌肉形狀依原有關節位置移動。琥珀色實線為主要肌群，青綠色虛線為輔助肌群；背側與深層肌肉為示意透視，並非肌肉活化測量。"
-          : "Muscle shapes follow the original joint positions. Amber solid outlines mark primary muscles; teal dashed outlines mark secondary muscles. Posterior and deep regions are schematic cutaways, not activation measurements."}
+        {showMuscles
+          ? zh
+            ? "肌肉形狀依原有關節位置移動。琥珀色實線為主要肌群，青綠色虛線為輔助肌群；背側與深層肌肉為示意透視，並非肌肉活化測量。"
+            : "Muscle shapes follow the original joint positions. Amber solid outlines mark primary muscles; teal dashed outlines mark secondary muscles. Posterior and deep regions are schematic cutaways, not activation measurements."
+          : zh
+            ? "通用人體使用匹配器械的靜態動作示意，並非特定品牌或個人姿勢評估。"
+            : "Static schematic of a generic person using the matching apparatus, not a specific brand or a personal posture assessment."}
       </desc>
       <rect x="45" y="0" width="320" height="265" fill="#f6f8fc" />
       <path d="M60 250H350" stroke="#cbd5e1" strokeWidth="2" />
@@ -366,32 +380,31 @@ function MotionPlayer({
     setPhase(next);
   };
   const label = zh ? "簡化動作示意" : "Simplified motion";
-  const anatomy = getExerciseAnatomy({
-    name: spec.name,
-    equipment: spec.equipment[0],
-  });
   if (compact) {
     return (
       <div
         data-exercise-motion="compact"
         data-motion-id={spec.id}
         className={cn(
-          "relative overflow-hidden rounded-xl bg-[#f6f8fc]",
+          "relative grid place-items-center overflow-hidden rounded-xl bg-[#f6f8fc]",
           className
         )}
+        style={{ aspectRatio: "320 / 265" }}
       >
         <MotionSvg
           spec={spec}
           pose={getMotionPose(spec.id, 0)}
           phase={0}
           zh={zh}
+          showMuscles={false}
         />
-        <span className="absolute bottom-1 right-1 rounded bg-white/90 px-2 py-1 text-[10px] text-slate-600">
-          {label} · {zh ? "琥珀＝主要" : "Amber = primary"}
-        </span>
       </div>
     );
   }
+  const anatomy = getExerciseAnatomy({
+    name: spec.name,
+    equipment: spec.equipment[0],
+  });
   return (
     <section
       data-exercise-motion="svg"
@@ -521,6 +534,23 @@ export default function ExerciseMotionPreview({
   const zh = i18n.language.startsWith("zh");
   const spec = getExerciseMotion(exercise.name, exercise.equipment);
   if (!spec) {
+    if (compact) {
+      return (
+        <div
+          data-exercise-motion="unavailable"
+          data-motion-compact="true"
+          role="img"
+          aria-label={`${exercise.name} — ${zh ? "動作示意暫不可用" : "Motion preview unavailable"}`}
+          className={cn(
+            "grid place-items-center overflow-hidden rounded-xl bg-muted/25 text-muted-foreground",
+            className
+          )}
+          style={{ aspectRatio: "320 / 265" }}
+        >
+          <ImageOff className="h-6 w-6" aria-hidden="true" />
+        </div>
+      );
+    }
     return (
       <div
         data-exercise-motion="unavailable"

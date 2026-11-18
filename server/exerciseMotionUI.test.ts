@@ -389,7 +389,8 @@ describe("inline simplified SVG motion React DOM", () => {
         "[data-exercise-motion=compact] svg[data-motion-phase='0.0000']"
       )
     ).not.toBeNull();
-    expect(host.textContent).toContain("簡化動作示意");
+    expect(host.querySelector("svg[role='img']")?.getAttribute("aria-label")).toContain("簡化動作示意");
+    expect(host.querySelector("span, p, text, foreignObject, [data-motion-muscle-id]")).toBeNull();
     expect(host.querySelector("button, input, select")).toBeNull();
     expect(observers).toHaveLength(0);
     expect(requestAnimationFrame).not.toHaveBeenCalled();
